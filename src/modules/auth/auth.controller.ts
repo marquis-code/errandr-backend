@@ -1,0 +1,70 @@
+import { Controller, Post, Body, HttpCode, HttpStatus, BadRequestException } from '@nestjs/common';
+import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { AuthService } from './auth.service';
+import { RegisterDto } from './dto/register.dto';
+import { LoginDto } from './dto/login.dto';
+import { FirebaseLoginDto } from './dto/firebase-login.dto';
+
+@ApiTags('Authentication')
+@Controller('auth')
+export class AuthController {
+  constructor(private readonly authService: AuthService) {}
+
+  @Post('register')
+  @ApiOperation({ summary: 'Register new user' })
+  async register(@Body() registerDto: RegisterDto) {
+    return this.authService.register(registerDto);
+  }
+
+  @Post('login')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Login with email/password' })
+  async login(@Body() loginDto: LoginDto) {
+    return this.authService.login(loginDto);
+  }
+
+  @Post('firebase')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Login with Firebase social auth' })
+  async firebaseLogin(@Body() dto: FirebaseLoginDto) {
+    return this.authService.firebaseLogin(dto.firebaseUid, dto.email, dto.name);
+  }
+
+  @Post('send-otp')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Send OTP to email for verification' })
+  async sendOTP(@Body() body: { email: string }) {
+    return this.authService.sendOTP(body.email);
+  }
+
+  @Post('verify-otp')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify email OTP' })
+  async verifyOTP(@Body() body: { email: string; otp: string }) {
+    return this.authService.verifyOTP(body.email, body.otp);
+  }
+
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Request password reset OTP' })
+  async forgotPassword(@Body() body: { email: string }) {
+    if (!body.email) throw new BadRequestException('Email is required');
+    return this.authService.forgotPassword(body.email);
+  }
+
+  @Post('verify-reset-otp')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify password reset OTP' })
+  async verifyResetOTP(@Body() body: { email: string; otp: string }) {
+    if (!body.email || !body.otp) throw new BadRequestException('Email and OTP are required');
+    return this.authService.verifyResetOTP(body.email, body.otp);
+  }
+
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reset password using OTP' })
+  async resetPassword(@Body() body: any) {
+    if (!body.email || !body.otp || !body.newPassword) throw new BadRequestException('Missing required fields');
+    return this.authService.resetPassword(body);
+  }
+}
