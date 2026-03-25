@@ -28,8 +28,6 @@ async function run() {
     { $match: { count: { $gt: 1 } } }
   ]).toArray();
 
-  console.log('--- Duplicate Vendors (by Store Name) ---');
-  console.log(JSON.stringify(vendorDuplicates, null, 2));
 
   // 2. Find "Orphaned" Orders
   const allVendorDocs = await db.collection('vendors').find({}, { projection: { _id: 1 } }).toArray();
