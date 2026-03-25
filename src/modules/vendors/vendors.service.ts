@@ -144,7 +144,14 @@ export class VendorsService {
   async update(id: string, ownerId: string, data: Partial<Vendor>): Promise<Vendor> {
     const vendor = await this.vendorModel.findById(id);
     if (!vendor) throw new NotFoundException('Vendor not found');
-    if (vendor.owner.toString() !== ownerId) throw new ForbiddenException();
+    
+    // Safely extract the hex strings regardless of population status
+    const vOwnerId = ((vendor.owner as any)?._id || vendor.owner).toString();
+    const reqOwnerId = ((ownerId as any)?._id || ownerId).toString();
+
+    if (vOwnerId !== reqOwnerId) {
+      throw new ForbiddenException('You do not have permission to modify this vendor');
+    }
 
     Object.assign(vendor, data);
     await vendor.save();
@@ -154,7 +161,13 @@ export class VendorsService {
   async toggleOnline(id: string, ownerId: string): Promise<Vendor> {
     const vendor = await this.vendorModel.findById(id);
     if (!vendor) throw new NotFoundException('Vendor not found');
-    if (vendor.owner.toString() !== ownerId) throw new ForbiddenException();
+    
+    const vOwnerId = ((vendor.owner as any)?._id || vendor.owner).toString();
+    const reqOwnerId = ((ownerId as any)?._id || ownerId).toString();
+
+    if (vOwnerId !== reqOwnerId) {
+      throw new ForbiddenException('You do not have permission to modify this vendor');
+    }
 
     vendor.isOnline = !vendor.isOnline;
     await vendor.save();

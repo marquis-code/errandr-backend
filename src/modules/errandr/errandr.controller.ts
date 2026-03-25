@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Body, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, UseGuards, Query, DefaultValuePipe, ParseIntPipe } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { ErrandrService } from './errandr.service';
 import { JwtAuthGuard, CurrentUser, Roles, RolesGuard } from '../../common/decorators';
@@ -62,7 +62,10 @@ export class ErrandrController {
   @Roles(UserRole.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get all errandr (admin)' })
-  getAll(@Query('page') page?: number, @Query('limit') limit?: number) {
+  getAll(
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number = 10,
+  ) {
     return this.errandrService.getAll(page, limit);
   }
 }

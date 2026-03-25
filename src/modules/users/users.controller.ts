@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Body, Param, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Put, Body, Param, UseGuards, Query, DefaultValuePipe, ParseIntPipe } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { JwtAuthGuard, CurrentUser, Roles, RolesGuard } from '../../common/decorators';
@@ -56,7 +56,10 @@ export class UsersController {
   @Roles(UserRole.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get all users (admin only)' })
-  findAll(@Query('page') page: number, @Query('limit') limit: number) {
+  findAll(
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number = 10,
+  ) {
     return this.usersService.findAll(page, limit);
   }
 }

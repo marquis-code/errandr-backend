@@ -12,24 +12,30 @@ export class UploadService {
     });
   }
 
-  async uploadImage(
+  async uploadFile(
     file: Express.Multer.File,
+    resourceType: 'image' | 'video' | 'raw' | 'auto' = 'auto',
     folder = 'errandr',
   ): Promise<{ url: string; publicId: string }> {
     if (!file) throw new BadRequestException('No file provided');
 
     return new Promise((resolve, reject) => {
+      const options: any = {
+        folder,
+        resource_type: resourceType,
+      };
+
+      if (resourceType === 'image') {
+        options.transformation = [
+          { width: 1200, height: 1200, crop: 'limit' },
+          { quality: 'auto' },
+          { fetch_format: 'auto' },
+        ];
+      }
+
       cloudinary.uploader
         .upload_stream(
-          {
-            folder,
-            resource_type: 'image',
-            transformation: [
-              { width: 800, height: 800, crop: 'limit' },
-              { quality: 'auto' },
-              { fetch_format: 'auto' },
-            ],
-          },
+          options,
           (error, result: UploadApiResponse) => {
             if (error) return reject(error);
             resolve({
@@ -40,6 +46,13 @@ export class UploadService {
         )
         .end(file.buffer);
     });
+  }
+
+  async uploadImage(
+    file: Express.Multer.File,
+    folder = 'errandr'
+  ): Promise<{ url: string; publicId: string }> {
+    return this.uploadFile(file, 'image', folder);
   }
 
   async uploadMultiple(

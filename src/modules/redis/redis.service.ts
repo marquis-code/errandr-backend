@@ -73,4 +73,8 @@ export class RedisService {
   ): Promise<string[]> {
     return this.redis.georadius(key, lng, lat, radius, unit) as any;
   }
+
+  getNewClient(): Redis {
+    return this.redis.duplicate();
+  }
 }

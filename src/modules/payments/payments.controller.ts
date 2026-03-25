@@ -1,7 +1,6 @@
 import { Controller, Get, Post, Body, Query, UseGuards, Logger, Inject, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
-import { KorapayService } from './korapay.service';
 import { PaystackService } from './paystack.service';
 import { JwtAuthGuard } from '../../common/decorators';
 import { OrdersService } from '../orders/orders.service';
@@ -15,7 +14,6 @@ export class PaymentsController {
   private readonly logger = new Logger(PaymentsController.name);
 
   constructor(
-    private readonly korapayService: KorapayService,
     private readonly paystackService: PaystackService,
     private readonly configService: ConfigService,
     @Inject(forwardRef(() => OrdersService)) private readonly ordersService: OrdersService,
@@ -39,34 +37,39 @@ export class PaymentsController {
   @Get('verify')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Verify payment reference' })
+  @ApiOperation({ summary: 'Verify payment reference (via Paystack)' })
   async verify(@Query('reference') reference: string) {
-    return this.korapayService.verifyCharge(reference);
+    return this.paystackService.verifyTransaction(reference);
   }
 
   @Post('initialize')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Initialize Korapay payment' })
+  @ApiOperation({ summary: 'Initialize Paystack payment' })
   async initialize(@Body() body: { 
     amount: number; 
-    customer: { name: string; email: string }; 
+    email?: string;
+    customer?: { name: string; email: string }; 
     metadata?: any;
+    callback_url?: string;
     redirect_url?: string;
   }) {
     const reference = `ERR-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    const webhookUrl = this.configService.get('KORAPAY_WEBHOOK_URL') || 'http://localhost:3000/api/v1/payments/korapay/webhook';
-    return this.korapayService.initializeCharge({
-      ...body,
+    const callbackUrl = body.callback_url || body.redirect_url || this.configService.get('PAYSTACK_CALLBACK_URL') || 'https://www.errandr.shop/cart';
+    
+    return this.paystackService.initializeTransaction({
+      amount: body.amount,
+      email: body.email || body.customer?.email || '',
       reference,
-      notification_url: webhookUrl,
+      callback_url: callbackUrl,
+      metadata: body.metadata,
     });
   }
 
-  @Post('korapay/webhook')
-  @ApiOperation({ summary: 'Korapay Webhook Handler' })
+  @Post('paystack/webhook')
+  @ApiOperation({ summary: 'Paystack Webhook Handler' })
   async handleWebhook(@Body() body: any) {
-    this.logger.log(`Korapay Webhook Received: ${body.event}`);
+    this.logger.log(`Paystack Webhook Received: ${body.event}`);
     
     const { event, data } = body;
 
@@ -76,21 +79,23 @@ export class PaymentsController {
           const orderId = data.metadata?.orderId;
           if (orderId) {
             this.logger.log(`Charge success for order: ${orderId}`);
-            await this.ordersService.updateStatus(
+            const updatedOrder = await this.ordersService.updateStatus(
               orderId,
               OrderStatus.CONFIRMED,
               'SYSTEM',
-              'Payment confirmed via Korapay webhook',
+              'Payment confirmed via Paystack webhook',
             );
+            // Broadcast to all erranders that a new paid order is available
+            await this.ordersService.broadcastNewOrderToErranders(updatedOrder);
+            this.logger.log(`Broadcasted order ${orderId} to all erranders after payment`);
           }
           break;
         }
 
-        case 'transfer.success':
-        case 'payout.success': {
+        case 'transfer.success': {
           const reference = data.reference;
           if (reference) {
-            this.logger.log(`Payout success: ${reference}`);
+            this.logger.log(`Transfer success: ${reference}`);
             await this.walletsService.updateTransactionStatus(
               reference,
               TransactionStatus.COMPLETED,
@@ -100,17 +105,17 @@ export class PaymentsController {
         }
 
         case 'transfer.failed':
-        case 'payout.failed': {
+        case 'transfer.reversed': {
           const failedRef = data.reference;
           if (failedRef) {
-            this.logger.warn(`Payout failed: ${failedRef} — Reason: ${data.message || 'Unknown'}`);
+            this.logger.warn(`Transfer failed/reversed: ${failedRef} — Reason: ${data.reason || 'Unknown'}`);
             await this.walletsService.handleFailedPayout(failedRef);
           }
           break;
         }
 
         default:
-          this.logger.warn(`Unhandled webhook event: ${event}`);
+          this.logger.warn(`Unhandled Paystack event: ${event}`);
       }
     } catch (error: any) {
       this.logger.error(`Webhook processing error: ${error.message}`, error.stack);

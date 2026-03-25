@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Put, Param, Query, UseGuards, DefaultValuePipe, ParseIntPipe } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard, Roles, RolesGuard } from '../../common/decorators';
@@ -18,9 +18,10 @@ export class AdminController {
     return this.adminService.getDashboardStats();
   }
 
-  @Get('vendors/pending')
-  @ApiOperation({ summary: 'Get pending vendor applications' })
-  getPendingVendors(@Query('page') page?: number, @Query('limit') limit?: number) {
+  getPendingVendors(
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number = 10,
+  ) {
     return this.adminService.getPendingVendors(page, limit);
   }
 
@@ -48,9 +49,9 @@ export class AdminController {
     return this.adminService.activateUser(id);
   }
 
-  @Get('orders/recent')
-  @ApiOperation({ summary: 'Get recent orders' })
-  getRecentOrders(@Query('limit') limit?: number) {
+  getRecentOrders(
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number = 10,
+  ) {
     return this.adminService.getRecentOrders(limit);
   }
 }

@@ -1,6 +1,6 @@
-import {
+  import {
   Controller, Post, UploadedFile, UploadedFiles,
-  UseInterceptors, UseGuards,
+  UseInterceptors, UseGuards, Query,
 } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiConsumes } from '@nestjs/swagger';
@@ -39,5 +39,21 @@ export class UploadController {
   )
   uploadMultiple(@UploadedFiles() files: Express.Multer.File[]) {
     return this.uploadService.uploadMultiple(files);
+  }
+
+  @Post()
+  @ApiOperation({ summary: 'Upload a single file (generic)' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+    }),
+  )
+  uploadFile(
+    @UploadedFile() file: Express.Multer.File,
+    @Query('resourceType') resourceType: 'image' | 'video' | 'raw' | 'auto' = 'auto'
+  ) {
+    return this.uploadService.uploadFile(file, resourceType);
   }
 }

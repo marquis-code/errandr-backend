@@ -30,26 +30,22 @@ export class AuthService {
     const user = await this.userModel.create({
       ...registerDto,
       password: hashedPassword,
+      isVerified: true, // Instant verification
     });
 
     // Initialize Wallet
     await this.walletsService.getOrCreateWallet((user._id as unknown) as string);
 
-    // Generate OTP and send verification email
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    user.otp = otp;
-    user.otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 min
-    await user.save();
-
-    await this.emailService.sendSignupOTP(user.email, user.firstName, otp);
+    // Send Welcome Email instead of OTP
+    await this.emailService.sendWelcomeEmail(user.email, user.firstName);
 
     const token = this.generateToken(user);
 
     return {
       user: this.sanitizeUser(user),
       token,
-      requiresVerification: true,
-      message: 'Almost there! We sent a verification code to your email 📬',
+      requiresVerification: false,
+      message: `Welcome to the family, ${user.firstName}! 🚀 We're so glad you're here. Check your email for a special message from our CEO.`,
     };
   }
 
@@ -208,6 +204,12 @@ export class AuthService {
       success: true,
       message: 'Password securely changed! You can now log in 🎉'
     };
+  }
+
+  async getProfile(userId: string) {
+    const user = await this.userModel.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+    return this.sanitizeUser(user);
   }
 
   private generateToken(user: User): string {

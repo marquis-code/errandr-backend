@@ -3,7 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Wallet, WalletDocument, PayoutPreference } from './schemas/wallet.schema';
 import { Transaction, TransactionDocument, TransactionType, TransactionStatus } from './schemas/transaction.schema';
-import { KorapayService } from '../payments/korapay.service';
+import { PaystackService } from '../payments/paystack.service';
 import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
@@ -11,15 +11,23 @@ export class WalletsService {
   constructor(
     @InjectModel(Wallet.name) private walletModel: Model<WalletDocument>,
     @InjectModel(Transaction.name) private transactionModel: Model<TransactionDocument>,
-    @Inject(forwardRef(() => KorapayService)) private korapayService: KorapayService,
+    @Inject(forwardRef(() => PaystackService)) private paystackService: PaystackService,
   ) {}
 
   async getOrCreateWallet(userId: string): Promise<WalletDocument> {
     let wallet = await this.walletModel.findOne({ owner: userId });
     if (!wallet) {
-      wallet = await this.walletModel.create({ owner: userId });
+      try {
+        wallet = await this.walletModel.create({ owner: userId });
+      } catch (error: any) {
+        if (error.code === 11000) {
+          wallet = await this.walletModel.findOne({ owner: userId });
+        } else {
+          throw error;
+        }
+      }
     }
-    return wallet;
+    return wallet as WalletDocument;
   }
 
   async getWallet(userId: string): Promise<WalletDocument> {
@@ -99,24 +107,50 @@ export class WalletsService {
       throw new Error('Payout preferences not set correctly');
     }
 
-    // Initiate Korapay Disbursement
-    const reference = `WD-${uuidv4().slice(0, 8).toUpperCase()}`;
-    const payout = await this.korapayService.initiatePayout({
-      amount,
-      reference,
-      bank_account: {
-        bank_code: wallet.bankDetails.bankCode,
-        account_number: wallet.bankDetails.accountNumber,
-      },
-      customer: {
-        name: userName,
-        email: userEmail,
-      },
-      narration: `Withdrawal from Errandr Wallet - ${reference}`,
+    // Check if we should use Mock Payout
+    const isTestKey = process.env.PAYSTACK_SECRET_KEY?.startsWith('sk_test');
+    const useMock = Boolean(isTestKey || process.env.USE_MOCK_PAYOUT === 'true');
+
+    if (useMock) {
+      const reference = `MOCK-WD-${uuidv4().slice(0, 8).toUpperCase()}`;
+      wallet.balance -= amount;
+      await wallet.save();
+
+      await this.transactionModel.create({
+        wallet: wallet._id,
+        amount,
+        type: TransactionType.DEBIT,
+        status: TransactionStatus.COMPLETED,
+        description: `Withdrawal (Mock): ${reference}`,
+        reference,
+        metadata: {
+          mock: true,
+          bankCode: wallet.bankDetails.bankCode,
+          accountNumber: wallet.bankDetails.accountNumber
+        }
+      });
+
+      return;
+    }
+
+    // Resolve bank account first to get account name if needed, then create recipient
+    const recipient = await this.paystackService.createTransferRecipient({
+      name: userName,
+      account_number: wallet.bankDetails.accountNumber,
+      bank_code: wallet.bankDetails.bankCode,
     });
 
-    if (payout.status !== 'success') {
-      throw new Error(payout.message || 'Payout initiation failed via Korapay');
+    // Initiate Paystack Transfer
+    const reference = `WD-${uuidv4().slice(0, 8).toUpperCase()}`;
+    const transfer = await this.paystackService.initiateTransfer({
+      amount,
+      reference,
+      recipient: recipient.recipient_code,
+      reason: `Withdrawal from Errandr Wallet - ${reference}`,
+    });
+
+    if ((transfer as any).status !== true && (transfer as any).status !== 'success') {
+      throw new Error((transfer as any).message || 'Transfer initiation failed via Paystack');
     }
 
     // Debit Wallet
@@ -130,7 +164,7 @@ export class WalletsService {
       type: TransactionType.DEBIT,
       status: TransactionStatus.PENDING,
       description: `Withdrawal initiated: ${reference}`,
-      metadata: { korapayReference: reference, payoutId: payout.data?.id },
+      metadata: { paystackReference: reference, transferCode: (transfer as any).data?.transfer_code },
     });
   }
 
@@ -140,7 +174,7 @@ export class WalletsService {
    */
   async updateTransactionStatus(reference: string, status: TransactionStatus): Promise<void> {
     const transaction = await this.transactionModel.findOne({
-      'metadata.korapayReference': reference,
+      'metadata.paystackReference': reference,
     });
     if (transaction) {
       transaction.status = status;
@@ -154,7 +188,7 @@ export class WalletsService {
    */
   async handleFailedPayout(reference: string): Promise<void> {
     const transaction = await this.transactionModel.findOne({
-      'metadata.korapayReference': reference,
+      'metadata.paystackReference': reference,
     });
     if (!transaction) return;
 

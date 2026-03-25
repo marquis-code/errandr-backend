@@ -56,6 +56,24 @@ export class GroupOrdersController {
     return this.groupOrdersService.updateStatus((user._id as unknown) as string, code, status);
   }
 
+  @Patch(':code/toggle-ready')
+  async toggleReady(
+    @CurrentUser() user: User,
+    @Param('code') code: string,
+    @Body('isReady') isReady: boolean,
+  ) {
+    return this.groupOrdersService.toggleReady((user._id as unknown) as string, code, isReady);
+  }
+
+  @Post(':code/checkout')
+  async checkout(
+    @CurrentUser() user: User,
+    @Param('code') code: string,
+    @Body('paymentReference') paymentReference?: string,
+  ) {
+    return this.groupOrdersService.checkout((user._id as unknown) as string, code, paymentReference);
+  }
+
   @Delete(':code')
   async delete(@CurrentUser() user: User, @Param('code') code: string) {
     return this.groupOrdersService.delete((user._id as unknown) as string, code);

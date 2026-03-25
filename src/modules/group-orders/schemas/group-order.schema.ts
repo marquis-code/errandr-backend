@@ -34,6 +34,9 @@ export class GroupOrderParticipant {
 
   @Prop({ default: false })
   isReady: boolean;
+
+  @Prop({ default: 0 })
+  total: number;
 }
 
 export type GroupOrderDocument = GroupOrder & Document;
@@ -64,6 +67,9 @@ export class GroupOrder {
 
   @Prop()
   spendingLimit: number;
+
+  @Prop({ type: [{ type: MongooseSchema.Types.ObjectId, ref: 'Order' }], default: [] })
+  orders: (MongooseSchema.Types.ObjectId | any)[];
 
   @Prop()
   expiresAt: Date;

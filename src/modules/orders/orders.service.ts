@@ -1,10 +1,11 @@
 import {
-  Injectable, NotFoundException, BadRequestException, Inject, forwardRef
+  Injectable, NotFoundException, BadRequestException, Inject, forwardRef, Logger
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
-import { Order, OrderStatus, PaymentStatus } from './schemas/order.schema';
+import { Order, OrderStatus, PaymentStatus, OrderType } from './schemas/order.schema';
+
 import { Vendor, VendorStatus } from '../vendors/schemas/vendor.schema';
 import { Errander, ErranderStatus } from '../errandr/schemas/errander.schema';
 import { RedisService } from '../redis/redis.service';
@@ -12,10 +13,16 @@ import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { WalletsService } from '../wallets/wallets.service';
 import { EmailService } from '../email/email.service';
-import { KorapayService } from '../payments/korapay.service';
+import { PaystackService } from '../payments/paystack.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationsGateway } from '../notifications/notifications.gateway';
+import { ChatService } from '../chat/chat.service';
+import { BatchDeliveryService } from './batch-delivery.service';
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
     @InjectModel(Order.name) private orderModel: Model<Order>,
     @InjectModel(Vendor.name) private vendorModel: Model<Vendor>,
@@ -24,31 +31,154 @@ export class OrdersService {
     @InjectQueue('orders') private orderQueue: Queue,
     @Inject(forwardRef(() => WalletsService)) private walletsService: WalletsService,
     private emailService: EmailService,
-    @Inject(forwardRef(() => KorapayService)) private korapayService: KorapayService,
+    @Inject(forwardRef(() => PaystackService)) private paystackService: PaystackService,
+    private notificationsService: NotificationsService,
+    private notificationsGateway: NotificationsGateway,
+    private chatService: ChatService,
+    private batchDeliveryService: BatchDeliveryService,
   ) {}
+
+  async getBatchStatus() {
+    return this.batchDeliveryService.getBatchStatus();
+  }
+
+  private async notifyOrderStatusUpdate(order: any, status: OrderStatus, note?: string) {
+    const title = 'Order Update';
+    const body = `Your order #${order.orderNumber} is now ${status.replace(/_/g, ' ').toLowerCase()}`;
+    
+    const customerId = order.customer?._id || order.customer;
+    const erranderId = order.errander?._id || order.errander;
+    const vendorOwnerId = order.vendor?.owner?._id || order.vendor?.owner;
+
+    const statusData = { orderId: order._id, status, orderNumber: order.orderNumber };
+
+    // Notify Customer (stored + real-time)
+    if (customerId) {
+      await this.notificationsService.sendNotification(customerId.toString(), {
+        title, body, type: 'ORDER_STATUS_UPDATE', data: statusData,
+      });
+      this.notificationsGateway.sendOrderStatusUpdate(customerId.toString(), {
+        title, body, ...statusData,
+      });
+    }
+
+    // Notify Errander if assigned (stored + real-time)
+    if (erranderId) {
+      const erranderBody = `Order #${order.orderNumber} status changed to ${status.replace(/_/g, ' ').toLowerCase()}`;
+      await this.notificationsService.sendNotification(erranderId.toString(), {
+        title: 'Delivery Update', body: erranderBody, type: 'ORDER_STATUS_UPDATE', data: statusData,
+      });
+      this.notificationsGateway.sendOrderStatusUpdate(erranderId.toString(), {
+        title: 'Delivery Update', body: erranderBody, ...statusData,
+      });
+    }
+
+    // Notify Vendor Owner (stored + real-time)
+    if (vendorOwnerId) {
+      await this.notificationsService.sendOrderStatusToVendor(
+        vendorOwnerId.toString(), order, status,
+      );
+      this.notificationsGateway.sendOrderStatusUpdate(vendorOwnerId.toString(), {
+        title: '📦 Order Update',
+        body: `Order #${order.orderNumber} is now ${status.replace(/_/g, ' ')}`,
+        ...statusData,
+      });
+    }
+  }
+
+  /**
+   * Broadcast a new paid order to ALL connected erranders so they can accept it.
+   */
+  async broadcastNewOrderToErranders(order: any): Promise<void> {
+    const populated = await this.orderModel.findById(order._id)
+      .populate('vendor', 'storeName logo address location')
+      .populate('customer', 'firstName lastName deliveryAddress');
+    
+    if (!populated) return;
+
+    let vendorName = 'Store';
+    let vendorAddress = 'N/A';
+    
+    if (populated.type === OrderType.CUSTOM_ERRAND) {
+      vendorName = 'CUSTOM ERRAND';
+      vendorAddress = populated.customDetails?.pickupLocation || 'Custom Pickup';
+    } else {
+      vendorName = (populated.vendor as any)?.storeName || 'Store';
+      vendorAddress = (populated.vendor as any)?.address || 'N/A';
+    }
+    
+    const orderData = {
+      orderId: populated._id,
+      orderNumber: populated.orderNumber,
+      vendorName,
+      vendorLogo: (populated.vendor as any)?.logo,
+      vendorAddress,
+      customerName: `${(populated.customer as any)?.firstName || ''} ${(populated.customer as any)?.lastName || ''}`.trim(),
+      deliveryAddress: populated.deliveryAddress || (populated.customer as any)?.deliveryAddress || 'N/A',
+      items: populated.items?.map(i => ({ name: i.name, qty: i.quantity, price: i.price })) || [],
+      itemCount: populated.items?.length || 0,
+      subtotal: populated.subtotal,
+      deliveryFee: populated.deliveryFee,
+      total: populated.total,
+      erranderShare: populated.erranderShare || populated.deliveryFee || 0,
+      status: populated.status,
+      type: populated.type,
+      createdAt: (populated as any).createdAt,
+    };
+
+    // Broadcast via gateway to ALL connected clients
+    this.notificationsGateway.broadcastNewOrder(orderData);
+    // Also persist via Redis broadcast channel
+    await this.notificationsService.broadcastNewOrder(orderData);
+    this.logger.log(`Broadcasted order ${populated.orderNumber} to all erranders`);
+  }
+
 
   async create(customerId: string, data: any): Promise<Order> {
     if (data.type === 'custom_errand') {
-      const total = data.total || 450;
+      const baseFee = data.urgency === 'express' ? 850 : 450;
+      const itemCost = Number(data.estimatedItemCost) || 0;
+      const serviceFee = Math.round((baseFee + itemCost) * 0.05); // 5% service fee
+      const total = baseFee + itemCost + serviceFee;
+
+      // PAYSTACK VERIFICATION for Custom Errands
+      if (data.paymentReference) {
+        const verification = await this.paystackService.verifyTransaction(data.paymentReference);
+        if (verification?.status !== 'success') {
+          throw new BadRequestException('Payment verification failed');
+        }
+        if (Math.round(verification.amount) < total) {
+           throw new BadRequestException('Payment amount mismatch');
+        }
+      } else {
+        throw new BadRequestException('Payment reference is required for custom errands');
+      }
+
       const order = await this.orderModel.create({
         orderNumber: `EXT-${uuidv4().slice(0, 8).toUpperCase()}`,
         uniqueCode: Math.floor(100000 + Math.random() * 900000).toString(),
         customer: new Types.ObjectId(customerId),
-        type: 'custom_errand',
+        type: OrderType.CUSTOM_ERRAND,
         customDetails: {
           pickupLocation: data.pickupLocation,
           dropoffLocation: data.dropoffLocation,
           description: data.description,
+          estimatedItemCost: itemCost,
+          urgency: data.urgency || 'standard',
         },
-        subtotal: 0,
-        deliveryFee: total,
-        serviceFee: 0,
+        subtotal: itemCost,
+        deliveryFee: baseFee,
+        serviceFee,
         total,
+        paymentStatus: PaymentStatus.PAID,
+        paymentReference: data.paymentReference,
+        status: OrderStatus.PENDING,
         statusHistory: [
-          { status: OrderStatus.PENDING, timestamp: new Date(), note: 'Custom errand initiated' },
+          { status: OrderStatus.PENDING, timestamp: new Date(), note: 'Custom errand paid and initiated' },
         ],
       });
-      await this.broadcastToErrandr(order);
+      await this.broadcastNewOrderToErranders(order);
+
       return order.populate('customer', 'firstName lastName phone avatar');
     }
 
@@ -94,12 +224,24 @@ export class OrdersService {
     }
 
     const serviceFee = Math.round(subtotal * 0.05); // 5% service fee
-    const packagingFee = vendor.packagingFee ?? 300;
+    
+    // Batch Delivery logic for delivery fee or grouping
+    const isBatchActive = await this.batchDeliveryService.isWindowActive();
+    
+    // New Packaging Packs logic
+    let packagingFee = vendor.packagingFee ?? 300;
+    let selectedPackData = null;
+    
+    if (data.selectedPack && data.selectedPack.name) {
+      packagingFee = data.selectedPack.price ?? vendor.packagingFee ?? 300;
+      selectedPackData = data.selectedPack;
+    }
+
     const total = subtotal + deliveryFee + serviceFee + packagingFee;
 
-    // KORAPAY VERIFICATION
+    // PAYSTACK VERIFICATION
     if (data.paymentReference) {
-      const verification = await this.korapayService.verifyCharge(data.paymentReference);
+      const verification = await this.paystackService.verifyTransaction(data.paymentReference);
       if (verification?.status !== 'success') {
         throw new BadRequestException('Payment verification failed');
       }
@@ -127,6 +269,7 @@ export class OrdersService {
       vendor: new Types.ObjectId(data.vendorId),
       items: flatItems,
       packs: data.packs || [],
+      selectedPack: selectedPackData,
       subtotal,
       deliveryFee,
       serviceFee,
@@ -143,8 +286,15 @@ export class OrdersService {
       deliveryAddress: data.deliveryAddress || data.specificAddress || '',
       deliveryLocation: data.deliveryLocation,
       deliveryNotes: data.deliveryNotes,
+      paymentStatus: data.paymentReference ? PaymentStatus.PAID : PaymentStatus.PENDING,
+      paymentReference: data.paymentReference || null,
+      status: data.paymentReference ? OrderStatus.CONFIRMED : OrderStatus.PENDING,
       statusHistory: [
-        { status: OrderStatus.PENDING, timestamp: new Date(), note: 'Order placed' },
+        { 
+          status: data.paymentReference ? OrderStatus.CONFIRMED : OrderStatus.PENDING, 
+          timestamp: new Date(), 
+          note: data.paymentReference ? 'Order placed and payment confirmed' : 'Order placed' 
+        },
       ],
       isPreOrder: data.isPreOrder || false,
       scheduledTime: data.scheduledTime || null,
@@ -169,7 +319,19 @@ export class OrdersService {
     await this.orderQueue.add('orderTimeout', { orderId: order._id }, { delay: 300000 });
 
     // Broadcast to available errandr
-    await this.broadcastToErrandr(order);
+    await this.broadcastNewOrderToErranders(order);
+
+
+    // Notify Vendor (Real-time alert)
+    const populatedVendor = await this.vendorModel.findById(data.vendorId).select('owner');
+    if (populatedVendor?.owner) {
+      await this.notificationsService.sendNotification(populatedVendor.owner.toString(), {
+        title: 'New Order',
+        body: `You have a new order #${order.orderNumber}`,
+        type: 'NEW_ORDER',
+        data: { orderId: order._id, orderNumber: order.orderNumber }
+      });
+    }
 
     // Notify Student
     if (order.customer && (order.customer as any).email) {
@@ -301,6 +463,9 @@ export class OrdersService {
 
     await order.save();
 
+    // Real-time WebSocket Notification
+    await this.notifyOrderStatusUpdate(populated, status, note);
+
     // Update Redis cache
     await this.redisService.setJSON(
       `order:${orderId}`,
@@ -326,7 +491,7 @@ export class OrdersService {
   async acceptOrder(orderId: string, erranderId: string): Promise<Order> {
     const order = await this.orderModel.findById(orderId);
     if (!order) throw new NotFoundException('Order not found');
-    if (order.errander) throw new BadRequestException('Order already accepted');
+    if (order.errander) throw new BadRequestException('Order already accepted by another rider');
 
     // Find errander profile
     const errander = await this.erranderModel.findOne({
@@ -334,29 +499,82 @@ export class OrdersService {
     });
     if (!errander) throw new NotFoundException('Errander profile not found');
 
+    const isBatchActive = await this.batchDeliveryService.isWindowActive();
+    const maxOrders = isBatchActive ? 5 : 1;
+
+    // Check current load
+    const currentActiveCount = (errander.batchOrders?.length || 0) + (errander.currentOrder ? 1 : 0);
+    if (currentActiveCount >= maxOrders) {
+      throw new BadRequestException(
+        isBatchActive 
+          ? `You have reached the maximum number of concurrent orders (${maxOrders}) for this batch window.`
+          : 'You already have an active order. Complete it before accepting another.'
+      );
+    }
+
+    // Get the errander's user profile for details
+    const erranderUser = await this.orderModel.db
+      .collection('users')
+      .findOne({ _id: new Types.ObjectId(erranderId) });
+
     order.errander = new Types.ObjectId(erranderId);
     order.status = OrderStatus.CONFIRMED;
     order.statusHistory.push({
       status: OrderStatus.CONFIRMED,
       timestamp: new Date(),
-      note: 'Order accepted by errander',
+      note: isBatchActive ? 'Order accepted as part of Batch Delivery' : 'Order accepted by errander',
     });
     await order.save();
 
-    // Update errander status
+    // Update errander status and batch list
     errander.status = ErranderStatus.BUSY;
-    errander.currentOrder = order._id as Types.ObjectId;
+    if (isBatchActive) {
+      if (!errander.batchOrders) errander.batchOrders = [];
+      errander.batchOrders.push(order._id as Types.ObjectId);
+    } else {
+      errander.currentOrder = order._id as Types.ObjectId;
+    }
     await errander.save();
 
-    // Publish acceptance
-    await this.redisService.publish('order:accepted', {
-      orderId,
-      erranderId,
-      timestamp: new Date(),
-    });
+    // Notify all parties via stored notifications + real-time
+    await this.notifyOrderStatusUpdate(order, OrderStatus.CONFIRMED, 'Order accepted by errander');
+
+    // Send specific ORDER_ACCEPTED notification to customer with errander details
+    const customerId = order.customer?._id || order.customer;
+    if (customerId && erranderUser) {
+      await this.notificationsService.sendOrderAccepted(
+        customerId.toString(),
+        order,
+        erranderUser,
+      );
+      this.notificationsGateway.sendOrderAccepted(customerId.toString(), {
+        orderId: order._id,
+        orderNumber: order.orderNumber,
+        errander: {
+          id: erranderUser._id,
+          firstName: erranderUser.firstName,
+          lastName: erranderUser.lastName,
+          phone: erranderUser.phone,
+          avatar: erranderUser.avatar,
+        },
+      });
+    }
+
+    // Auto-create initial chat message for the order
+    try {
+      await this.chatService.createMessage({
+        orderId: order._id.toString(),
+        senderId: erranderId,
+        receiverId: customerId?.toString() || '',
+        message: `Hi! I'm ${erranderUser?.firstName || 'your rider'} and I've accepted your order #${order.orderNumber}. I'll be picking it up shortly! 🚀`,
+        messageType: 'text',
+      });
+      this.logger.log(`Auto-created chat message for order ${order.orderNumber}`);
+    } catch (e) {
+      this.logger.warn(`Failed to auto-create chat for order ${order.orderNumber}: ${e}`);
+    }
 
     // REAL-TIME VENDOR PAYOUT
-    // Vendor gets paid once they accept as per user requirement
     const platformCommissionRate = 0.05;
     const vendorEarnings = Math.round(order.subtotal * (1 - platformCommissionRate));
     
@@ -382,7 +600,11 @@ export class OrdersService {
     if (!order) throw new NotFoundException('Order not found');
     
     // Security check: only assigned errander can complete
-    if (order.errander?.toString() !== erranderId) {
+    const orderErranderId = (order.errander as any)?._id?.toString() || order.errander?.toString();
+    this.logger.log(`completeOrder check: order.errander=${orderErranderId} vs erranderId=${erranderId.toString()}`);
+    
+    if (orderErranderId !== erranderId.toString()) {
+      this.logger.error(`Assignment mismatch: ${orderErranderId} !== ${erranderId.toString()}`);
       throw new BadRequestException('You are not assigned to this order');
     }
 
@@ -408,21 +630,24 @@ export class OrdersService {
       order._id.toString(),
     );
 
-    // Free up errander
-    await this.erranderModel.updateOne(
-      { user: new Types.ObjectId(erranderId) },
-      { status: ErranderStatus.AVAILABLE, $unset: { currentOrder: 1 } },
-    );
+    // Free up errander or update batch
+    const errander = await this.erranderModel.findOne({ user: new Types.ObjectId(erranderId) });
+    if (errander) {
+      if (errander.currentOrder?.toString() === orderId) {
+        (errander as any).currentOrder = null;
+      }
+      errander.batchOrders = errander.batchOrders?.filter(id => id.toString() !== orderId) || [];
+      
+      if (!errander.currentOrder && (!errander.batchOrders || errander.batchOrders.length === 0)) {
+        errander.status = ErranderStatus.AVAILABLE;
+      }
+      await errander.save();
+    }
 
     await order.save();
     
-    // Notifications... (inherited from updateStatus logic)
-    await this.redisService.publish('order:status', {
-      orderId,
-      status: OrderStatus.DELIVERED,
-      updatedBy: erranderId,
-      timestamp: new Date(),
-    });
+    // Notify all
+    await this.notifyOrderStatusUpdate(order, OrderStatus.DELIVERED, 'Order delivered successfully');
 
     return order.populate([
       { path: 'customer', select: 'firstName lastName phone avatar' },
@@ -473,11 +698,51 @@ export class OrdersService {
     return { orders, total };
   }
 
-  async findByVendorOwner(ownerId: string, status?: OrderStatus, page = 1, limit = 10): Promise<{ orders: Order[]; total: number }> {
-    const ownerObjId = typeof ownerId === 'string' ? new Types.ObjectId(ownerId) : ownerId;
-    const vendor = await this.vendorModel.findOne({ owner: ownerObjId });
-    if (!vendor) return { orders: [], total: 0 };
-    return this.getVendorOrders(vendor._id.toString(), status, page, limit);
+  async findByVendorOwner(ownerId: string, status?: OrderStatus, page = 1, limit = 10, vendorId?: string): Promise<{ orders: Order[]; total: number }> {
+    this.logger.log(`findByVendorOwner() ownerId=${ownerId} status=${status} vendorId=${vendorId} page=${page} limit=${limit}`);
+
+    if (vendorId) {
+      this.logger.log(`findByVendorOwner() Direct vendor lookup for vendorId=${vendorId}`);
+      return this.getVendorOrders(vendorId, status, page, limit);
+    }
+
+    try {
+      const ownerObjId = typeof ownerId === 'string' ? new Types.ObjectId(ownerId) : ownerId;
+      const vendors = await this.vendorModel.find({ owner: ownerObjId });
+      this.logger.log(`findByVendorOwner() found ${vendors.length} vendors for ownerId=${ownerId}`);
+      
+      if (!vendors.length) {
+        this.logger.warn(`findByVendorOwner() NO VENDORS FOUND for ownerId=${ownerId}`);
+        return { orders: [], total: 0 };
+      }
+      
+      const vendorIds = vendors.map(v => v._id);
+      this.logger.log(`findByVendorOwner() found vendorIds=[${vendorIds.join(', ')}]`);
+      
+      const filter: any = { vendor: { $in: vendorIds } };
+      if (status) filter.status = status;
+
+      const p = Math.max(1, Number(page) || 1);
+      const l = Math.max(1, Number(limit) || 10);
+      const skip = (p - 1) * l;
+
+      const [orders, total] = await Promise.all([
+        this.orderModel
+          .find(filter)
+          .populate('customer', 'firstName lastName phone avatar')
+          .populate('errander', 'firstName lastName phone avatar')
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(l),
+        this.orderModel.countDocuments(filter),
+      ]);
+
+      this.logger.log(`findByVendorOwner() returning ${orders.length} orders. Total=${total}`);
+      return { orders, total };
+    } catch (error: any) {
+      this.logger.error(`findByVendorOwner() ERROR: ${error.message}`);
+      throw error;
+    }
   }
 
   async getErranderOrders(erranderId: string) {
@@ -633,15 +898,57 @@ export class OrdersService {
     });
 
     if (order.errander) {
-      await this.erranderModel.updateOne(
-        { user: order.errander },
-        { status: ErranderStatus.AVAILABLE, $unset: { currentOrder: 1 } },
-      );
+      const errander = await this.erranderModel.findOne({ user: order.errander });
+      if (errander) {
+        if (errander.currentOrder?.toString() === orderId) {
+          (errander as any).currentOrder = null;
+        }
+        errander.batchOrders = errander.batchOrders?.filter(id => id.toString() !== orderId) || [];
+        
+        if (!errander.currentOrder && (!errander.batchOrders || errander.batchOrders.length === 0)) {
+          errander.status = ErranderStatus.AVAILABLE;
+        }
+        await errander.save();
+      }
     }
 
     await order.save();
-    await this.redisService.publish('order:cancelled', { orderId, userId, reason });
+    
+    // Notify all
+    await this.notifyOrderStatusUpdate(order, OrderStatus.CANCELLED, `Order cancelled: ${reason}`);
 
     return order;
   }
+
+//   async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, limit = 10) {
+//   this.logger.log(`getOrdersForVendorOwner() ownerId=${ownerId}`);
+
+//   const vendor = await this.vendorModel.findOne({ owner: new Types.ObjectId(ownerId) });
+
+//   if (!vendor) {
+//     throw new NotFoundException('No vendor profile found for this account');
+//   }
+
+//   this.logger.log(`getOrdersForVendorOwner() found vendorId=${vendor._id}`);
+
+//   return this.getVendorOrders(vendor._id.toString(), status, page, limit);
+// }
+async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, limit = 10) {
+  this.logger.log(`getOrdersForVendorOwner() ownerId=${ownerId}`);
+
+  const vendor = await this.vendorModel.findOne({ owner: new Types.ObjectId(ownerId) });
+  if (!vendor) throw new NotFoundException('No vendor profile found for this account');
+
+  this.logger.log(`getOrdersForVendorOwner() found vendorId=${vendor._id}`);
+
+  // TEMP: raw count - no filters at all
+  const rawCount = await this.orderModel.countDocuments({ vendor: vendor._id });
+  this.logger.log(`getOrdersForVendorOwner() RAW order count for this vendor = ${rawCount}`);
+
+  // TEMP: check what the most recent orders in DB look like
+  const sampleOrders = await this.orderModel.find().limit(3).select('vendor customer status orderNumber');
+  this.logger.log(`getOrdersForVendorOwner() sample DB orders = ${JSON.stringify(sampleOrders)}`);
+
+  return this.getVendorOrders(vendor._id.toString(), status, page, limit);
+}
 }

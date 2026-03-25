@@ -36,3 +36,11 @@ export class RolesGuard implements CanActivate {
     return requiredRoles.includes(user.role);
   }
 }
+
+// WS JWT Auth Guard
+@Injectable()
+export class WsJwtAuthGuard extends AuthGuard('jwt') {
+  getRequest(context: ExecutionContext) {
+    return context.switchToWs().getClient().handshake;
+  }
+}

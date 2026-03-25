@@ -10,6 +10,14 @@ async function bootstrap() {
   // Global prefix
   app.setGlobalPrefix('api/v1');
 
+  // ACCESS LOGGING
+  app.use((req: any, res: any, next: any) => {
+    const fs = require('fs');
+    const log = `[${new Date().toISOString()}] ${req.method} ${req.url}\n`;
+    fs.appendFileSync('access.log', log);
+    next();
+  });
+
   // CORS
   app.enableCors({
     origin: true,
@@ -42,17 +50,6 @@ async function bootstrap() {
 
   const port = process.env.PORT || 3000;
   
-  // Aggressively clear port if in use (Development only)
-  if (process.env.NODE_ENV !== 'production') {
-    try {
-      const { execSync } = require('child_process');
-      execSync(`lsof -t -i :${port} | xargs kill -9`);
-      console.log(`🛡️ Port ${port} was cleared.`);
-    } catch (e) {
-      // Port not in use, continue
-    }
-  }
-
   await app.listen(port);
   console.log(`🚀 Errandr API running on http://localhost:${port}`);
   console.log(`📚 Swagger docs at http://localhost:${port}/api/docs`);

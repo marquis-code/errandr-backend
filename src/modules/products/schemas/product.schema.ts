@@ -90,6 +90,19 @@ export class Product extends Document {
 
   @Prop({ default: 0 })
   rating: number;
+
+  // ── Pre-Order Support ──
+  @Prop({ default: false })
+  isPreOrder: boolean;
+
+  @Prop()
+  preOrderDeadline: Date;
+
+  @Prop()
+  availableDate: Date;
+
+  @Prop()
+  preOrderNote: string; // e.g. "Order by Friday 5pm for Saturday delivery"
 }
 
 export const ProductSchema = SchemaFactory.createForClass(Product);

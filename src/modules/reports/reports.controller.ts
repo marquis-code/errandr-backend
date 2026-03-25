@@ -1,5 +1,6 @@
 import {
-  Controller, Post, Get, Put, Param, Body, Query, UseGuards,
+  Controller, Get, Post, Put, Body, Param, Query,
+  UseGuards, DefaultValuePipe, ParseIntPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { ReportsService } from './reports.service';
@@ -51,8 +52,12 @@ export class ReportsController {
   @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Get all reports (admin)' })
-  getAllReports(@Query('status') status?: string) {
-    return this.reportsService.getAllReports(status);
+  getAllReports(
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number = 10,
+    @Query('status') status?: string,
+  ) {
+    return this.reportsService.getAllReports(status, page, limit);
   }
 
   @Put(':id/status')

@@ -49,12 +49,16 @@ export class Order extends Document {
       pickupLocation: String,
       dropoffLocation: String,
       description: String,
+      estimatedItemCost: { type: Number, default: 0 },
+      urgency: { type: String, enum: ['standard', 'express'], default: 'standard' },
     },
   })
   customDetails: {
     pickupLocation: string;
     dropoffLocation: string;
     description: string;
+    estimatedItemCost: number;
+    urgency: 'standard' | 'express';
   };
 
   @Prop({ type: Types.ObjectId, ref: 'User' })
@@ -131,6 +135,17 @@ export class Order extends Document {
 
   @Prop({ default: 300 })
   packagingFee: number;
+
+  @Prop({
+    type: {
+      name: String,
+      price: Number,
+    },
+  })
+  selectedPack: {
+    name: string;
+    price: number;
+  };
 
   @Prop({ required: true })
   total: number;

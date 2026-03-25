@@ -35,15 +35,23 @@ export class ReportsService {
       .sort({ createdAt: -1 });
   }
 
-  async getAllReports(status?: string): Promise<Report[]> {
+  async getAllReports(status?: string, page: number = 1, limit: number = 10): Promise<{ reports: Report[]; total: number }> {
     const filter: any = {};
     if (status) filter.status = status;
-    return this.reportModel
-      .find(filter)
-      .populate('reporter', 'firstName lastName email')
-      .populate('vendor', 'storeName logo')
-      .populate('order', 'orderNumber')
-      .sort({ createdAt: -1 });
+    const skip = (page - 1) * limit;
+
+    const [reports, total] = await Promise.all([
+      this.reportModel
+        .find(filter)
+        .populate('reporter', 'firstName lastName email')
+        .populate('vendor', 'storeName logo')
+        .populate('order', 'orderNumber')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      this.reportModel.countDocuments(filter),
+    ]);
+    return { reports, total };
   }
 
   async getReport(reportId: string): Promise<Report> {

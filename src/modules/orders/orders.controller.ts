@@ -1,6 +1,6 @@
 import {
   Controller, Get, Post, Put, Body, Param, Query,
-  UseGuards,
+  UseGuards, Logger, DefaultValuePipe, ParseIntPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { OrdersService } from './orders.service';
@@ -11,6 +11,8 @@ import { OrderStatus } from './schemas/order.schema';
 @ApiTags('Orders')
 @Controller('orders')
 export class OrdersController {
+  private readonly logger = new Logger(OrdersController.name);
+
   constructor(private readonly ordersService: OrdersService) {}
 
   @Post()
@@ -18,7 +20,15 @@ export class OrdersController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Place a new order' })
   create(@CurrentUser() user: User, @Body() body: any) {
+    this.logger.log(`create() called by user=${user._id}`);
     return this.ordersService.create((user._id as unknown) as string, body);
+  }
+
+  @Get('batch/status')
+  @ApiOperation({ summary: 'Get current batch delivery window status' })
+  getBatchStatus() {
+    this.logger.log(`getBatchStatus() called`);
+    return this.ordersService.getBatchStatus();
   }
 
   @Get('mine')
@@ -27,11 +37,45 @@ export class OrdersController {
   @ApiOperation({ summary: 'Get my orders (as customer)' })
   getMyOrders(
     @CurrentUser() user: User,
-    @Query('page') page?: number,
-    @Query('limit') limit?: number,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number = 20,
   ) {
+    this.logger.log(`getMyOrders() called by user=${user._id} page=${page} limit=${limit}`);
     return this.ordersService.getCustomerOrders((user._id as unknown) as string, page, limit);
   }
+
+  // @Get('vendor/mine')
+  // @UseGuards(JwtAuthGuard)
+  // @ApiBearerAuth()
+  // @ApiOperation({ summary: 'Get orders for the logged-in vendor' })
+  // async getMyVendorOrders(
+  //   @CurrentUser() user: any,
+  //   @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
+  //   @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number = 10,
+  //   @Query('status') status?: OrderStatus,
+  //   @Query('vendorId') vendorId?: string,
+  // ) {
+  //   const ownerId = user._id.toString();
+  //   this.logger.log(`getMyVendorOrders() ownerId=${ownerId} status=${status} vendorId=${vendorId} page=${page} limit=${limit}`);
+
+  //   const result = await this.ordersService.findByVendorOwner(ownerId, status, page, limit, vendorId);
+  //   this.logger.log(`getMyVendorOrders() returning ${result.total} orders for ownerId=${ownerId}`);
+  //   return result;
+  // }
+
+  @Get('vendor/mine')
+@UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
+@ApiOperation({ summary: 'Get orders for the logged-in vendor' })
+async getMyVendorOrders(
+  @CurrentUser() user: any,
+  @Query('status') status?: OrderStatus,
+  @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
+  @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number = 10,
+) {
+  this.logger.log(`getMyVendorOrders() user=${user._id}`);
+  return this.ordersService.getOrdersForVendorOwner(user._id.toString(), status, page, limit);
+}
 
   @Get('vendor/:vendorId')
   @UseGuards(JwtAuthGuard)
@@ -39,24 +83,12 @@ export class OrdersController {
   @ApiOperation({ summary: 'Get orders for a vendor' })
   getVendorOrders(
     @Param('vendorId') vendorId: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number = 20,
     @Query('status') status?: OrderStatus,
-    @Query('page') page?: number,
-    @Query('limit') limit?: number,
   ) {
+    this.logger.log(`getVendorOrders() vendorId=${vendorId} status=${status} page=${page} limit=${limit}`);
     return this.ordersService.getVendorOrders(vendorId, status, page, limit);
-  }
-
-  @Get('vendor/mine')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get orders for the logged-in vendor' })
-  getMyVendorOrders(
-    @CurrentUser() user: User,
-    @Query('status') status?: OrderStatus,
-    @Query('page') page?: number,
-    @Query('limit') limit?: number,
-  ) {
-    return this.ordersService.findByVendorOwner((user._id as unknown) as string, status, page, limit);
   }
 
   @Get('available')
@@ -64,6 +96,7 @@ export class OrdersController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get available orders for errandr' })
   getAvailableOrders() {
+    this.logger.log(`getAvailableOrders() called`);
     return this.ordersService.getAvailableOrders();
   }
 
@@ -72,6 +105,7 @@ export class OrdersController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get errander delivery history' })
   getErranderOrders(@CurrentUser() user: User) {
+    this.logger.log(`getErranderOrders() called by user=${user._id}`);
     return this.ordersService.getErranderOrders((user._id as unknown) as string);
   }
 
@@ -81,6 +115,7 @@ export class OrdersController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get order statistics (admin)' })
   getStats() {
+    this.logger.log(`getStats() called`);
     return this.ordersService.getStats();
   }
 
@@ -89,6 +124,7 @@ export class OrdersController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get order details' })
   findById(@Param('id') id: string) {
+    this.logger.log(`findById() id=${id}`);
     return this.ordersService.findById(id);
   }
 
@@ -101,6 +137,7 @@ export class OrdersController {
     @CurrentUser() user: User,
     @Body() body: { status: OrderStatus; note?: string },
   ) {
+    this.logger.log(`updateStatus() id=${id} user=${user._id} status=${body.status}`);
     return this.ordersService.updateStatus(id, body.status, (user._id as unknown) as string, body.note);
   }
 
@@ -109,6 +146,7 @@ export class OrdersController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Accept order as errander' })
   acceptOrder(@Param('id') id: string, @CurrentUser() user: User) {
+    this.logger.log(`acceptOrder() id=${id} user=${user._id}`);
     return this.ordersService.acceptOrder(id, (user._id as unknown) as string);
   }
 
@@ -120,13 +158,16 @@ export class OrdersController {
     @Param('id') id: string,
     @Body() body: { rating: number; review: string },
   ) {
+    this.logger.log(`rateOrder() id=${id} rating=${body.rating}`);
     return this.ordersService.rateOrder(id, body.rating, body.review);
   }
+
   @Post(':id/reorder')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Reorder a previous order' })
   reorder(@CurrentUser() user: User, @Param('id') id: string) {
+    this.logger.log(`reorder() id=${id} user=${user._id}`);
     return this.ordersService.reorder(id, (user._id as unknown) as string);
   }
 
@@ -139,6 +180,7 @@ export class OrdersController {
     @Param('id') id: string,
     @Body() body: { reason: string },
   ) {
+    this.logger.log(`cancel() id=${id} user=${user._id} reason=${body.reason}`);
     return this.ordersService.cancelOrder(id, (user._id as unknown) as string, body.reason);
   }
 
@@ -151,6 +193,7 @@ export class OrdersController {
     @CurrentUser() user: User,
     @Body() body: { verificationCode: string },
   ) {
+    this.logger.log(`completeOrder() id=${id} user=${user._id}`);
     return this.ordersService.completeOrder(id, (user._id as unknown) as string, body.verificationCode);
   }
 }

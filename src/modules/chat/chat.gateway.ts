@@ -81,7 +81,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const savedMessage = await this.chatService.createMessage(data);
     const populated = await savedMessage.populate([
       { path: 'sender', select: 'firstName lastName avatar' },
-      { path: 'receiver', select: 'firstName lastName avatar' },
     ]);
 
     // Emit to order room

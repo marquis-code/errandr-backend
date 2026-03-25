@@ -30,7 +30,11 @@ export class ErrandrService {
     const errander = await this.erranderModel
       .findOne({ user: new Types.ObjectId(userId) })
       .populate('user', 'firstName lastName email phone avatar');
-    if (!errander) throw new NotFoundException('Errander profile not found');
+    
+    if (!errander) {
+      await this.getOrCreateErrander(userId);
+      return this.getProfile(userId);
+    }
     return errander;
   }
 
@@ -53,11 +57,8 @@ export class ErrandrService {
   }
 
   async toggleStatus(userId: string): Promise<Errander> {
-    const errander = await this.erranderModel.findOne({
-      user: new Types.ObjectId(userId),
-    });
-    if (!errander) throw new NotFoundException('Errander profile not found');
-
+    const errander = await this.getOrCreateErrander(userId);
+    
     if (errander.status === ErranderStatus.AVAILABLE) {
       errander.status = ErranderStatus.OFFLINE;
     } else if (errander.status === ErranderStatus.OFFLINE) {
@@ -70,10 +71,7 @@ export class ErrandrService {
   }
 
   async getEarnings(userId: string) {
-    const errander = await this.erranderModel.findOne({
-      user: new Types.ObjectId(userId),
-    });
-    if (!errander) throw new NotFoundException('Errander not found');
+    const errander = await this.getOrCreateErrander(userId);
     return {
       totalDeliveries: errander.totalDeliveries,
       totalEarnings: errander.totalEarnings,
@@ -99,5 +97,24 @@ export class ErrandrService {
     return this.erranderModel
       .find({ status: ErranderStatus.AVAILABLE })
       .populate('user', 'firstName lastName avatar phone');
+  }
+
+  private async getOrCreateErrander(userId: string): Promise<Errander> {
+    const errander = await this.erranderModel.findOne({ user: new Types.ObjectId(userId) });
+    if (errander) return errander;
+
+    try {
+      await this.userModel.findByIdAndUpdate(userId, { role: UserRole.ERRANDER });
+      return await this.erranderModel.create({
+        user: new Types.ObjectId(userId),
+        status: ErranderStatus.OFFLINE,
+      });
+    } catch (e: any) {
+      if (e.code === 11000) {
+        const existing = await this.erranderModel.findOne({ user: new Types.ObjectId(userId) });
+        return existing as Errander;
+      }
+      throw e;
+    }
   }
 }

@@ -34,7 +34,7 @@ export class WalletsController {
   }
 
   @Post('withdraw')
-  @ApiOperation({ summary: 'Request a withdrawal via Korapay' })
+  @ApiOperation({ summary: 'Request a withdrawal via Paystack' })
   async requestWithdrawal(
     @CurrentUser() user: User,
     @Body() body: { amount: number },
@@ -45,7 +45,7 @@ export class WalletsController {
       user.email,
       `${user.firstName} ${user.lastName}`,
     );
-    return { success: true, message: 'Withdrawal initiated via Korapay' };
+    return { success: true, message: 'Withdrawal initiated via Paystack' };
   }
 
   @Get('all')

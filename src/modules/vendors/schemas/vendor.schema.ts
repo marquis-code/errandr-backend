@@ -128,6 +128,25 @@ export class Vendor extends Document {
   @Prop({ default: 0 })
   deliveryFee: number;
 
+  @Prop({ default: 600 })
+  baseDeliveryFee: number;
+
+  @Prop({
+    type: [
+      {
+        name: { type: String, required: true },
+        price: { type: Number, required: true, default: 0 },
+        isActive: { type: Boolean, default: true },
+      },
+    ],
+    default: [{ name: 'Standard Pack', price: 300, isActive: true }],
+  })
+  packs: {
+    name: string;
+    price: number;
+    isActive: boolean;
+  }[];
+
   @Prop({ default: 300 })
   packagingFee: number;
 
@@ -196,6 +215,8 @@ export class Vendor extends Document {
         description: { type: String },
         link: { type: String },
         isActive: { type: Boolean, default: true },
+        startAt: { type: Date },
+        endAt: { type: Date },
       },
     ],
     default: [],
@@ -205,6 +226,27 @@ export class Vendor extends Document {
     title: string;
     description: string;
     link: string;
+    isActive: boolean;
+    startAt?: Date;
+    endAt?: Date;
+  }[];
+
+  // ── Pre-Order Batch Schedule ──
+  @Prop({
+    type: [
+      {
+        windowName: String,
+        deadline: Date,
+        deliveryDate: Date,
+        isActive: { type: Boolean, default: true },
+      },
+    ],
+    default: [],
+  })
+  batchSchedule: {
+    windowName: string;
+    deadline: Date;
+    deliveryDate: Date;
     isActive: boolean;
   }[];
 }

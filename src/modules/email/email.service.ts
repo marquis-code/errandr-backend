@@ -268,4 +268,53 @@ export class EmailService {
 
     return this.sendEmail(to, `Order Update: ${status} - #${orderNumber}`, html);
   }
+
+  async sendWelcomeEmail(to: string, firstName: string) {
+    const html = this.wrapHtml(`
+      <div class="badge badge-blue">Welcome to the Family! 🚀</div>
+      <h1 style="font-size: 28px; line-height: 1.2;">Hehey ${firstName}, let's build the future of campus life together! 🎉</h1>
+      
+      <div style="background: linear-gradient(135deg, #065fdb, #0284c7); padding: 32px; border-radius: 24px; margin: 32px 0; color: #ffffff; box-shadow: 0 20px 40px rgba(6, 95, 219, 0.15);">
+        <p style="font-style: italic; font-size: 17px; margin: 0 0 20px 0; line-height: 1.8; opacity: 0.95;">
+          "At Errandr, we believe that hunger should never be a distraction for a student. My mission is simple: to make every meal, document, and essential accessible within minutes, whether you're in the lecture hall or the hostel. We're starting this revolution right here at <strong>CMUL (College of Medicine, UNILAG)</strong>, and I'm honored to have you as a pioneer."
+        </p>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="width: 40px; height: 40px; background: rgba(255,255,255,0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 14px; border: 1px solid rgba(255,255,255,0.3);">MA</div>
+          <div>
+            <p style="margin: 0; font-weight: 800; font-size: 15px;">Marquis Abah</p>
+            <p style="margin: 0; font-size: 12px; opacity: 0.8; text-transform: uppercase; letter-spacing: 1px;">Founder & CEO, Errandr</p>
+          </div>
+        </div>
+      </div>
+
+      <h2 style="font-size: 20px; color: #111827; margin-top: 40px; letter-spacing: -0.5px;">Your Errandr Superpowers ⚡️</h2>
+      
+      <div style="margin: 24px 0; display: grid; gap: 16px;">
+        <div style="background: #f8fafc; padding: 20px; border-radius: 16px; border: 1px solid #e2e8f0;">
+          <p style="margin: 0; font-weight: 800; color: #065fdb; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;">For Students 🎓</p>
+          <p style="margin: 0; color: #475569; font-size: 14px; line-height: 1.5;">Experience <strong>Batch Deliveries</strong> to save on fees, or try <strong>Group Orders</strong> to feast with friends in real-time. Everything is tracked with laser precision.</p>
+        </div>
+        
+        <div style="background: #f8fafc; padding: 20px; border-radius: 16px; border: 1px solid #e2e8f0;">
+          <p style="margin: 0; font-weight: 800; color: #7c3aed; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;">For Vendors 🏠</p>
+          <p style="margin: 0; color: #475569; font-size: 14px; line-height: 1.5;">Manage your entire kitchen with our <strong>Pro Dashboard</strong>. Automate inventory, track sales, and get payouts directly to your bank account.</p>
+        </div>
+
+        <div style="background: #f8fafc; padding: 20px; border-radius: 16px; border: 1px solid #e2e8f0;">
+          <p style="margin: 0; font-weight: 800; color: #059669; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;">For Errandrs 🚲</p>
+          <p style="margin: 0; color: #475569; font-size: 14px; line-height: 1.5;">The ultimate side-hustle. <strong>Walk-to-Earn</strong> while moving between classes, accept multiple orders, and withdraw your cash instantly.</p>
+        </div>
+      </div>
+
+      <p style="margin: 32px 0; font-size: 15px; color: #64748b; text-align: center;">We're making life on campus seamless, one delivery at a time.</p>
+      
+      <div style="text-align: center;">
+        <a href="https://errandr.shop/dashboard" class="button" style="background: #065fdb; padding: 18px 40px; font-weight: 800; font-size: 16px;">Explore My Dashboard →</a>
+      </div>
+
+      <p style="color: #94a3b8; font-size: 13px; margin-top: 40px; border-top: 1px solid #f1f5f9; pt: 24px;">Welcome to the CMUL kickoff! Let's make history together. If you need anything at all, just reply to this email.</p>
+    `, `Welcome to Errandr, ${firstName}! A personal message from our CEO inside.`);
+    
+    return this.sendEmail(to, `Welcome to the Errandr Family, ${firstName}! 💙`, html);
+  }
 }

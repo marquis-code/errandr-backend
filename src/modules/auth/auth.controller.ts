@@ -1,9 +1,10 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, BadRequestException } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Controller, Post, Body, HttpCode, HttpStatus, BadRequestException, Get, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { FirebaseLoginDto } from './dto/firebase-login.dto';
+import { JwtAuthGuard, CurrentUser } from '../../common/decorators';
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -66,5 +67,13 @@ export class AuthController {
   async resetPassword(@Body() body: any) {
     if (!body.email || !body.otp || !body.newPassword) throw new BadRequestException('Missing required fields');
     return this.authService.resetPassword(body);
+  }
+
+  @Get('profile')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get current user profile' })
+  async getProfile(@CurrentUser() user: any) {
+    return this.authService.getProfile(user._id);
   }
 }

@@ -1,6 +1,6 @@
 import {
   Controller, Get, Post, Put, Delete, Body, Param, Query,
-  UseGuards,
+  UseGuards, DefaultValuePipe, ParseIntPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { ProductsService } from './products.service';
@@ -21,13 +21,33 @@ export class ProductsController {
     return this.productsService.createForOwner((user._id as unknown) as string, body);
   }
 
+  // ── Public Index (Handles /products?q=... or /products) ──
+  @Get()
+  @ApiOperation({ summary: 'Get products (index / search)' })
+  index(
+    @Query('q') query?: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number = 10,
+  ) {
+    if (query) {
+      return this.productsService.search(query, page, limit);
+    }
+    return this.productsService.getPopular(limit);
+  }
+
+
   // ── Auth-based: get my products ──
   @Get('vendor/mine')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get products for the logged-in vendor' })
-  getMyProducts(@CurrentUser() user: User) {
-    return this.productsService.findByOwner((user._id as unknown) as string);
+  async getMyProducts(@CurrentUser() user: User) {
+    try {
+      return await this.productsService.findByOwner((user._id as unknown) as string);
+    } catch (e: any) {
+      if (e.status === 404 || e.response?.statusCode === 404) return [];
+      throw e;
+    }
   }
 
   // ── Category routes (must be before :id param routes) ──
@@ -43,8 +63,13 @@ export class ProductsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get my product categories' })
-  getMyCategories(@CurrentUser() user: User) {
-    return this.productsService.getCategoriesByOwner((user._id as unknown) as string);
+  async getMyCategories(@CurrentUser() user: User) {
+    try {
+      return await this.productsService.getCategoriesByOwner((user._id as unknown) as string);
+    } catch (e: any) {
+      if (e.status === 404 || e.response?.statusCode === 404) return [];
+      throw e;
+    }
   }
 
   @Get('categories/vendor/:vendorId')
@@ -72,13 +97,19 @@ export class ProductsController {
   // ── Public routes ──
   @Get('search')
   @ApiOperation({ summary: 'Search products' })
-  search(@Query('q') query: string, @Query('page') page?: number, @Query('limit') limit?: number) {
+  search(
+    @Query('q') query: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number = 10,
+  ) {
     return this.productsService.search(query, page, limit);
   }
 
   @Get('popular')
   @ApiOperation({ summary: 'Get popular products' })
-  getPopular(@Query('limit') limit?: number) {
+  async getPopular(
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number = 10,
+  ) {
     return this.productsService.getPopular(limit);
   }
 

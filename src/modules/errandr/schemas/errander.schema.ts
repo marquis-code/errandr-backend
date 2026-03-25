@@ -61,6 +61,9 @@ export class Errander extends Document {
   @Prop({ type: Types.ObjectId, ref: 'Order' })
   currentOrder: Types.ObjectId;
 
+  @Prop({ type: [{ type: Types.ObjectId, ref: 'Order' }], default: [] })
+  batchOrders: Types.ObjectId[];
+
   @Prop({ type: [Types.ObjectId], ref: 'Order', default: [] })
   orderHistory: Types.ObjectId[];
 }

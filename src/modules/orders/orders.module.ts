@@ -12,6 +12,10 @@ import { Product, ProductSchema } from '../products/schemas/product.schema';
 import { Errander, ErranderSchema } from '../errandr/schemas/errander.schema';
 
 import { PaymentsModule } from '../payments/payments.module';
+import { ChatModule } from '../chat/chat.module';
+import { ScheduleModule } from '@nestjs/schedule';
+import { UsersModule } from '../users/users.module';
+import { BatchDeliveryService } from './batch-delivery.service';
 
 @Module({
   imports: [
@@ -22,12 +26,15 @@ import { PaymentsModule } from '../payments/payments.module';
       { name: Errander.name, schema: ErranderSchema },
     ]),
     NotificationsModule,
+    ChatModule,
+    ScheduleModule.forRoot(),
+    UsersModule,
     forwardRef(() => QueuesModule),
     forwardRef(() => WalletsModule),
     forwardRef(() => PaymentsModule),
   ],
   controllers: [OrdersController],
-  providers: [OrdersService],
-  exports: [OrdersService, MongooseModule],
+  providers: [OrdersService, BatchDeliveryService],
+  exports: [OrdersService, BatchDeliveryService, MongooseModule],
 })
 export class OrdersModule {}

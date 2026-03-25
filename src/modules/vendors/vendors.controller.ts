@@ -1,6 +1,6 @@
 import {
   Controller, Get, Post, Put, Body, Param, Query,
-  UseGuards,
+  UseGuards, Logger, DefaultValuePipe, ParseIntPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { VendorsService } from './vendors.service';
@@ -24,13 +24,13 @@ export class VendorsController {
   @Get()
   @ApiOperation({ summary: 'List all approved vendors' })
   findAll(
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number = 20,
     @Query('category') category?: VendorCategory,
     @Query('isInsideCampus') isInsideCampus?: boolean,
     @Query('isStudentBusiness') isStudentBusiness?: boolean,
     @Query('preOrderOnly') preOrderOnly?: boolean,
     @Query('search') search?: string,
-    @Query('page') page?: number,
-    @Query('limit') limit?: number,
   ) {
     return this.vendorsService.findAll({
       category,
@@ -83,16 +83,28 @@ export class VendorsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get current user vendor profile' })
-  getMyVendor(@CurrentUser() user: User) {
-    return this.vendorsService.findByOwner((user._id as unknown) as string);
+  async getMyVendor(@CurrentUser() user: User) {
+    try {
+      return await this.vendorsService.findByOwner((user._id as unknown) as string);
+    } catch (e: any) {
+      if (e.status === 404 || e.response?.statusCode === 404) return null;
+      throw e;
+    }
   }
 
   @Get('mine/stats')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get current user vendor statistics' })
-  getMyVendorStats(@CurrentUser() user: User) {
-    return this.vendorsService.getVendorStats((user._id as unknown) as string);
+  async getMyVendorStats(@CurrentUser() user: User) {
+    try {
+      return await this.vendorsService.getVendorStats((user._id as unknown) as string);
+    } catch (e: any) {
+      if (e.status === 404 || e.response?.statusCode === 404) {
+        return { totalSales: 0, todaySales: 0, totalOrders: 0, todayOrders: 0, activeOrders: 0, rating: 5.0, reviewsCount: 0 };
+      }
+      throw e;
+    }
   }
 
   @Get(':id')
