@@ -16,6 +16,7 @@ import { ChatModule } from '../chat/chat.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { UsersModule } from '../users/users.module';
 import { BatchDeliveryService } from './batch-delivery.service';
+import { RewardsModule } from '../rewards/rewards.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { BatchDeliveryService } from './batch-delivery.service';
     forwardRef(() => QueuesModule),
     forwardRef(() => WalletsModule),
     forwardRef(() => PaymentsModule),
+    RewardsModule,
   ],
   controllers: [OrdersController],
   providers: [OrdersService, BatchDeliveryService],

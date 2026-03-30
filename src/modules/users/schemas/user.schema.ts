@@ -85,6 +85,30 @@ export class User extends Document {
 
   @Prop()
   resetPasswordOtpExpiry: Date;
+
+  @Prop({ default: 0 })
+  points: number;
+
+  @Prop({ unique: true, sparse: true })
+  referralCode: string;
+
+  @Prop()
+  referredBy: string;
+
+  @Prop({ default: 0 })
+  referralCount: number;
+
+  @Prop({ default: 0 })
+  streakCount: number;
+
+  @Prop({ default: 0 })
+  totalOrders: number;
+
+  @Prop({ default: 0 })
+  totalDeliveries: number;
+
+  @Prop({ default: false })
+  isPro: boolean;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

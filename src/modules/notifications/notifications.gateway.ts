@@ -13,7 +13,11 @@ import { NotificationsService } from './notifications.service';
 import { RedisService } from '../redis/redis.service';
 
 @WebSocketGateway({
-  cors: { origin: '*' },
+  cors: {
+    origin: true,
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    credentials: true,
+  },
   namespace: '/realtime',
 })
 export class NotificationsGateway
@@ -31,34 +35,43 @@ export class NotificationsGateway
   ) {}
 
   async onModuleInit() {
-    const subClient = this.redisService.getNewClient();
+    try {
+      const subClient = this.redisService.getNewClient();
+      
+      subClient.on('connect', () => this.logger.log('Redis Subscriber: Connected'));
+      subClient.on('ready', () => this.logger.log('Redis Subscriber: Ready to receive messages'));
+      subClient.on('error', (err) => this.logger.error('Redis Subscriber: Error', err));
+      subClient.on('reconnecting', () => this.logger.warn('Redis Subscriber: Reconnecting...'));
 
-    // Subscribe to all notification channels
-    await subClient.psubscribe('notification:*');
+      // Subscribe to all notification channels
+      await subClient.psubscribe('notification:*');
 
-    subClient.on('pmessage', (pattern, channel, message) => {
-      // Channel format: notification:<userId> or notification:broadcast
-      const target = channel.split(':').slice(1).join(':');
-      if (!target) return;
+      subClient.on('pmessage', (pattern, channel, message) => {
+        // Channel format: notification:<userId> or notification:broadcast
+        const target = channel.split(':').slice(1).join(':');
+        if (!target) return;
 
-      try {
-        const notification = JSON.parse(message);
+        try {
+          const notification = JSON.parse(message);
 
-        if (target === 'broadcast:erranders') {
-          // Broadcast to all connected users (erranders)
-          this.server.emit('notification:new-order', notification);
-          this.logger.log(`Broadcasted new order to all erranders`);
-        } else {
-          // Send to specific user
-          this.server.to(`user:${target}`).emit('notification:new', notification);
-          this.logger.log(`Sent notification to user:${target}`);
+          if (target === 'broadcast:erranders') {
+            // Broadcast to all connected users (erranders)
+            this.server.emit('notification:new-order', notification);
+            this.logger.log(`[Redis Broadcast] notification:new-order sent to all clients`);
+          } else {
+            // Send to specific user
+            this.server.to(`user:${target}`).emit('notification:new', notification);
+            this.logger.log(`[Redis Directed] Sent notification to user:${target}`);
+          }
+        } catch (e) {
+          this.logger.error('Failed to parse redis notification payload', e);
         }
-      } catch (e) {
-        this.logger.error('Failed to parse redis notification:', e);
-      }
-    });
+      });
 
-    this.logger.log('NotificationsGateway initialized — listening on /realtime');
+      this.logger.log('NotificationsGateway: Initialized on /realtime');
+    } catch (error) {
+      this.logger.error('CRITICAL: NotificationsGateway failed to initialize Redis subscription', error);
+    }
   }
 
   handleConnection(client: Socket) {

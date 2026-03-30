@@ -24,6 +24,7 @@ import { WalletsModule } from './modules/wallets/wallets.module';
 import { EmailModule } from './modules/email/email.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { GroupOrdersModule } from './modules/group-orders/group-orders.module';
+import { RewardsModule } from './modules/rewards/rewards.module';
 
 @Module({
   imports: [
@@ -79,6 +80,7 @@ import { GroupOrdersModule } from './modules/group-orders/group-orders.module';
     EmailModule,
     PaymentsModule,
     GroupOrdersModule,
+    RewardsModule,
   ],
 })
 export class AppModule {}

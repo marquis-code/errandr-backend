@@ -8,6 +8,7 @@ import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { WalletsModule } from '../wallets/wallets.module';
+import { RewardsModule } from '../rewards/rewards.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { WalletsModule } from '../wallets/wallets.module';
     }),
     MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
     WalletsModule,
+    RewardsModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],

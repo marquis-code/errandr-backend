@@ -156,10 +156,15 @@ async getMyVendorOrders(
   @ApiOperation({ summary: 'Rate an order' })
   rateOrder(
     @Param('id') id: string,
-    @Body() body: { rating: number; review: string },
+    @Body() body: { 
+      vendorRating?: number; 
+      vendorReview?: string; 
+      erranderRating?: number; 
+      erranderReview?: string; 
+    },
   ) {
-    this.logger.log(`rateOrder() id=${id} rating=${body.rating}`);
-    return this.ordersService.rateOrder(id, body.rating, body.review);
+    this.logger.log(`rateOrder() id=${id}`);
+    return this.ordersService.rateOrder(id, body);
   }
 
   @Post(':id/reorder')

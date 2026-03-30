@@ -41,4 +41,9 @@ export class RegisterDto {
   @IsOptional()
   @IsString()
   department?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  referredBy?: string;
 }

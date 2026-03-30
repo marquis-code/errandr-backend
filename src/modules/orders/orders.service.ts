@@ -8,6 +8,7 @@ import { Order, OrderStatus, PaymentStatus, OrderType } from './schemas/order.sc
 
 import { Vendor, VendorStatus } from '../vendors/schemas/vendor.schema';
 import { Errander, ErranderStatus } from '../errandr/schemas/errander.schema';
+import { Product } from '../products/schemas/product.schema';
 import { RedisService } from '../redis/redis.service';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
@@ -18,6 +19,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { ChatService } from '../chat/chat.service';
 import { BatchDeliveryService } from './batch-delivery.service';
+import { RewardsService } from '../rewards/rewards.service';
 
 @Injectable()
 export class OrdersService {
@@ -27,6 +29,7 @@ export class OrdersService {
     @InjectModel(Order.name) private orderModel: Model<Order>,
     @InjectModel(Vendor.name) private vendorModel: Model<Vendor>,
     @InjectModel(Errander.name) private erranderModel: Model<Errander>,
+    @InjectModel(Product.name) private productModel: Model<Product>,
     private redisService: RedisService,
     @InjectQueue('orders') private orderQueue: Queue,
     @Inject(forwardRef(() => WalletsService)) private walletsService: WalletsService,
@@ -36,6 +39,7 @@ export class OrdersService {
     private notificationsGateway: NotificationsGateway,
     private chatService: ChatService,
     private batchDeliveryService: BatchDeliveryService,
+    private rewardsService: RewardsService,
   ) {}
 
   async getBatchStatus() {
@@ -126,11 +130,9 @@ export class OrdersService {
       createdAt: (populated as any).createdAt,
     };
 
-    // Broadcast via gateway to ALL connected clients
-    this.notificationsGateway.broadcastNewOrder(orderData);
-    // Also persist via Redis broadcast channel
+    // Broadcast via Redis to all backend instances (Render compatibility)
     await this.notificationsService.broadcastNewOrder(orderData);
-    this.logger.log(`Broadcasted order ${populated.orderNumber} to all erranders`);
+    this.logger.log(`Broadcasted order ${populated.orderNumber} to all erranders via Redis`);
   }
 
 
@@ -223,6 +225,39 @@ export class OrdersService {
       }
     }
 
+    // Dorm Delivery (Social Savings) logic
+    if (data.isDormDelivery) {
+      const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
+      const hostOrder = await this.orderModel.findOne({
+        deliveryAddress: data.deliveryAddress || data.specificAddress,
+        createdAt: { $gte: fifteenMinsAgo },
+        status: { $in: [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PREPARING] }
+      });
+      if (hostOrder) {
+        // Shared delivery: 50% discount
+        groupDiscount += Math.round(deliveryFee * 0.5);
+        deliveryFee = Math.max(0, deliveryFee - Math.round(deliveryFee * 0.5));
+      }
+    }
+
+    // Mystery Box logic
+    let mysteryProduct: any = null;
+    if (data.isMysteryBox) {
+      const highValueProducts = await this.productModel.find({ 
+        vendor: new Types.ObjectId(data.vendorId),
+        price: { $gt: 1200 },
+        isAvailable: true 
+      });
+      
+      if (highValueProducts.length > 0) {
+        mysteryProduct = highValueProducts[Math.floor(Math.random() * highValueProducts.length)];
+        subtotal = 800; // Fixed price for Mystery Box
+      } else {
+        // Fallback to normal if no high value products found
+        data.isMysteryBox = false;
+      }
+    }
+
     const serviceFee = Math.round(subtotal * 0.05); // 5% service fee
     
     // Batch Delivery logic for delivery fee or grouping
@@ -251,7 +286,7 @@ export class OrdersService {
     }
 
     // Build items from packs for backward compatibility
-    const flatItems = data.packs
+    let flatItems = data.packs
       ? data.packs.flatMap((pack: any) => pack.items.map((item: any) => ({
           product: item.productId || item.product,
           name: item.name,
@@ -261,6 +296,18 @@ export class OrdersService {
           subtotal: item.subtotal || item.price * item.quantity,
         })))
       : data.items || [];
+
+    // Overwrite items if Mystery Box
+    if (data.isMysteryBox && mysteryProduct) {
+      flatItems = [{
+        product: mysteryProduct._id,
+        name: `Mystery Box: ${mysteryProduct.name}`,
+        price: mysteryProduct.price,
+        quantity: 1,
+        customizations: [],
+        subtotal: 800,
+      }];
+    }
 
     const order = await this.orderModel.create({
       orderNumber: `ERR-${uuidv4().slice(0, 8).toUpperCase()}`,
@@ -282,6 +329,8 @@ export class OrdersService {
       specificAddress: data.specificAddress || '',
       groupId: data.groupId,
       isGroupOrder: !!data.groupId,
+      isMysteryBox: !!data.isMysteryBox,
+      isDormDelivery: !!data.isDormDelivery,
       groupDiscount,
       deliveryAddress: data.deliveryAddress || data.specificAddress || '',
       deliveryLocation: data.deliveryLocation,
@@ -433,6 +482,18 @@ export class OrdersService {
     if (status === OrderStatus.DELIVERED) {
       order.actualDeliveryTime = new Date();
       await this.processPayout(order);
+
+      // Trigger engagement updates
+      if (order.customer) {
+        await this.rewardsService.updateUserStats(order.customer.toString(), { orders: 1, streak: true });
+      }
+      if (order.errander) {
+        // Find owner user ID from errander profile
+        const errander = await this.erranderModel.findById(order.errander);
+        if (errander) {
+          await this.rewardsService.updateUserStats(errander.user.toString(), { deliveries: 1 });
+        }
+      }
     }
 
     // Aggressive Notifications
@@ -489,18 +550,14 @@ export class OrdersService {
   }
 
   async acceptOrder(orderId: string, erranderId: string): Promise<Order> {
-    const order = await this.orderModel.findById(orderId);
-    if (!order) throw new NotFoundException('Order not found');
-    if (order.errander) throw new BadRequestException('Order already accepted by another rider');
+    const isBatchActive = await this.batchDeliveryService.isWindowActive();
+    const maxOrders = isBatchActive ? 5 : 1;
 
     // Find errander profile
     const errander = await this.erranderModel.findOne({
       user: new Types.ObjectId(erranderId),
     });
     if (!errander) throw new NotFoundException('Errander profile not found');
-
-    const isBatchActive = await this.batchDeliveryService.isWindowActive();
-    const maxOrders = isBatchActive ? 5 : 1;
 
     // Check current load
     const currentActiveCount = (errander.batchOrders?.length || 0) + (errander.currentOrder ? 1 : 0);
@@ -512,19 +569,37 @@ export class OrdersService {
       );
     }
 
+    // ATOMIC UPDATE: Only update if no errander is assigned yet and status is PENDING
+    const order = await this.orderModel.findOneAndUpdate(
+      { 
+        _id: new Types.ObjectId(orderId), 
+        errander: { $exists: false },
+        status: OrderStatus.PENDING 
+      },
+      {
+        $set: {
+          errander: new Types.ObjectId(erranderId),
+          status: OrderStatus.CONFIRMED,
+        },
+        $push: {
+          statusHistory: {
+            status: OrderStatus.CONFIRMED,
+            timestamp: new Date(),
+            note: isBatchActive ? 'Order accepted as part of Batch Delivery' : 'Order accepted by errander',
+          } as any
+        }
+      },
+      { new: true }
+    );
+
+    if (!order) {
+      throw new BadRequestException('Order already accepted by another rider or is no longer available');
+    }
+
     // Get the errander's user profile for details
     const erranderUser = await this.orderModel.db
       .collection('users')
       .findOne({ _id: new Types.ObjectId(erranderId) });
-
-    order.errander = new Types.ObjectId(erranderId);
-    order.status = OrderStatus.CONFIRMED;
-    order.statusHistory.push({
-      status: OrderStatus.CONFIRMED,
-      timestamp: new Date(),
-      note: isBatchActive ? 'Order accepted as part of Batch Delivery' : 'Order accepted by errander',
-    });
-    await order.save();
 
     // Update errander status and batch list
     errander.status = ErranderStatus.BUSY;
@@ -643,6 +718,9 @@ export class OrdersService {
       }
       await errander.save();
     }
+
+    // Award Points for Order Completion
+    await this.rewardsService.addPoints(order.customer.toString(), 50, `Completed order #${order.orderNumber}`);
 
     await order.save();
     
@@ -814,11 +892,38 @@ export class OrdersService {
     // Log for business (can be extended to a business wallet)
   }
 
-  async rateOrder(orderId: string, rating: number, review: string): Promise<Order> {
+  async rateOrder(
+    orderId: string, 
+    data: { 
+      vendorRating?: number; 
+      vendorReview?: string; 
+      erranderRating?: number; 
+      erranderReview?: string; 
+    }
+  ): Promise<Order> {
     const order = await this.orderModel.findById(orderId);
     if (!order) throw new NotFoundException('Order not found');
-    order.rating = rating;
-    order.review = review;
+    
+    if (data.vendorRating) {
+      order.vendorRating = data.vendorRating;
+      order.vendorReview = data.vendorReview || '';
+      order.hasRatedVendor = true;
+    }
+
+    if (data.erranderRating) {
+      order.erranderRating = data.erranderRating;
+      order.erranderReview = data.erranderReview || '';
+      order.hasRatedErrander = true;
+      
+      // Award points to Errandr for good rating
+      if (data.erranderRating >= 4 && order.errander) {
+        await this.rewardsService.addPoints(order.errander.toString(), 10, `High rating for order #${order.orderNumber}`);
+      }
+    }
+
+    // Award Points to Customer for rating
+    await this.rewardsService.addPoints(order.customer.toString(), 20, `Rated order #${order.orderNumber}`);
+
     await order.save();
     return order;
   }
@@ -896,6 +1001,17 @@ export class OrdersService {
       timestamp: new Date(),
       note: `Order cancelled: ${reason}`,
     });
+
+    // Refund if paid
+    if (order.paymentStatus === PaymentStatus.PAID) {
+      await this.walletsService.creditWallet(
+        order.customer.toString(),
+        order.total,
+        `Refund for cancelled order #${order.orderNumber}`,
+        order._id.toString()
+      );
+      order.paymentStatus = PaymentStatus.REFUNDED;
+    }
 
     if (order.errander) {
       const errander = await this.erranderModel.findOne({ user: order.errander });

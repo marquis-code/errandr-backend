@@ -9,6 +9,7 @@ import { LoginDto } from './dto/login.dto';
 import { ConfigService } from '@nestjs/config';
 import { EmailService } from '../email/email.service';
 import { WalletsService } from '../wallets/wallets.service';
+import { RewardsService } from '../rewards/rewards.service';
 
 @Injectable()
 export class AuthService {
@@ -18,6 +19,7 @@ export class AuthService {
     private configService: ConfigService,
     private emailService: EmailService,
     private walletsService: WalletsService,
+    private rewardsService: RewardsService,
   ) {}
 
   async register(registerDto: RegisterDto) {
@@ -35,6 +37,14 @@ export class AuthService {
 
     // Initialize Wallet
     await this.walletsService.getOrCreateWallet((user._id as unknown) as string);
+
+    // Generate Referral Code for New User
+    await this.rewardsService.generateReferralCode((user._id as unknown) as string);
+
+    // Process Referral if applicable
+    if (registerDto.referredBy) {
+      await this.rewardsService.processReferral((user._id as unknown) as string, registerDto.referredBy);
+    }
 
     // Send Welcome Email instead of OTP
     await this.emailService.sendWelcomeEmail(user.email, user.firstName);

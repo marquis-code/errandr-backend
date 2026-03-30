@@ -205,6 +205,24 @@ export class Order extends Document {
   @Prop()
   review: string;
 
+  @Prop({ default: 0 })
+  vendorRating: number;
+
+  @Prop()
+  vendorReview: string;
+
+  @Prop({ default: 0 })
+  erranderRating: number;
+
+  @Prop()
+  erranderReview: string;
+
+  @Prop({ default: false })
+  hasRatedVendor: boolean;
+
+  @Prop({ default: false })
+  hasRatedErrander: boolean;
+
   @Prop({
     type: [
       {
@@ -279,6 +297,12 @@ export class Order extends Document {
 
   @Prop({ default: false })
   isGroupLeader: boolean;
+
+  @Prop({ default: false })
+  isMysteryBox: boolean;
+
+  @Prop({ default: false })
+  isDormDelivery: boolean;
 }
 
 export const OrderSchema = SchemaFactory.createForClass(Order);
