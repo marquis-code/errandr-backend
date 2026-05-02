@@ -49,90 +49,134 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('joinOrder')
+  @SubscribeMessage('chat:join-room')
   handleJoinOrder(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { orderId: string },
+    @MessageBody() data: { orderId?: string; roomId?: string; userId?: string },
   ) {
-    client.join(`order:${data.orderId}`);
-    return { event: 'joined', data: { orderId: data.orderId } };
+    const id = data.roomId || data.orderId || data.userId;
+    if (data.orderId || (data.roomId && !data.userId)) {
+      client.join(`order:${id}`);
+    } else {
+      client.join(`support:${id}`);
+      client.join('admin:support');
+    }
+    return { success: true, event: 'joined', data: { id } };
   }
 
-  @SubscribeMessage('leaveOrder')
-  handleLeaveOrder(
+  @SubscribeMessage('joinSupport')
+  handleJoinSupport(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { orderId: string },
+    @MessageBody() data: { userId: string },
   ) {
-    client.leave(`order:${data.orderId}`);
+    client.join(`support:${data.userId}`);
+    client.join('admin:support');
+    return { success: true, event: 'joined_support', data: { userId: data.userId } };
   }
 
   @SubscribeMessage('sendMessage')
+  @SubscribeMessage('chat:send-message')
   async handleMessage(
     @ConnectedSocket() client: Socket,
     @MessageBody()
     data: {
-      orderId: string;
+      orderId?: string;
+      roomId?: string; // Standardized
       senderId: string;
-      receiverId: string;
-      message: string;
+      receiverId?: string;
+      message?: string; // Backend was using 'message'
+      content?: string; // Frontend is using 'content'
       messageType?: string;
+      roomType?: string;
       attachment?: string;
     },
   ) {
-    const savedMessage = await this.chatService.createMessage(data);
+    const messageContent = data.content || data.message || '';
+    const orderId = data.orderId || (data.roomType === 'order' ? data.roomId : undefined);
+    const roomType = data.roomType || (orderId ? 'order' : 'support');
+    
+    const savedMessage = await this.chatService.createMessage({ 
+      ...data, 
+      message: messageContent,
+      orderId,
+      roomType 
+    });
+    
     const populated = await savedMessage.populate([
-      { path: 'sender', select: 'firstName lastName avatar' },
+      { path: 'sender', select: 'firstName lastName avatar role' },
     ]);
 
-    // Emit to order room
-    this.server
-      .to(`order:${data.orderId}`)
-      .emit('newMessage', populated);
+    // Format for frontend (which expects 'content')
+    const formattedMessage = {
+      ...populated.toObject(),
+      content: messageContent,
+      senderType: populated.sender['role'] === 'admin' ? 'support' : 'customer'
+    };
 
-    // Direct notification to receiver if connected
-    const receiverSocketId = this.connectedUsers.get(data.receiverId);
-    if (receiverSocketId) {
-      this.server.to(receiverSocketId).emit('notification', {
-        type: 'new_message',
-        orderId: data.orderId,
-        message: data.message,
-        senderId: data.senderId,
-      });
+    // Determine target room
+    const targetRoom = roomType === 'order' 
+      ? `order:${orderId}` 
+      : `support:${data.senderId}`;
+
+    // Emit to rooms
+    if (roomType === 'support') {
+      this.server.to('admin:support').emit('chat:new-message', formattedMessage);
+      this.server.to(`support:${data.senderId}`).emit('chat:new-message', formattedMessage);
+      
+      // TRIGGER BOT logic
+      const botResponse = await this.chatService.getBotResponse(messageContent);
+      if (botResponse && (!data.receiverId || data.receiverId === 'SYSTEM')) {
+        setTimeout(async () => {
+          const botMsg = await this.chatService.createMessage({
+            senderId: 'SYSTEM_BOT',
+            receiverId: data.senderId,
+            message: botResponse,
+            roomType: 'support'
+          });
+          const botPopulated = await botMsg.populate([
+            { path: 'sender', select: 'firstName lastName avatar role' },
+          ]);
+          const formattedBot = {
+            ...botPopulated.toObject(),
+            content: botResponse,
+            senderType: 'bot',
+            senderName: 'Errandr Bot'
+          };
+          this.server.to(`support:${data.senderId}`).emit('chat:new-message', formattedBot);
+        }, 1000);
+      }
+    } else {
+      this.server.to(targetRoom).emit('chat:new-message', formattedMessage);
+      this.server.to(targetRoom).emit('newMessage', formattedMessage); // compatibility
     }
 
-    return populated;
+    return { success: true, data: formattedMessage };
   }
 
   @SubscribeMessage('typing')
+  @SubscribeMessage('chat:typing')
   handleTyping(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { orderId: string; userId: string },
+    @MessageBody() data: { orderId?: string; roomId?: string; userId?: string; roomType?: string; isTyping: boolean },
   ) {
-    client.to(`order:${data.orderId}`).emit('userTyping', {
+    const id = data.roomId || data.orderId || data.userId;
+    const room = (data.roomType === 'support' || data.userId) ? `support:${id}` : `order:${id}`;
+    client.to(room).emit('chat:user-typing', {
       userId: data.userId,
-      orderId: data.orderId,
-      isTyping: true,
-    });
-  }
-
-  @SubscribeMessage('stopTyping')
-  handleStopTyping(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { orderId: string; userId: string },
-  ) {
-    client.to(`order:${data.orderId}`).emit('userTyping', {
-      userId: data.userId,
-      orderId: data.orderId,
-      isTyping: false,
+      isTyping: data.isTyping,
+      roomId: id
     });
   }
 
   @SubscribeMessage('markRead')
+  @SubscribeMessage('chat:mark-read')
   async handleMarkRead(
-    @MessageBody() data: { orderId: string; userId: string },
+    @MessageBody() data: { orderId?: string; roomId?: string; userId: string; roomType?: string },
   ) {
-    await this.chatService.markAllAsRead(data.orderId, data.userId);
-    this.server.to(`order:${data.orderId}`).emit('messagesRead', {
-      orderId: data.orderId,
+    const id = data.roomId || data.orderId || '';
+    await this.chatService.markAllAsRead(id, data.userId);
+    const room = (data.roomType === 'support' || !data.orderId) ? `support:${data.userId}` : `order:${id}`;
+    this.server.to(room).emit('messagesRead', {
       userId: data.userId,
     });
   }

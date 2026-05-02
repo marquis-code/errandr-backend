@@ -25,6 +25,8 @@ import { EmailModule } from './modules/email/email.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { GroupOrdersModule } from './modules/group-orders/group-orders.module';
 import { RewardsModule } from './modules/rewards/rewards.module';
+import { MarketingModule } from './modules/marketing/marketing.module';
+import { TwilioModule } from './modules/twilio/twilio.module';
 
 @Module({
   imports: [
@@ -61,6 +63,7 @@ import { RewardsModule } from './modules/rewards/rewards.module';
     ScheduleModule.forRoot(),
 
     // Feature modules
+    TwilioModule,
     RedisModule,
     AuthModule,
     UsersModule,
@@ -81,6 +84,7 @@ import { RewardsModule } from './modules/rewards/rewards.module';
     PaymentsModule,
     GroupOrdersModule,
     RewardsModule,
+    MarketingModule,
   ],
 })
 export class AppModule {}

@@ -17,6 +17,8 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { UsersModule } from '../users/users.module';
 import { BatchDeliveryService } from './batch-delivery.service';
 import { RewardsModule } from '../rewards/rewards.module';
+import { SimulationController } from './simulation.controller';
+import { TwilioModule } from '../twilio/twilio.module';
 
 @Module({
   imports: [
@@ -34,8 +36,9 @@ import { RewardsModule } from '../rewards/rewards.module';
     forwardRef(() => WalletsModule),
     forwardRef(() => PaymentsModule),
     RewardsModule,
+    forwardRef(() => TwilioModule),
   ],
-  controllers: [OrdersController],
+  controllers: [OrdersController, SimulationController],
   providers: [OrdersService, BatchDeliveryService],
   exports: [OrdersService, BatchDeliveryService, MongooseModule],
 })

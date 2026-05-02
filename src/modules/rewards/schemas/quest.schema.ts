@@ -8,6 +8,11 @@ export enum QuestType {
   SPEND_AMOUNT = 'spend_amount',
   NIGHT_OWL = 'night_owl',
   REFERRAL = 'referral',
+  FAST_ACCEPT = 'fast_accept',
+  FAST_DELIVERY = 'fast_delivery',
+  PERFECT_RATING = 'perfect_rating',
+  CLEAR_INSTRUCTIONS = 'clear_instructions',
+  PROMPT_RATER = 'prompt_rater',
 }
 
 @Schema({ timestamps: true })

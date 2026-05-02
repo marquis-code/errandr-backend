@@ -1,9 +1,11 @@
 import { Injectable, NotFoundException, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Wallet, WalletDocument, PayoutPreference } from './schemas/wallet.schema';
 import { Transaction, TransactionDocument, TransactionType, TransactionStatus } from './schemas/transaction.schema';
 import { PaystackService } from '../payments/paystack.service';
+import { EmailService } from '../email/email.service';
+import { User } from '../users/schemas/user.schema';
 import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
@@ -11,7 +13,9 @@ export class WalletsService {
   constructor(
     @InjectModel(Wallet.name) private walletModel: Model<WalletDocument>,
     @InjectModel(Transaction.name) private transactionModel: Model<TransactionDocument>,
+    @InjectModel(User.name) private userModel: Model<User>,
     @Inject(forwardRef(() => PaystackService)) private paystackService: PaystackService,
+    private emailService: EmailService,
   ) {}
 
   async getOrCreateWallet(userId: string): Promise<WalletDocument> {
@@ -49,7 +53,14 @@ export class WalletsService {
     amount: number,
     description: string,
     orderId?: string,
+    reference?: string,
   ): Promise<void> {
+    // 1. Idempotency Check: Don't process the same reference twice
+    if (reference) {
+      const existing = await this.transactionModel.findOne({ reference });
+      if (existing) return; 
+    }
+
     const wallet = await this.getOrCreateWallet(userId);
     
     wallet.balance += amount;
@@ -62,7 +73,21 @@ export class WalletsService {
       type: TransactionType.CREDIT,
       description,
       order: orderId,
+      reference,
+      status: TransactionStatus.COMPLETED
     });
+
+    // Send Top-up Email if this is a top-up
+    if (description.toLowerCase().includes('top-up') || description.toLowerCase().includes('funded')) {
+      try {
+        const user = await this.userModel.findById(userId);
+        if (user && user.email) {
+          await this.emailService.sendPaymentReceipt(user.email, amount, reference || 'WALLET_UPDATE', 'wallet_topup');
+        }
+      } catch (e) {
+        console.error('Failed to send wallet credit email:', e.message);
+      }
+    }
   }
 
   async debitWallet(

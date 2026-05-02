@@ -119,6 +119,46 @@ async getMyVendorOrders(
     return this.ordersService.getStats();
   }
 
+  @Post(':id/otp/:type')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Generate and send OTP for pickup or delivery' })
+  sendOtp(
+    @Param('id') id: string, 
+    @Param('type') type: 'pickup' | 'delivery',
+    @CurrentUser() user: User
+  ) {
+    this.logger.log(`sendOtp() id=${id} type=${type} user=${user._id}`);
+    return this.ordersService.generateAndSendOtp(id, type, user._id.toString());
+  }
+
+  @Post(':id/otp/:type/voice')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Explicitly send OTP via Voice Call' })
+  sendVoiceOtp(
+    @Param('id') id: string, 
+    @Param('type') type: 'pickup' | 'delivery',
+    @CurrentUser() user: User
+  ) {
+    this.logger.log(`sendVoiceOtp() id=${id} type=${type} user=${user._id}`);
+    return this.ordersService.resendOtpWithVoice(id, type, user._id.toString());
+  }
+
+  @Post(':id/verify-otp')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Verify OTP for pickup or delivery' })
+  async verifyOtp(
+    @Param('id') id: string,
+    @Body('otp') otp: string,
+    @Body('type') type: 'pickup' | 'delivery'
+  ) {
+    this.logger.log(`verifyOtp() id=${id} type=${type}`);
+    const isValid = await this.ordersService.verifyOtp(id, otp, type);
+    return { isValid };
+  }
+
   @Get(':id')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

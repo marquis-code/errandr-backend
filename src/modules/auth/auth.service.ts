@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { EmailService } from '../email/email.service';
 import { WalletsService } from '../wallets/wallets.service';
 import { RewardsService } from '../rewards/rewards.service';
+import { TwilioService } from '../twilio/twilio.service';
 
 @Injectable()
 export class AuthService {
@@ -20,6 +21,7 @@ export class AuthService {
     private emailService: EmailService,
     private walletsService: WalletsService,
     private rewardsService: RewardsService,
+    private twilioService: TwilioService,
   ) {}
 
   async register(registerDto: RegisterDto) {
@@ -32,7 +34,7 @@ export class AuthService {
     const user = await this.userModel.create({
       ...registerDto,
       password: hashedPassword,
-      isVerified: true, // Instant verification
+      isVerified: false, // Now requires verification via AT/Email
     });
 
     // Initialize Wallet
@@ -46,16 +48,16 @@ export class AuthService {
       await this.rewardsService.processReferral((user._id as unknown) as string, registerDto.referredBy);
     }
 
-    // Send Welcome Email instead of OTP
-    await this.emailService.sendWelcomeEmail(user.email, user.firstName);
+    // Send initial OTP instead of welcome email (which comes after verification)
+    await this.sendOTP(user.email, 'email', user._id.toString());
 
     const token = this.generateToken(user);
 
     return {
       user: this.sanitizeUser(user),
       token,
-      requiresVerification: false,
-      message: `Welcome to the family, ${user.firstName}! 🚀 We're so glad you're here. Check your email for a special message from our CEO.`,
+      requiresVerification: true,
+      message: `Welcome to Errandr, ${user.firstName}! 🚀 We've sent a verification code to your email.`,
     };
   }
 
@@ -106,7 +108,11 @@ export class AuthService {
     };
   }
 
-  async sendOTP(email: string) {
+  async sendOTP(
+    email: string, 
+    method: 'email' | 'sms' | 'voice' = 'email',
+    userId?: string
+  ) {
     const user = await this.userModel.findOne({ email });
     if (!user) throw new NotFoundException('User not found');
 
@@ -115,8 +121,17 @@ export class AuthService {
     user.otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 min
     await user.save();
 
+    if (method === 'sms' && user.phone) {
+      const sent = await this.twilioService.sendSMSOTP(user.phone, otp);
+      if (sent) return { success: true, message: 'Code sent to your phone via SMS 📱' };
+    } else if (method === 'voice' && user.phone) {
+      await this.twilioService.sendVoiceOTP(user.phone, otp);
+      return { success: true, message: 'Calling you now with the code 📞' };
+    }
+
+    // Default or fallback to email
     await this.emailService.sendSignupOTP(email, user.firstName, otp);
-    return { success: true, message: 'Fresh code on the way! Check your inbox 💌' };
+    return { success: true, message: 'Verification code sent to your email 💌' };
   }
 
   async verifyOTP(email: string, otp: string) {
@@ -140,10 +155,20 @@ export class AuthService {
     user.otpExpiry = null as any;
     await user.save();
 
+    // Trigger Welcome Email
+    try {
+      await this.emailService.sendWelcomeEmail(user.email, user.firstName);
+    } catch (e) {
+      console.error('Failed to send welcome email:', e.message);
+    }
+
+    const token = this.generateToken(user);
+
     return {
       success: true,
       message: 'Email verified! You\'re officially legit 🎉',
       user: this.sanitizeUser(user),
+      token,
     };
   }
 

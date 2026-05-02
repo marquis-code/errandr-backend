@@ -6,7 +6,7 @@ export class Favorite extends Document {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   user: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'Product', required: true })
+  @Prop({ type: Types.ObjectId, ref: 'Product' })
   product: Types.ObjectId;
 
   @Prop({ type: Types.ObjectId, ref: 'Vendor' })

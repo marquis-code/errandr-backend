@@ -36,6 +36,9 @@ export class Transaction {
   @Prop({ required: true })
   description: string;
 
+  @Prop({ type: String, unique: true, sparse: true })
+  reference?: string;
+
   @Prop({ type: MongooseSchema.Types.Mixed })
   metadata?: any;
 }

@@ -11,6 +11,7 @@ export enum OrderStatus {
   DELIVERED = 'delivered',
   CANCELLED = 'cancelled',
   REFUNDED = 'refunded',
+  AWAITING_PAYMENT = 'awaiting_payment',
 }
 
 export enum PaymentStatus {
@@ -171,6 +172,9 @@ export class Order extends Document {
   @Prop()
   paymentReference: string;
 
+  @Prop({ type: String, enum: ['card', 'wallet', 'transfer'], default: 'card' })
+  paymentMethod: string;
+
   @Prop()
   deliveryAddress: string;
 
@@ -303,6 +307,9 @@ export class Order extends Document {
 
   @Prop({ default: false })
   isDormDelivery: boolean;
+  
+  @Prop()
+  deliveryOtpHash: string;
 }
 
 export const OrderSchema = SchemaFactory.createForClass(Order);

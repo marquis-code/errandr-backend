@@ -12,14 +12,15 @@ export class FavoritesController {
   constructor(private readonly favoritesService: FavoritesService) {}
 
   @Post('toggle')
-  @ApiOperation({ summary: 'Toggle favorite on a product' })
+  @ApiOperation({ summary: 'Toggle favorite on a product or vendor' })
   toggle(
     @CurrentUser() user: User,
-    @Body() body: { productId: string; vendorId?: string },
+    @Body() body: { productId?: string; vendorId?: string },
   ) {
-    return this.favoritesService.addFavorite(
+    return this.favoritesService.toggleFavorite(
       (user._id as unknown) as string,
       body.productId,
+      body.vendorId,
     );
   }
 

@@ -17,6 +17,22 @@ export class ChatController {
     return this.chatService.getOrderMessages(orderId);
   }
 
+  @Get('support/threads')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get all support chat threads (Admin only)' })
+  getSupportThreads() {
+    return this.chatService.getSupportThreads();
+  }
+
+  @Get('support/:userId')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get support messages for a specific user' })
+  getSupportMessages(@Param('userId') userId: string) {
+    return this.chatService.getSupportMessages(userId);
+  }
+
   @Get('unread')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

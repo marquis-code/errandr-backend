@@ -2,11 +2,14 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Report, ReportStatus } from './schemas/report.schema';
+import { EmailService } from '../email/email.service';
 
 @Injectable()
 export class ReportsService {
   constructor(
     @InjectModel(Report.name) private reportModel: Model<Report>,
+    @InjectModel('User') private userModel: Model<any>,
+    private emailService: EmailService,
   ) {}
 
   async create(data: {
@@ -19,13 +22,25 @@ export class ReportsService {
     description: string;
     images?: string[];
   }): Promise<Report> {
-    return this.reportModel.create({
+    const report = await this.reportModel.create({
       ...data,
       reporter: new Types.ObjectId(data.reporter),
       vendor: data.vendor ? new Types.ObjectId(data.vendor) : undefined,
       reportedUser: data.reportedUser ? new Types.ObjectId(data.reportedUser) : undefined,
       order: data.order ? new Types.ObjectId(data.order) : undefined,
     });
+
+    // Send Aggressive Complaint Receipt
+    try {
+      const user = await this.userModel.findById(data.reporter);
+      if (user?.email) {
+        await this.emailService.sendComplaintReceipt(user.email, report._id.toString().slice(-6).toUpperCase(), data.title);
+      }
+    } catch (e) {
+      console.error('Failed to send complaint email:', e.message);
+    }
+
+    return report;
   }
 
   async getUserReports(userId: string): Promise<Report[]> {

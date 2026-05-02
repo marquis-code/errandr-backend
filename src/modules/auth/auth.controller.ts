@@ -33,9 +33,9 @@ export class AuthController {
 
   @Post('send-otp')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Send OTP to email for verification' })
-  async sendOTP(@Body() body: { email: string }) {
-    return this.authService.sendOTP(body.email);
+  @ApiOperation({ summary: 'Send OTP for verification' })
+  async sendOTP(@Body() body: { email: string; method?: 'email' | 'sms' | 'voice' }) {
+    return this.authService.sendOTP(body.email, body.method);
   }
 
   @Post('verify-otp')

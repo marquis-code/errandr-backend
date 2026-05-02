@@ -20,6 +20,8 @@ import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { ChatService } from '../chat/chat.service';
 import { BatchDeliveryService } from './batch-delivery.service';
 import { RewardsService } from '../rewards/rewards.service';
+import { TwilioService } from '../twilio/twilio.service';
+import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class OrdersService {
@@ -40,6 +42,8 @@ export class OrdersService {
     private chatService: ChatService,
     private batchDeliveryService: BatchDeliveryService,
     private rewardsService: RewardsService,
+    @Inject(forwardRef(() => TwilioService))
+    private twilioService: TwilioService,
   ) {}
 
   async getBatchStatus() {
@@ -199,8 +203,19 @@ export class OrdersService {
         0,
       );
     } else if (data.items) {
+      // Get all product images for items
+      const productIds = data.items.map((i: any) => new Types.ObjectId(i.productId || i.product));
+      const products = await this.productModel.find({ _id: { $in: productIds } });
+      const imageMap = products.reduce((acc, p) => {
+        acc[p._id.toString()] = p.image || p.images?.[0];
+        return acc;
+      }, {});
+
       subtotal = data.items.reduce(
-        (sum: number, item: any) => sum + item.subtotal,
+        (sum: number, item: any) => {
+          item.image = imageMap[item.productId || item.product];
+          return sum + item.subtotal;
+        },
         0,
       );
     }
@@ -337,17 +352,23 @@ export class OrdersService {
       deliveryNotes: data.deliveryNotes,
       paymentStatus: data.paymentReference ? PaymentStatus.PAID : PaymentStatus.PENDING,
       paymentReference: data.paymentReference || null,
-      status: data.paymentReference ? OrderStatus.CONFIRMED : OrderStatus.PENDING,
+      status: data.paymentReference ? OrderStatus.CONFIRMED : OrderStatus.AWAITING_PAYMENT,
       statusHistory: [
         { 
-          status: data.paymentReference ? OrderStatus.CONFIRMED : OrderStatus.PENDING, 
+          status: data.paymentReference ? OrderStatus.CONFIRMED : OrderStatus.AWAITING_PAYMENT, 
           timestamp: new Date(), 
-          note: data.paymentReference ? 'Order placed and payment confirmed' : 'Order placed' 
+          note: data.paymentReference ? 'Order placed and payment confirmed' : 'Order placed, awaiting payment' 
         },
       ],
       isPreOrder: data.isPreOrder || false,
       scheduledTime: data.scheduledTime || null,
     });
+
+    // Reward for Clear Instructions (Compliance)
+    if (order.deliveryNotes || order.deliveryLocation) {
+      await this.rewardsService.updateUserStats(customerId, { clearInstructions: true });
+      await this.rewardsService.addPoints(customerId, 10, 'Bonus mapping: Clear delivery instructions provided');
+    }
 
     // Cache order for real-time updates
     await this.redisService.setJSON(
@@ -382,13 +403,36 @@ export class OrdersService {
       });
     }
 
-    // Notify Student
     if (order.customer && (order.customer as any).email) {
+      if (order.paymentStatus === PaymentStatus.PAID) {
+        this.emailService.sendPaymentReceipt(
+          (order.customer as any).email,
+          order.total,
+          order.orderNumber,
+          (order as any).paymentMethod || 'card',
+        );
+      }
+      
       this.emailService.sendOrderConfirmation(
         (order.customer as any).email,
-        order.orderNumber,
-        order.total,
+        order,
       );
+    }
+
+    // TRIGGER AUTOMATED VOICE CALL TO VENDOR
+    if (order.paymentStatus === PaymentStatus.PAID && populatedVendor?.phone) {
+      try {
+        const itemsList = order.items.map(i => `${i.quantity} ${i.name}`);
+        await this.twilioService.sendOrderDispatchCall(populatedVendor.phone, {
+          orderNumber: order.orderNumber,
+          orderId: (order._id as any).toString(),
+          items: itemsList,
+          total: order.total
+        });
+        this.logger.log(`Triggered automated order dispatch call for order ${order.orderNumber} to ${populatedVendor.phone}`);
+      } catch (e) {
+        this.logger.error(`Failed to trigger dispatch call: ${e.message}`);
+      }
     }
 
     return order.populate([
@@ -479,6 +523,13 @@ export class OrdersService {
       note: note || `Status changed to ${status}`,
     });
 
+    // Aggressive Notifications & Status Checks
+    const populated = await order.populate([
+      { path: 'customer', select: 'email firstName' },
+      { path: 'vendor', select: 'email storeName' },
+      { path: 'errander', select: 'email firstName' },
+    ]);
+
     if (status === OrderStatus.DELIVERED) {
       order.actualDeliveryTime = new Date();
       await this.processPayout(order);
@@ -494,22 +545,38 @@ export class OrdersService {
           await this.rewardsService.updateUserStats(errander.user.toString(), { deliveries: 1 });
         }
       }
+      
+      // Detailed Delivery Email with Summary
+      if (populated.customer && (populated.customer as any).email) {
+        this.emailService.sendOrderDelivered((populated.customer as any).email, populated);
+      }
     }
 
-    // Aggressive Notifications
-    const populated = await order.populate([
-      { path: 'customer', select: 'email' },
-      { path: 'vendor', select: 'email storeName' },
-      { path: 'errander', select: 'email firstName' },
-    ]);
-
     if (populated.customer && (populated.customer as any).email) {
-      this.emailService.sendOrderStatusUpdate(
-        (populated.customer as any).email,
-        order.orderNumber,
-        status,
-        note,
-      );
+      // Send receipt and confirmation if moving to CONFIRMED
+      if (status === OrderStatus.CONFIRMED) {
+        try {
+          await this.emailService.sendPaymentReceipt(
+            (populated.customer as any).email,
+            order.total,
+            order.orderNumber,
+            (order as any).paymentMethod || 'card'
+          );
+          await this.emailService.sendOrderConfirmation(
+            (populated.customer as any).email,
+            populated
+          );
+        } catch (e) {
+          this.logger.error(`Failed to send confirmation emails for order ${orderId}: ${e.message}`);
+        }
+      } else {
+        this.emailService.sendOrderStatusUpdate(
+          (populated.customer as any).email,
+          order.orderNumber,
+          status,
+          note,
+        );
+      }
     }
     
     // Notify Vendor if cancelled
@@ -613,6 +680,14 @@ export class OrdersService {
 
     // Notify all parties via stored notifications + real-time
     await this.notifyOrderStatusUpdate(order, OrderStatus.CONFIRMED, 'Order accepted by errander');
+
+    // Reward for Fast Acceptance (Compliance)
+    const orderCreatedAt = (order as any).createdAt || new Date();
+    const acceptanceDelay = (Date.now() - new Date(orderCreatedAt).getTime()) / 60000; // in minutes
+    if (acceptanceDelay <= 3) {
+      await this.rewardsService.updateUserStats(errander.user.toString(), { fastAccept: true });
+      await this.rewardsService.addPoints(errander.user.toString(), 30, 'Compliance: Lightning-fast order acceptance (within 3 mins)');
+    }
 
     // Send specific ORDER_ACCEPTED notification to customer with errander details
     const customerId = order.customer?._id || order.customer;
@@ -720,12 +795,42 @@ export class OrdersService {
     }
 
     // Award Points for Order Completion
-    await this.rewardsService.addPoints(order.customer.toString(), 50, `Completed order #${order.orderNumber}`);
+    await this.rewardsService.addPoints(order.customer.toString(), 25, `Completed order #${order.orderNumber}`);
+    
+    // Reward for Fast Delivery (Compliance)
+    const pickupEvent = order.statusHistory.find(h => h.status === OrderStatus.PICKED_UP);
+    if (pickupEvent) {
+      const deliveryDuration = (Date.now() - new Date(pickupEvent.timestamp).getTime()) / 60000;
+      if (deliveryDuration <= 15) {
+        await this.rewardsService.updateUserStats(erranderId, { fastDelivery: true });
+        await this.rewardsService.addPoints(erranderId, 50, 'Compliance: Super-fast delivery (within 15 mins of pickup)');
+      }
+    }
+
+    // Reward for Errandr Consistency
+    await this.rewardsService.addPoints(erranderId, 20, `Successful delivery of order #${order.orderNumber}`);
+
+    // Batch Hero Bonus
+    if (order.groupId) {
+       await this.rewardsService.addPoints(erranderId, 15, 'Efficiency bonus: Successful Group Order delivery');
+    }
 
     await order.save();
     
     // Notify all
     await this.notifyOrderStatusUpdate(order, OrderStatus.DELIVERED, 'Order delivered successfully');
+
+    // Re-trigger Detailed Delivery Email if not already sent by updateStatus (idempotency)
+    const fullyPopulatedCustomer = await order.populate('customer', 'firstName email');
+    if (fullyPopulatedCustomer.customer && (fullyPopulatedCustomer.customer as any).email) {
+      this.emailService.sendOrderDelivered((fullyPopulatedCustomer.customer as any).email, {
+        customerName: (fullyPopulatedCustomer.customer as any).firstName,
+        orderNumber: order.orderNumber,
+        total: order.total,
+        items: order.items,
+        id: order._id
+      });
+    }
 
     return order.populate([
       { path: 'customer', select: 'firstName lastName phone avatar' },
@@ -917,12 +1022,21 @@ export class OrdersService {
       
       // Award points to Errandr for good rating
       if (data.erranderRating >= 4 && order.errander) {
-        await this.rewardsService.addPoints(order.errander.toString(), 10, `High rating for order #${order.orderNumber}`);
+        await this.rewardsService.updateUserStats(order.errander.toString(), { perfectRating: data.erranderRating === 5 });
+        await this.rewardsService.addPoints(order.errander.toString(), data.erranderRating === 5 ? 50 : 20, `${data.erranderRating}-star rating bonus (Compliance)`);
       }
     }
 
     // Award Points to Customer for rating
-    await this.rewardsService.addPoints(order.customer.toString(), 20, `Rated order #${order.orderNumber}`);
+    const ratingDelay = (Date.now() - new Date(order.actualDeliveryTime).getTime()) / 60000; // minutes
+    let pointReward = 20;
+    if (ratingDelay <= 30) {
+      pointReward += 30; // Promptness bonus!
+      await this.rewardsService.updateUserStats(order.customer.toString(), { promptRating: true });
+      await this.rewardsService.addPoints(order.customer.toString(), pointReward, `Compliance: Prompt 5-star rating bonus (within 30 mins)`);
+    } else {
+      await this.rewardsService.addPoints(order.customer.toString(), pointReward, `Rated order #${order.orderNumber}`);
+    }
 
     await order.save();
     return order;
@@ -1031,9 +1145,54 @@ export class OrdersService {
     await order.save();
     
     // Notify all
-    await this.notifyOrderStatusUpdate(order, OrderStatus.CANCELLED, `Order cancelled: ${reason}`);
+    await this.notifyOrderStatusUpdate(order, OrderStatus.CANCELLED, `Cancelled by customer: ${reason}`);
 
-    return order;
+    return order.populate([
+      { path: 'customer', select: 'firstName lastName phone avatar' },
+      { path: 'vendor', select: 'storeName logo phone' },
+    ]);
+  }
+
+  async payWithWallet(orderId: string, customerId: string): Promise<Order> {
+    const order = await this.orderModel.findById(orderId);
+    if (!order) throw new NotFoundException('Order not found');
+    
+    if (order.customer.toString() !== customerId) {
+      throw new BadRequestException('Unauthorized');
+    }
+    
+    if (order.paymentStatus === PaymentStatus.PAID) {
+      throw new BadRequestException('Order already paid');
+    }
+    
+    // Debit wallet
+    try {
+      await this.walletsService.debitWallet(
+        customerId,
+        order.total,
+        `Payment for order #${order.orderNumber}`
+      );
+    } catch (e: any) {
+      throw new BadRequestException(e.message || 'Payment failed');
+    }
+    
+    order.paymentStatus = PaymentStatus.PAID;
+    order.status = OrderStatus.CONFIRMED;
+    order.statusHistory.push({
+      status: OrderStatus.CONFIRMED,
+      timestamp: new Date(),
+      note: 'Order paid via wallet balance',
+    });
+    
+    await order.save();
+    
+    // Broadcast
+    await this.broadcastNewOrderToErranders(order);
+    
+    return order.populate([
+      { path: 'customer', select: 'firstName lastName phone avatar' },
+      { path: 'vendor', select: 'storeName logo phone' },
+    ]);
   }
 
 //   async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, limit = 10) {
@@ -1064,7 +1223,97 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
   // TEMP: check what the most recent orders in DB look like
   const sampleOrders = await this.orderModel.find().limit(3).select('vendor customer status orderNumber');
   this.logger.log(`getOrdersForVendorOwner() sample DB orders = ${JSON.stringify(sampleOrders)}`);
-
   return this.getVendorOrders(vendor._id.toString(), status, page, limit);
 }
+
+  async verifyOtp(orderId: string, otp: string, type: 'pickup' | 'delivery'): Promise<boolean> {
+    const order = await this.orderModel.findById(orderId);
+    if (!order) throw new NotFoundException('Order not found');
+
+    const expectedHash = type === 'pickup' ? (order as any).pickupOtpHash : order.deliveryOtpHash;
+    if (!expectedHash) return true;
+
+    const isMatch = await bcrypt.compare(otp, expectedHash);
+    if (!isMatch) throw new BadRequestException(`Invalid ${type} OTP`);
+    return true;
+  }
+
+  async generateAndSendOtp(
+    orderId: string, 
+    type: 'pickup' | 'delivery', 
+    userId?: string
+  ): Promise<{ success: boolean; message: string; method: string }> {
+    const order = await this.orderModel.findById(orderId).populate('customer');
+    if (!order) throw new NotFoundException('Order not found');
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const hash = await bcrypt.hash(otp, 10);
+
+    let method = 'sms';
+
+    if (type === 'pickup') {
+      (order as any).pickupOtpHash = hash;
+      const vendor = await this.vendorModel.findById(order.vendor).populate('owner');
+      if (vendor && (vendor.owner as any)?.phone) {
+        const phone = (vendor.owner as any).phone;
+        const smsSent = await this.twilioService.sendSMS(phone, `Errandr Pickup Code for #${order.orderNumber}: ${otp}`);
+        if (!smsSent) {
+          this.logger.warn(`SMS failed for pickup OTP to ${phone}, falling back to voice call`);
+          await this.twilioService.sendVoiceOTP(phone, otp);
+          method = 'voice';
+        }
+      }
+    } else {
+      order.deliveryOtpHash = hash;
+      const customer = order.customer as any;
+      if (customer && customer.phone) {
+        const smsSent = await this.twilioService.sendSMSOTP(customer.phone, otp);
+        if (!smsSent) {
+          this.logger.warn(`SMS failed for delivery OTP to ${customer.phone}, falling back to voice call`);
+          await this.twilioService.sendVoiceOTP(customer.phone, otp);
+          method = 'voice';
+        }
+      }
+    }
+
+    await order.save();
+    return { 
+      success: true, 
+      message: method === 'voice' ? 'SMS failing, initiated voice call fallback' : 'OTP sent via SMS',
+      method 
+    };
+  }
+
+  async resendOtpWithVoice(
+    orderId: string, 
+    type: 'pickup' | 'delivery',
+    userId?: string
+  ): Promise<{ success: boolean; message: string; method: string }> {
+    const order = await this.orderModel.findById(orderId).populate('customer');
+    if (!order) throw new NotFoundException('Order not found');
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const hash = await bcrypt.hash(otp, 10);
+
+    let phone = '';
+    if (type === 'pickup') {
+      (order as any).pickupOtpHash = hash;
+      const vendor = await this.vendorModel.findById(order.vendor).populate('owner');
+      phone = (vendor?.owner as any)?.phone;
+    } else {
+      order.deliveryOtpHash = hash;
+      phone = (order.customer as any)?.phone;
+    }
+
+    if (!phone) throw new BadRequestException('Recipient phone number not found');
+
+    await order.save();
+    await this.twilioService.sendVoiceOTP(phone, otp);
+    
+    return { 
+      success: true, 
+      message: 'Voice call initiated',
+      method: 'voice' 
+    };
+  }
 }

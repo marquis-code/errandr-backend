@@ -62,4 +62,28 @@ export class RewardsController {
     const userId = user._id;
     return this.rewardsService.convertToAirtime(userId, body.points, body.phoneNumber);
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('redeem-discount')
+  async redeemDiscount(
+    @CurrentUser() user: any,
+    @Body() body: { points: number }
+  ) {
+    const userId = user._id;
+    return this.rewardsService.redeemDiscount(userId, body.points);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('redeem-free-delivery')
+  async redeemFreeDelivery(@CurrentUser() user: any) {
+    const userId = user._id;
+    return this.rewardsService.redeemFreeDelivery(userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('redeem-pro')
+  async redeemPro(@CurrentUser() user: any) {
+    const userId = user._id;
+    return this.rewardsService.redeemProStatus(userId);
+  }
 }

@@ -4,6 +4,7 @@ import { Model, Types } from 'mongoose';
 import { Errander, ErranderStatus } from './schemas/errander.schema';
 import { User, UserRole } from '../users/schemas/user.schema';
 import { RedisService } from '../redis/redis.service';
+import { RewardsService } from '../rewards/rewards.service';
 
 @Injectable()
 export class ErrandrService {
@@ -11,6 +12,7 @@ export class ErrandrService {
     @InjectModel(Errander.name) private erranderModel: Model<Errander>,
     @InjectModel(User.name) private userModel: Model<User>,
     private redisService: RedisService,
+    private rewardsService: RewardsService,
   ) {}
 
   async register(userId: string, data: Partial<Errander>): Promise<Errander> {
@@ -63,6 +65,8 @@ export class ErrandrService {
       errander.status = ErranderStatus.OFFLINE;
     } else if (errander.status === ErranderStatus.OFFLINE) {
       errander.status = ErranderStatus.AVAILABLE;
+      // Compliance: Reward for going online and being available
+      await this.rewardsService.addPoints(userId, 5, 'Shift bonus: Online and ready to accept orders');
     }
     // Don't toggle if BUSY (currently on delivery)
 

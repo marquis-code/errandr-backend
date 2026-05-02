@@ -221,7 +221,80 @@ export class RewardsService {
     };
   }
 
-  async updateUserStats(userId: string, update: { orders?: number; deliveries?: number; streak?: boolean }) {
+  async redeemDiscount(userId: string, points: number) {
+    const user = await this.userModel.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+    
+    // Logic: 500 points = N250 discount, 1000 points = N500 discount
+    if (user.points < points) throw new Error('Insufficient points');
+    if (points < 500) throw new Error('Minimum redemption is 500 points');
+
+    const discountValue = Math.floor(points / 2); // 2:1 ratio for simplicity
+    const code = `REDEEM-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+    await this.rewardModel.create({
+      user: new Types.ObjectId(userId),
+      type: RewardType.DISCOUNT,
+      value: discountValue,
+      code,
+      expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+    });
+
+    user.points -= points;
+    await user.save();
+
+    return { success: true, code, discountValue, remainingPoints: user.points };
+  }
+
+  async redeemFreeDelivery(userId: string) {
+    const user = await this.userModel.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+    
+    const cost = 1500; // Cost in points for free delivery
+    if (user.points < cost) throw new Error(`Insufficient points. Need ${cost} points.`);
+
+    const code = `FREE-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+    await this.rewardModel.create({
+      user: new Types.ObjectId(userId),
+      type: RewardType.FREE_DELIVERY,
+      value: 0,
+      code,
+      expiryDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 days
+    });
+
+    user.points -= cost;
+    await user.save();
+
+    return { success: true, code, remainingPoints: user.points };
+  }
+
+  async redeemProStatus(userId: string) {
+    const user = await this.userModel.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+    
+    if (user.isPro) throw new Error('You are already a Pro user!');
+
+    const cost = 5000; // Cost for Pro status
+    if (user.points < cost) throw new Error(`Insufficient points. Need ${cost} points for Pro status.`);
+
+    user.isPro = true;
+    user.points -= cost;
+    await user.save();
+
+    return { success: true, isPro: true, remainingPoints: user.points };
+  }
+
+  async updateUserStats(userId: string, update: { 
+    orders?: number; 
+    deliveries?: number; 
+    streak?: boolean;
+    fastAccept?: boolean;
+    fastDelivery?: boolean;
+    perfectRating?: boolean;
+    clearInstructions?: boolean;
+    promptRating?: boolean;
+  }) {
     const user = await this.userModel.findById(userId);
     if (!user) return;
 
@@ -243,5 +316,12 @@ export class RewardsService {
     if (update.orders) await this.checkQuests(userId, QuestType.ORDER_COUNT, update.orders);
     if (update.deliveries) await this.checkQuests(userId, QuestType.DELIVERY_COUNT, update.deliveries);
     if (update.streak) await this.checkQuests(userId, QuestType.STREAK, 1);
+    
+    // Compliance triggers
+    if (update.fastAccept) await this.checkQuests(userId, QuestType.FAST_ACCEPT, 1);
+    if (update.fastDelivery) await this.checkQuests(userId, QuestType.FAST_DELIVERY, 1);
+    if (update.perfectRating) await this.checkQuests(userId, QuestType.PERFECT_RATING, 1);
+    if (update.clearInstructions) await this.checkQuests(userId, QuestType.CLEAR_INSTRUCTIONS, 1);
+    if (update.promptRating) await this.checkQuests(userId, QuestType.PROMPT_RATER, 1);
   }
 }

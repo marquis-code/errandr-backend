@@ -9,11 +9,11 @@ export class FavoritesService {
     @InjectModel(Favorite.name) private favoriteModel: Model<Favorite>,
   ) {}
 
-  async addFavorite(userId: string, productId: string, vendorId?: string): Promise<Favorite> {
+  async addFavorite(userId: string, productId?: string, vendorId?: string): Promise<Favorite> {
     try {
       return await this.favoriteModel.create({
         user: new Types.ObjectId(userId),
-        product: new Types.ObjectId(productId),
+        product: productId ? new Types.ObjectId(productId) : undefined,
         vendor: vendorId ? new Types.ObjectId(vendorId) : undefined,
       });
     } catch (err: any) {
@@ -45,26 +45,32 @@ export class FavoritesService {
       .sort({ createdAt: -1 });
   }
 
-  async isFavorite(userId: string, productId: string): Promise<boolean> {
-    const count = await this.favoriteModel.countDocuments({
-      user: new Types.ObjectId(userId),
-      product: new Types.ObjectId(productId),
-    });
+  async isFavorite(userId: string, productId?: string, vendorId?: string): Promise<boolean> {
+    const query: any = { user: new Types.ObjectId(userId) };
+    if (productId) query.product = new Types.ObjectId(productId);
+    if (vendorId) query.vendor = new Types.ObjectId(vendorId);
+    
+    const count = await this.favoriteModel.countDocuments(query);
     return count > 0;
   }
 
-  async toggleFavorite(userId: string, productId: string, vendorId?: string): Promise<{ isFavorite: boolean }> {
-    const existing = await this.favoriteModel.findOne({
-      user: new Types.ObjectId(userId),
-      product: new Types.ObjectId(productId),
-    });
+  async toggleFavorite(userId: string, productId?: string, vendorId?: string): Promise<{ isFavorite: boolean }> {
+    const query: any = { user: new Types.ObjectId(userId) };
+    if (productId) query.product = new Types.ObjectId(productId);
+    else query.product = { $exists: false };
+    
+    if (vendorId) query.vendor = new Types.ObjectId(vendorId);
+    else query.vendor = { $exists: false };
+
+    const existing = await this.favoriteModel.findOne(query);
     if (existing) {
       await existing.deleteOne();
       return { isFavorite: false };
     }
+    
     await this.favoriteModel.create({
       user: new Types.ObjectId(userId),
-      product: new Types.ObjectId(productId),
+      product: productId ? new Types.ObjectId(productId) : undefined,
       vendor: vendorId ? new Types.ObjectId(vendorId) : undefined,
     });
     return { isFavorite: true };
