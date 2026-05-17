@@ -36,7 +36,7 @@ services:
       - erranders-net
 
   api:
-    image: "ghcr.io/marquis-code/erranders-backend:main" # GHCR Image built and pushed via GitHub Actions
+    image: "ghcr.io/marquis-code/errandr-backend:main" # GHCR Image built and pushed via GitHub Actions
     restart: unless-stopped
     depends_on: [reverse-proxy, redis]
     env_file:
