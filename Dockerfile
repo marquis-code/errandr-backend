@@ -7,7 +7,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 
 # Install ALL dependencies (dev included, needed for nest build)
-RUN npm ci
+RUN npm install
 
 # Copy source code
 COPY . .
@@ -24,7 +24,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 
 # Install production dependencies only
-RUN npm ci --omit=dev
+RUN npm install --omit=dev
 
 # Copy built application from builder
 COPY --from=builder /app/dist ./dist
