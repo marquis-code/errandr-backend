@@ -36,7 +36,7 @@ services:
       - errandr-net
 
   api:
-    image: "errandr-backend:latest" # Or your GitHub Container Registry / DockerHub path
+    image: "ghcr.io/marquis-code/errandr-backend:main" # GHCR Image built and pushed via GitHub Actions
     restart: unless-stopped
     depends_on: [reverse-proxy, redis]
     env_file:
