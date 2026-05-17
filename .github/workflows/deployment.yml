@@ -68,7 +68,8 @@ jobs:
             # Navigate to project directory
             cd errandr-backend
 
-            # Update repository
+            # Update repository using the GitHub actions token for authentication
+            git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/marquis-code/errandr-backend.git
             git pull
 
             # Login to GHCR
