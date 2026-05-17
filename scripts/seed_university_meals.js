@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const MONGODB_URI = "mongodb+srv://errandr:errandr@errandr.eknah3x.mongodb.net/?appName=errandr";
+const MONGODB_URI = "mongodb+srv://erranders:erranders@erranders.eknah3x.mongodb.net/?appName=erranders";
 
 const VendorSchema = new mongoose.Schema({}, { strict: false, collection: 'vendors' });
 const Vendor = mongoose.model('Vendor', VendorSchema);

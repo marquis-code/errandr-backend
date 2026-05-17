@@ -4,7 +4,7 @@ import { Model } from 'mongoose';
 import { User } from '../users/schemas/user.schema';
 import { Vendor, VendorStatus } from '../vendors/schemas/vendor.schema';
 import { Order, OrderStatus } from '../orders/schemas/order.schema';
-import { Errander } from '../errandr/schemas/errander.schema';
+import { Errander } from '../erranders/schemas/errander.schema';
 
 @Injectable()
 export class AdminService {
@@ -23,7 +23,7 @@ export class AdminService {
       totalOrders,
       activeOrders,
       completedOrders,
-      totalErrandr,
+      totalErranders,
       revenue,
     ] = await Promise.all([
       this.userModel.countDocuments(),
@@ -48,7 +48,7 @@ export class AdminService {
       totalOrders,
       activeOrders,
       completedOrders,
-      totalErrandr,
+      totalErranders,
       totalRevenue: revenue[0]?.total || 0,
     };
   }

@@ -9,7 +9,7 @@ import { forwardRef } from '@nestjs/common';
 import { Order, OrderSchema } from './schemas/order.schema';
 import { Vendor, VendorSchema } from '../vendors/schemas/vendor.schema';
 import { Product, ProductSchema } from '../products/schemas/product.schema';
-import { Errander, ErranderSchema } from '../errandr/schemas/errander.schema';
+import { Errander, ErranderSchema } from '../erranders/schemas/errander.schema';
 
 import { PaymentsModule } from '../payments/payments.module';
 import { ChatModule } from '../chat/chat.module';

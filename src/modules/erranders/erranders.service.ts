@@ -7,7 +7,7 @@ import { RedisService } from '../redis/redis.service';
 import { RewardsService } from '../rewards/rewards.service';
 
 @Injectable()
-export class ErrandrService {
+export class ErrandersService {
   constructor(
     @InjectModel(Errander.name) private erranderModel: Model<Errander>,
     @InjectModel(User.name) private userModel: Model<User>,
@@ -51,7 +51,7 @@ export class ErrandrService {
 
     // Update Redis geo index for fast proximity lookups
     await this.redisService.geoadd(
-      'errandr:locations',
+      'erranders:locations',
       coordinates[0],
       coordinates[1],
       userId,
@@ -85,7 +85,7 @@ export class ErrandrService {
 
   async getAll(page = 1, limit = 20) {
     const skip = (page - 1) * limit;
-    const [errandr, total] = await Promise.all([
+    const [erranders, total] = await Promise.all([
       this.erranderModel
         .find()
         .populate('user', 'firstName lastName email phone avatar')
@@ -94,7 +94,7 @@ export class ErrandrService {
         .sort({ totalDeliveries: -1 }),
       this.erranderModel.countDocuments(),
     ]);
-    return { errandr, total };
+    return { erranders, total };
   }
 
   async getAvailable(): Promise<Errander[]> {

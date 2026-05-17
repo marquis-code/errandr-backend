@@ -5,7 +5,7 @@ import { Resend } from 'resend';
 @Injectable()
 export class EmailService {
   private resend: Resend | null;
-  private fromEmail = 'Errandr <notifications@erranders.org>';
+  private fromEmail = 'Erranders <notifications@erranders.org>';
   private primaryColor = '#0061FF';
   private secondaryColor = '#FBBF24';
   private logoUrl = 'https://erranders.org/_nuxt/logo.7u_gNOaX.png';
@@ -97,14 +97,14 @@ export class EmailService {
           <div class="container">
             ${content}
             <div class="footer">
-              <img src="${this.logoUrl}" style="height: 36px; margin-bottom: 32px; filter: brightness(0) invert(1);" alt="Errandr">
-              <p style="color: #ffffff; font-weight: 800; font-size: 18px; margin-bottom: 16px;">Errandr — Campus life, elevated.</p>
+              <img src="${this.logoUrl}" style="height: 36px; margin-bottom: 32px; filter: brightness(0) invert(1);" alt="Erranders">
+              <p style="color: #ffffff; font-weight: 800; font-size: 18px; margin-bottom: 16px;">Erranders — Campus life, elevated.</p>
               <p style="margin-bottom: 32px; line-height: 1.6; opacity: 0.7;">We're on a mission to make every delivery on campus seamless, fast, and aggressively convenient.</p>
               <div style="margin-top: 40px;">
-                <a href="https://instagram.com/errandr_ng" style="margin: 0 12px; text-decoration: none;"><img src="https://cdn-icons-png.flaticon.com/512/2111/2111463.png" width="24" style="filter: brightness(0) invert(1); opacity: 0.6;"></a>
-                <a href="https://twitter.com/errandr_ng" style="margin: 0 12px; text-decoration: none;"><img src="https://cdn-icons-png.flaticon.com/512/733/733579.png" width="24" style="filter: brightness(0) invert(1); opacity: 0.6;"></a>
+                <a href="https://instagram.com/erranders_ng" style="margin: 0 12px; text-decoration: none;"><img src="https://cdn-icons-png.flaticon.com/512/2111/2111463.png" width="24" style="filter: brightness(0) invert(1); opacity: 0.6;"></a>
+                <a href="https://twitter.com/erranders_ng" style="margin: 0 12px; text-decoration: none;"><img src="https://cdn-icons-png.flaticon.com/512/733/733579.png" width="24" style="filter: brightness(0) invert(1); opacity: 0.6;"></a>
               </div>
-              <p style="margin-top: 64px; opacity: 0.4; font-size: 11px;">© ${new Date().getFullYear()} Errandr Ltd. Lagos, Nigeria.</p>
+              <p style="margin-top: 64px; opacity: 0.4; font-size: 11px;">© ${new Date().getFullYear()} Erranders Ltd. Lagos, Nigeria.</p>
             </div>
           </div>
         </body>
@@ -132,7 +132,7 @@ export class EmailService {
         
         <p style="font-size: 13px; color: #9CA3AF;">Didn't request this code? You can safely ignore this email.</p>
       </div>
-    `, `Your Errandr verify code: ${otp}`);
+    `, `Your Erranders verify code: ${otp}`);
     return this.sendEmail(to, `${otp} is your verification code`, html);
   }
 
@@ -141,7 +141,7 @@ export class EmailService {
       <div class="content" style="text-align: center;">
         <div class="badge badge-blue">PASSWORD RESET</div>
         <h1 class="title">Securing your account</h1>
-        <p style="color: #6B7280; font-size: 16px;">Enter the code below to reset your Errandr password. If you didn't ask for this, your account is still safe, and you can ignore this.</p>
+        <p style="color: #6B7280; font-size: 16px;">Enter the code below to reset your Erranders password. If you didn't ask for this, your account is still safe, and you can ignore this.</p>
         
         <div class="otp-box" style="border-color: #DBEAFE; background: #EFF6FF;">
           <div class="otp-code" style="color: #1E40AF;">${otp}</div>
@@ -161,11 +161,11 @@ export class EmailService {
         <div class="badge badge-blue">YOU'RE LEGIT 🎉</div>
         <h1 class="title">Welcome home,<br/>${firstName}.</h1>
         <p style="font-size: 17px; line-height: 1.8; color: #4B5563; margin-bottom: 32px;">
-          Errandr is officially in your pocket. We built this to solve the campus hustle – so you can focus on classes (or naps) while we handle the moves.
+          Erranders is officially in your pocket. We built this to solve the campus hustle – so you can focus on classes (or naps) while we handle the moves.
         </p>
         
         <div class="item-card" style="background: #F0F9FF; border-color: #BAE6FD;">
-          <h3 style="margin-top: 0; color: #0369A1; font-weight: 800;">Your Errandr Staples:</h3>
+          <h3 style="margin-top: 0; color: #0369A1; font-weight: 800;">Your Erranders Staples:</h3>
           <p style="margin: 8px 0; color: #0C4A6E;">🍔 <b>Campus Bites:</b> The best spots on campus, delivered fast.</p>
           <p style="margin: 8px 0; color: #0C4A6E;">🚲 <b>Quick Errands:</b> Need a printout or a grocery run? We're on it.</p>
           <p style="margin: 8px 0; color: #0C4A6E;">💰 <b>Wallet:</b> Cashless is better. Fund your wallet and checkout in 1-tap.</p>
@@ -175,8 +175,8 @@ export class EmailService {
           <a href="https://erranders.org" class="button">START YOUR FIRST ORDER</a>
         </div>
       </div>
-    `, `Welcome to the Errandr family, ${firstName}!`);
-    return this.sendEmail(to, `Welcome to Errandr, ${firstName}! 🚀`, html);
+    `, `Welcome to the Erranders family, ${firstName}!`);
+    return this.sendEmail(to, `Welcome to Erranders, ${firstName}! 🚀`, html);
   }
 
   async sendVendorWelcome(to: string, firstName: string, storeName: string) {
@@ -200,7 +200,7 @@ export class EmailService {
         </div>
       </div>
     `, `Welcome Partner! Your store ${storeName} is ready.`);
-    return this.sendEmail(to, `Welcome to Errandr Vendors, ${firstName}! 🏠`, html);
+    return this.sendEmail(to, `Welcome to Erranders Vendors, ${firstName}! 🏠`, html);
   }
 
   // ORDERS & PAYMENTS
@@ -223,7 +223,7 @@ export class EmailService {
     const html = this.wrap(`
       <div class="content">
         <div class="badge badge-yellow" style="background: #FFF7ED; color: #C2410C;">RESTAURANT CONFIRMED</div>
-        <h1 class="title">It's on, ${order.customerName?.split(' ')[0] || 'Errandr User'}! 🍔</h1>
+        <h1 class="title">It's on, ${order.customerName?.split(' ')[0] || 'Erranders User'}! 🍔</h1>
         <p style="color: #6B7280; font-size: 17px; line-height: 1.6; margin-bottom: 40px;">Your order <b>#${order.orderNumber}</b> is officially being prepped. Our dispatchers have been alerted and are standing by.</p>
         
         <img src="https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=1000&auto=format&fit=crop&q=80" style="width: 100%; height: 240px; object-fit: cover; border-radius: 32px; margin-bottom: 48px; box-shadow: 0 20px 40px rgba(0,0,0,0.1);">
@@ -276,7 +276,7 @@ export class EmailService {
             <span style="font-size: 40px;">${isTopup ? '💰' : '💸'}</span>
           </div>
           <h1 class="title">${isTopup ? 'Wallet Funded!' : 'Payment Received!'}</h1>
-          <p style="color: #6B7280; font-size: 16px;">${isTopup ? 'Your Errandr balance has been aggressively updated.' : 'Your order payment has been verified and confirmed.'}</p>
+          <p style="color: #6B7280; font-size: 16px;">${isTopup ? 'Your Erranders balance has been aggressively updated.' : 'Your order payment has been verified and confirmed.'}</p>
         </div>
 
         <div class="receipt-card" style="background: ${isTopup ? '#10B981' : '#1A1A1A'};">
@@ -320,7 +320,7 @@ export class EmailService {
         </div>
       </div>
     `, `Update for order #${orderNumber}: ${status}`);
-    return this.sendEmail(to, `Order Update: ${status} — Errandr`, html);
+    return this.sendEmail(to, `Order Update: ${status} — Erranders`, html);
   }
 
   async sendOrderStatusUpdate(to: string, orderNumber: string, status: string, note?: string) {
@@ -336,7 +336,7 @@ export class EmailService {
         
         <div style="margin: 48px 0; background: #FFD700; border-radius: 40px; padding: 40px; text-align: left;">
           <h2 style="margin-top: 0; font-size: 24px; font-weight: 800;">Was it legendary? ⭐</h2>
-          <p style="margin-bottom: 32px; font-weight: 600;">Rating your experience helps us keep Errandr standard and rewards our top dispatchers.</p>
+          <p style="margin-bottom: 32px; font-weight: 600;">Rating your experience helps us keep Erranders standard and rewards our top dispatchers.</p>
           <a href="https://erranders.org/orders/${order.orderNumber}/rate" style="background: #1A1A1A; color: #ffffff; padding: 16px 32px; border-radius: 16px; text-decoration: none; font-weight: 800; font-size: 13px;">TAP TO RATE</a>
         </div>
       </div>
@@ -359,7 +359,7 @@ export class EmailService {
         <p style="color: #9CA3AF; font-size: 13px;">Hang tight! We usually resolve campus issues within a few clock cycles.</p>
       </div>
     `, `Re: ${subject} [Ticket #${ticketId}] - We've received your report.`);
-    return this.sendEmail(to, `Support Receipt: #${ticketId} — Errandr`, html);
+    return this.sendEmail(to, `Support Receipt: #${ticketId} — Erranders`, html);
   }
 
   async sendPayoutNotification(to: string, amount: number, description: string) {
@@ -367,7 +367,7 @@ export class EmailService {
       <div class="content" style="text-align: center;">
         <div style="font-size: 64px; margin-bottom: 24px;">💰</div>
         <h1 class="title">Wallet Credited!</h1>
-        <p style="font-size: 16px; color: #6B7280;">You've just received a payout in your Errandr wallet.</p>
+        <p style="font-size: 16px; color: #6B7280;">You've just received a payout in your Erranders wallet.</p>
         
         <div class="item-card" style="background: #10B981; border: none; color: #ffffff;">
            <span class="label" style="color: rgba(255,255,255,0.6);">SETTLEMENT AMOUNT</span>
@@ -378,7 +378,7 @@ export class EmailService {
         <a href="https://erranders.org/wallet" class="button">VIEW WALLET</a>
       </div>
     `, `You've received ₦${amount.toLocaleString()}!`);
-    return this.sendEmail(to, `Wallet Credited — Errandr`, html);
+    return this.sendEmail(to, `Wallet Credited — Erranders`, html);
   }
 
   async sendPromotionalEmail(to: string, subject: string, title: string, content: string, ctaText: string, ctaLink: string, image?: string) {

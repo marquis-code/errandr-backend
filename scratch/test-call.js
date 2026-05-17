@@ -5,7 +5,7 @@ const testCall = async (phoneNumber) => {
     console.log(`🚀 Triggering test call to ${phoneNumber}...`);
     const response = await axios.post('http://127.0.0.1:3005/api/v1/twilio/make-call', {
       to: phoneNumber,
-      message: "Hello! This is a test call from Errandr. The system is now fully integrated with Twilio. Press 1 to confirm everything is working."
+      message: "Hello! This is a test call from Erranders. The system is now fully integrated with Twilio. Press 1 to confirm everything is working."
     });
     console.log('✅ Response:', response.data);
     console.log('\nCheck your phone! 📞');

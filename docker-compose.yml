@@ -11,7 +11,7 @@ services:
     depends_on:
       - redis
     networks:
-      - errandr-net
+      - erranders-net
 
   redis:
     image: redis:7-alpine
@@ -22,10 +22,10 @@ services:
     volumes:
       - redis_data:/var/lib/redis/data
     networks:
-      - errandr-net
+      - erranders-net
 
 networks:
-  errandr-net:
+  erranders-net:
     driver: bridge
 
 volumes:

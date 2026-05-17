@@ -5,7 +5,7 @@ import { AdminController } from './admin.controller';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { Vendor, VendorSchema } from '../vendors/schemas/vendor.schema';
 import { Order, OrderSchema } from '../orders/schemas/order.schema';
-import { Errander, ErranderSchema } from '../errandr/schemas/errander.schema';
+import { Errander, ErranderSchema } from '../erranders/schemas/errander.schema';
 
 @Module({
   imports: [

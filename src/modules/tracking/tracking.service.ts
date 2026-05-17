@@ -19,7 +19,7 @@ export class TrackingService {
   ): Promise<void> {
     // Store in Redis for real-time access
     await this.redisService.geoadd(
-      'errandr:locations',
+      'erranders:locations',
       coordinates[0],
       coordinates[1],
       erranderId,

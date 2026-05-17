@@ -11,11 +11,11 @@ export class ChatService {
 
   private readonly botAnswers = [
     { keywords: ['track', 'where', 'location'], answer: "You can track your order in real-time from the 'My Orders' section on your dashboard. You'll see the errander's live location once they pick up your items!" },
-    { keywords: ['late', 'delayed', 'slow'], answer: "Don't worry! Errandr is committed to speed. If your delivery exceeds our promised time window, please contact our support team here for a potential delivery fee refund." },
+    { keywords: ['late', 'delayed', 'slow'], answer: "Don't worry! Erranders is committed to speed. If your delivery exceeds our promised time window, please contact our support team here for a potential delivery fee refund." },
     { keywords: ['become', 'rider', 'errander', 'join'], answer: "You can apply to be an errander by visiting the 'Become a Rider' section on our homepage. You'll need a valid student ID and a bicycle or scooter." },
     { keywords: ['payment', 'failed', 'paystack', 'money'], answer: "For payment-related issues, please ensure you have a stable network. If your account was debited but the order didn't go through, share your Paystack Reference ID here." },
-    { keywords: ['refund', 'cancelled', 'withdraw'], answer: "Refunds are processed automatically to your Errandr Wallet within 24 hours of cancellation. You can withdraw to your bank account anytime via the Wallet section." },
-    { keywords: ['help', 'hello', 'hi'], answer: "Hi! I'm the Errandr Assistant. 🚀 I can help with tracking, refunds, and general questions. How can I help you today?" }
+    { keywords: ['refund', 'cancelled', 'withdraw'], answer: "Refunds are processed automatically to your Erranders Wallet within 24 hours of cancellation. You can withdraw to your bank account anytime via the Wallet section." },
+    { keywords: ['help', 'hello', 'hi'], answer: "Hi! I'm the Erranders Assistant. 🚀 I can help with tracking, refunds, and general questions. How can I help you today?" }
   ];
 
   async createMessage(data: {

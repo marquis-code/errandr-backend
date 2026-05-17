@@ -48,7 +48,7 @@ export class MarketingService {
       await this.emailService.sendPromotionalEmail(
         user.email,
         "Hungry yet? 🍱 Lunch is just a tap away",
-        "Refuel with Errandr Lunch Deals",
+        "Refuel with Erranders Lunch Deals",
         "That 12 PM lecture was long, we know. Skip the cafeteria queue and order from your favorite campus eatery. Best price, fastest delivery, zero stress.",
         "SECURE MY LUNCH",
         "https://erranders.org/vendors",

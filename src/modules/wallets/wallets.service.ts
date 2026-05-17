@@ -171,7 +171,7 @@ export class WalletsService {
       amount,
       reference,
       recipient: recipient.recipient_code,
-      reason: `Withdrawal from Errandr Wallet - ${reference}`,
+      reason: `Withdrawal from Erranders Wallet - ${reference}`,
     });
 
     if ((transfer as any).status !== true && (transfer as any).status !== 'success') {

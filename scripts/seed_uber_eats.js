@@ -27,7 +27,7 @@ const Vendor = mongoose.model('Vendor', VendorSchema);
 const Product = mongoose.model('Product', ProductSchema);
 
 async function seed() {
-  await mongoose.connect('mongodb+srv://errandr:errandr@errandr.eknah3x.mongodb.net/?appName=errandr');
+  await mongoose.connect('mongodb+srv://erranders:erranders@erranders.eknah3x.mongodb.net/?appName=erranders');
   console.log('Connected to MongoDB');
 
   // Clear existing Safeway-like data
@@ -53,7 +53,7 @@ async function seed() {
       {
         image: 'https://images.unsplash.com/photo-1543362906-acfc16c67564?auto=format&fit=crop&q=80&w=1000',
         title: '$0 Delivery Fee + up to 10% off',
-        description: 'Try Errandr One for 4 weeks',
+        description: 'Try Erranders One for 4 weeks',
         link: '#',
         isActive: true
       }

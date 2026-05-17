@@ -1,4 +1,4 @@
-name: Errandr Prod Deploy
+name: Erranders Prod Deploy
 
 on:
   push:
@@ -66,7 +66,7 @@ jobs:
           port: ${{ secrets.PROD_SSH_PORT }}
           script: |
             # Navigate to project directory
-            cd errandr-backend
+            cd erranders-backend
 
             # Update repository
             git pull

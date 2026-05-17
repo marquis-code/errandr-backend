@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const MONGODB_URI = "mongodb+srv://errandr:errandr@errandr.eknah3x.mongodb.net/?appName=errandr";
+const MONGODB_URI = "mongodb+srv://erranders:erranders@erranders.eknah3x.mongodb.net/?appName=erranders";
 
 const vendorSchema = new mongoose.Schema({
   owner: mongoose.Schema.Types.ObjectId,
@@ -45,10 +45,10 @@ async function seed() {
     console.log('Connected to MongoDB');
 
     // Find or create a default owner
-    let owner = await User.findOne({ email: 'admin@errandr.com' });
+    let owner = await User.findOne({ email: 'admin@erranders.com' });
     if (!owner) {
       owner = await User.create({
-        email: 'admin@errandr.com',
+        email: 'admin@erranders.com',
         firstName: 'System',
         lastName: 'Admin',
       });

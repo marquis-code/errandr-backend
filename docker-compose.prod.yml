@@ -7,9 +7,9 @@ services:
       - "--providers.docker.exposedbydefault=false"
       - "--entryPoints.web.address=:80"
       - "--entryPoints.websecure.address=:443"
-      - "--certificatesresolvers.errandrresolver.acme.tlschallenge=true"
-      - "--certificatesresolvers.errandrresolver.acme.email=hello@errandr.com" # Adjust to your Let's Encrypt email
-      - "--certificatesresolvers.errandrresolver.acme.storage=/letsencrypt/acme.json"
+      - "--certificatesresolvers.errandersresolver.acme.tlschallenge=true"
+      - "--certificatesresolvers.errandersresolver.acme.email=hello@erranders.com" # Adjust to your Let's Encrypt email
+      - "--certificatesresolvers.errandersresolver.acme.storage=/letsencrypt/acme.json"
     ports:
       - "80:80"
       - "443:443"
@@ -17,7 +17,7 @@ services:
       - "./letsencrypt:/letsencrypt"
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
     networks:
-      - errandr-net
+      - erranders-net
     labels:
       - "traefik.enable=true"
       # HTTP-to-HTTPS Redirect
@@ -33,10 +33,10 @@ services:
     volumes:
       - redis_data:/var/lib/redis/data
     networks:
-      - errandr-net
+      - erranders-net
 
   api:
-    image: "ghcr.io/marquis-code/errandr-backend:main" # GHCR Image built and pushed via GitHub Actions
+    image: "ghcr.io/marquis-code/erranders-backend:main" # GHCR Image built and pushed via GitHub Actions
     restart: unless-stopped
     depends_on: [reverse-proxy, redis]
     env_file:
@@ -45,17 +45,17 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
     networks:
-      - errandr-net
+      - erranders-net
     labels:
       - "traefik.enable=true"
       # HTTPS router
-      - "traefik.http.routers.api.rule=Host(`api.errandr.com`)" # Adjust to your production domain
+      - "traefik.http.routers.api.rule=Host(`api.erranders.com`)" # Adjust to your production domain
       - "traefik.http.routers.api.entrypoints=websecure"
-      - "traefik.http.routers.api.tls.certresolver=errandrresolver"
+      - "traefik.http.routers.api.tls.certresolver=errandersresolver"
       - "traefik.http.services.api.loadbalancer.server.port=3000"
 
 networks:
-  errandr-net:
+  erranders-net:
 
 volumes:
   redis_data:

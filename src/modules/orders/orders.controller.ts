@@ -94,7 +94,7 @@ async getMyVendorOrders(
   @Get('available')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get available orders for errandr' })
+  @ApiOperation({ summary: 'Get available orders for erranders' })
   getAvailableOrders() {
     this.logger.log(`getAvailableOrders() called`);
     return this.ordersService.getAvailableOrders();

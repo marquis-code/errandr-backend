@@ -57,7 +57,7 @@ export class AuthService {
       user: this.sanitizeUser(user),
       token,
       requiresVerification: true,
-      message: `Welcome to Errandr, ${user.firstName}! 🚀 We've sent a verification code to your email.`,
+      message: `Welcome to Erranders, ${user.firstName}! 🚀 We've sent a verification code to your email.`,
     };
   }
 

@@ -140,7 +140,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
             ...botPopulated.toObject(),
             content: botResponse,
             senderType: 'bot',
-            senderName: 'Errandr Bot'
+            senderName: 'Erranders Bot'
           };
           this.server.to(`support:${data.senderId}`).emit('chat:new-message', formattedBot);
         }, 1000);

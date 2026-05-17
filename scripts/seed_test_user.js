@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
-const MONGODB_URI = "mongodb+srv://errandr:errandr@errandr.eknah3x.mongodb.net/?appName=errandr";
+const MONGODB_URI = "mongodb+srv://erranders:erranders@erranders.eknah3x.mongodb.net/?appName=erranders";
 
 const userSchema = new mongoose.Schema({
   firstName: String,
@@ -20,14 +20,14 @@ async function seed() {
     await mongoose.connect(MONGODB_URI);
     console.log('Connected to MongoDB');
 
-    const passwordHash = await bcrypt.hash('Errandr2026!', 12);
+    const passwordHash = await bcrypt.hash('Erranders2026!', 12);
     
-    let user = await User.findOne({ email: 'teststudent@errandr.com' });
+    let user = await User.findOne({ email: 'teststudent@erranders.com' });
     if (!user) {
       user = await User.create({
         firstName: 'Test',
         lastName: 'Student',
-        email: 'teststudent@errandr.com',
+        email: 'teststudent@erranders.com',
         password: passwordHash,
         role: 'student',
         isVerified: true,
@@ -42,8 +42,8 @@ async function seed() {
     }
 
     console.log('\n--- TEST USER CREDENTIALS ---');
-    console.log('Email: teststudent@errandr.com');
-    console.log('Password: Errandr2026!');
+    console.log('Email: teststudent@erranders.com');
+    console.log('Password: Erranders2026!');
     console.log('Wallet Balance: ₦50,000');
     console.log('---');
 

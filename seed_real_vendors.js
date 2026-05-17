@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
-const MONGODB_URI = "mongodb+srv://errandr:errandr@errandr.eknah3x.mongodb.net/?appName=errandr";
+const MONGODB_URI = "mongodb+srv://erranders:erranders@erranders.eknah3x.mongodb.net/?appName=erranders";
 
 // Schemas (simplified for script use)
 const userSchema = new mongoose.Schema({
@@ -116,12 +116,12 @@ async function seed() {
     await mongoose.connect(MONGODB_URI);
     console.log('Connected to MongoDB');
 
-    const passwordHash = await bcrypt.hash('Errandr2026!', 12);
+    const passwordHash = await bcrypt.hash('Erranders2026!', 12);
     const credentials = [];
 
     for (const vInfo of vendorsRaw) {
-      const email = `${vInfo.name.toLowerCase().replace(/ /g, '.')}.vendor@errandr.com`;
-      const password = 'Errandr2026!';
+      const email = `${vInfo.name.toLowerCase().replace(/ /g, '.')}.vendor@erranders.com`;
+      const password = 'Erranders2026!';
 
       // 1. Create User
       let user = await User.findOne({ email });

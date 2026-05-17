@@ -5,7 +5,7 @@ import * as path from 'path';
 // Load env vars
 dotenv.config({ path: path.join(__dirname, '../.env') });
 
-const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/errandr';
+const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/erranders';
 
 /**
  * MIGRATION SCRIPT: Sync Vendor IDs

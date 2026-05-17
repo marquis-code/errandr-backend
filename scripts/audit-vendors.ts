@@ -3,11 +3,11 @@ import * as dotenv from 'dotenv';
 import * as path from 'path';
 
 dotenv.config({ path: path.join(__dirname, '../.env') });
-const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/errandr';
+const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/erranders';
 
 async function run() {
-  // Explicitly connect to 'errandr' database
-  await mongoose.connect(uri, { dbName: 'errandr' });
+  // Explicitly connect to 'erranders' database
+  await mongoose.connect(uri, { dbName: 'erranders' });
   const db = mongoose.connection.db;
 
   if (!db) {

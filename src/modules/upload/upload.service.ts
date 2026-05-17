@@ -15,7 +15,7 @@ export class UploadService {
   async uploadFile(
     file: Express.Multer.File,
     resourceType: 'image' | 'video' | 'raw' | 'auto' = 'auto',
-    folder = 'errandr',
+    folder = 'erranders',
   ): Promise<{ url: string; publicId: string }> {
     if (!file) throw new BadRequestException('No file provided');
 
@@ -50,14 +50,14 @@ export class UploadService {
 
   async uploadImage(
     file: Express.Multer.File,
-    folder = 'errandr'
+    folder = 'erranders'
   ): Promise<{ url: string; publicId: string }> {
     return this.uploadFile(file, 'image', folder);
   }
 
   async uploadMultiple(
     files: Express.Multer.File[],
-    folder = 'errandr',
+    folder = 'erranders',
   ): Promise<{ url: string; publicId: string }[]> {
     return Promise.all(files.map((file) => this.uploadImage(file, folder)));
   }

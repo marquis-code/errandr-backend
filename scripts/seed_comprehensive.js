@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
-const MONGODB_URI = "mongodb+srv://errandr:errandr@errandr.eknah3x.mongodb.net/?appName=errandr";
+const MONGODB_URI = "mongodb+srv://erranders:erranders@erranders.eknah3x.mongodb.net/?appName=erranders";
 
 const userSchema = new mongoose.Schema({}, { strict: false, collection: 'users' });
 const User = mongoose.model('User', userSchema);
@@ -44,8 +44,8 @@ async function seed() {
     console.log('Connected to MongoDB');
 
     // 1. Fix Iya Chidera specifically
-    const loggedInEmail = 'iya.chidera.vendor@errandr.com';
-    const scriptEmail = 'iyachidera.vendor@errandr.com';
+    const loggedInEmail = 'iya.chidera.vendor@erranders.com';
+    const scriptEmail = 'iyachidera.vendor@erranders.com';
     
     let loggedInUser = await User.findOne({ email: loggedInEmail });
     const vendorIya = await Vendor.findOne({ storeName: 'Iya Chidera' });

@@ -1,20 +1,20 @@
 import { Controller, Get, Post, Put, Body, UseGuards, Query, DefaultValuePipe, ParseIntPipe } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
-import { ErrandrService } from './errandr.service';
+import { ErrandersService } from './erranders.service';
 import { JwtAuthGuard, CurrentUser, Roles, RolesGuard } from '../../common/decorators';
 import { User, UserRole } from '../users/schemas/user.schema';
 
-@ApiTags('Errandr')
-@Controller('errandr')
-export class ErrandrController {
-  constructor(private readonly errandrService: ErrandrService) {}
+@ApiTags('Erranders')
+@Controller('erranders')
+export class ErrandersController {
+  constructor(private readonly errandersService: ErrandersService) {}
 
   @Post('register')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Register as errander' })
   register(@CurrentUser() user: User, @Body() body: any) {
-    return this.errandrService.register((user._id as unknown) as string, body);
+    return this.errandersService.register((user._id as unknown) as string, body);
   }
 
   @Get('me')
@@ -22,7 +22,7 @@ export class ErrandrController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get errander profile' })
   getProfile(@CurrentUser() user: User) {
-    return this.errandrService.getProfile((user._id as unknown) as string);
+    return this.errandersService.getProfile((user._id as unknown) as string);
   }
 
   @Get('earnings')
@@ -30,7 +30,7 @@ export class ErrandrController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get errander earnings' })
   getEarnings(@CurrentUser() user: User) {
-    return this.errandrService.getEarnings((user._id as unknown) as string);
+    return this.errandersService.getEarnings((user._id as unknown) as string);
   }
 
   @Put('location')
@@ -38,7 +38,7 @@ export class ErrandrController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update errander location' })
   updateLocation(@CurrentUser() user: User, @Body() body: { coordinates: number[] }) {
-    return this.errandrService.updateLocation((user._id as unknown) as string, body.coordinates);
+    return this.errandersService.updateLocation((user._id as unknown) as string, body.coordinates);
   }
 
   @Put('toggle-status')
@@ -46,26 +46,26 @@ export class ErrandrController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Toggle errander availability' })
   toggleStatus(@CurrentUser() user: User) {
-    return this.errandrService.toggleStatus((user._id as unknown) as string);
+    return this.errandersService.toggleStatus((user._id as unknown) as string);
   }
 
   @Get('available')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get available errandr' })
+  @ApiOperation({ summary: 'Get available erranders' })
   getAvailable() {
-    return this.errandrService.getAvailable();
+    return this.errandersService.getAvailable();
   }
 
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get all errandr (admin)' })
+  @ApiOperation({ summary: 'Get all erranders (admin)' })
   getAll(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number = 10,
   ) {
-    return this.errandrService.getAll(page, limit);
+    return this.errandersService.getAll(page, limit);
   }
 }

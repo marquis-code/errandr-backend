@@ -2,10 +2,10 @@ import * as mongoose from 'mongoose';
 import * as bcrypt from 'bcryptjs';
 import { UserRole } from '../src/modules/users/schemas/user.schema';
 
-const MONGODB_URI = "mongodb+srv://errandr:errandr@errandr.eknah3x.mongodb.net/?appName=errandr";
+const MONGODB_URI = "mongodb+srv://erranders:erranders@erranders.eknah3x.mongodb.net/?appName=erranders";
 
 const userData = {
-  firstName: 'Errandr',
+  firstName: 'Erranders',
   lastName: 'Admin',
   email: 'abahmarquis@gmail.com',
   password: 'Admin@123',

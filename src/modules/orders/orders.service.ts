@@ -7,7 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Order, OrderStatus, PaymentStatus, OrderType } from './schemas/order.schema';
 
 import { Vendor, VendorStatus } from '../vendors/schemas/vendor.schema';
-import { Errander, ErranderStatus } from '../errandr/schemas/errander.schema';
+import { Errander, ErranderStatus } from '../erranders/schemas/errander.schema';
 import { Product } from '../products/schemas/product.schema';
 import { RedisService } from '../redis/redis.service';
 import { InjectQueue } from '@nestjs/bull';
@@ -388,7 +388,7 @@ export class OrdersService {
     // Schedule timeout check (e.g. 5 mins)
     await this.orderQueue.add('orderTimeout', { orderId: order._id }, { delay: 300000 });
 
-    // Broadcast to available errandr
+    // Broadcast to available erranders
     await this.broadcastNewOrderToErranders(order);
 
 
@@ -443,23 +443,23 @@ export class OrdersService {
 
   /**
    * Smart Order Broadcast Algorithm:
-   * 1. Find available errandr near the vendor location
+   * 1. Find available erranders near the vendor location
    * 2. Sort by distance and rating
    * 3. Assign to the closest, highest-rated available errander
    * 4. If no errander available, mark as broadcast and retry via cron
    */
-  private async broadcastToErrandr(order: Order): Promise<void> {
+  private async broadcastToErranders(order: Order): Promise<void> {
     if (order.type === 'custom_errand') {
        // Broadcast custom errands based on pickup location coordinates if available
        // For now, broadcast to all since we don't have coords for arbitrary strings yet
-       const errandr = await this.erranderModel.find({ status: ErranderStatus.AVAILABLE });
-       if (errandr.length > 0) {
+       const erranders = await this.erranderModel.find({ status: ErranderStatus.AVAILABLE });
+       if (erranders.length > 0) {
          await this.redisService.publish('order:new', {
            orderId: order._id,
            vendorName: 'CUSTOM LOGISTICS',
            deliveryLocation: order.deliveryLocation,
            total: order.total,
-           erranderIds: errandr.map((e) => e.user.toString()),
+           erranderIds: erranders.map((e) => e.user.toString()),
          });
        }
        return;
@@ -469,9 +469,9 @@ export class OrdersService {
 
     const [lng, lat] = vendor.location.coordinates;
 
-    // Find available errandr nearby using Redis geo
+    // Find available erranders nearby using Redis geo
     const nearbyErranderIds = await this.redisService.georadius(
-      'errandr:locations',
+      'erranders:locations',
       lng,
       lat,
       5,
@@ -479,15 +479,15 @@ export class OrdersService {
     );
 
     if (nearbyErranderIds.length > 0) {
-      // Get available errandr and sort by rating
-      const errandr = await this.erranderModel
+      // Get available erranders and sort by rating
+      const erranders = await this.erranderModel
         .find({
           user: { $in: nearbyErranderIds.map((id) => new Types.ObjectId(id)) },
           status: ErranderStatus.AVAILABLE,
         })
         .sort({ rating: -1 });
 
-      if (errandr.length > 0) {
+      if (erranders.length > 0) {
         // Publish to Redis channel for real-time notification
         await this.redisService.publish('order:new', {
           orderId: order._id,
@@ -495,13 +495,13 @@ export class OrdersService {
           vendorLocation: vendor.location,
           deliveryLocation: order.deliveryLocation,
           total: order.total,
-          erranderIds: errandr.map((e) => e.user.toString()),
+          erranderIds: erranders.map((e) => e.user.toString()),
         });
         return;
       }
     }
 
-    // Mark for retry if no errandr found
+    // Mark for retry if no erranders found
     order.isBroadcasted = true;
     order.broadcastAttempts += 1;
     await order.save();
@@ -807,7 +807,7 @@ export class OrdersService {
       }
     }
 
-    // Reward for Errandr Consistency
+    // Reward for Erranders Consistency
     await this.rewardsService.addPoints(erranderId, 20, `Successful delivery of order #${order.orderNumber}`);
 
     // Batch Hero Bonus
@@ -1020,7 +1020,7 @@ export class OrdersService {
       order.erranderReview = data.erranderReview || '';
       order.hasRatedErrander = true;
       
-      // Award points to Errandr for good rating
+      // Award points to Erranders for good rating
       if (data.erranderRating >= 4 && order.errander) {
         await this.rewardsService.updateUserStats(order.errander.toString(), { perfectRating: data.erranderRating === 5 });
         await this.rewardsService.addPoints(order.errander.toString(), data.erranderRating === 5 ? 50 : 20, `${data.erranderRating}-star rating bonus (Compliance)`);
@@ -1256,7 +1256,7 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
       const vendor = await this.vendorModel.findById(order.vendor).populate('owner');
       if (vendor && (vendor.owner as any)?.phone) {
         const phone = (vendor.owner as any).phone;
-        const smsSent = await this.twilioService.sendSMS(phone, `Errandr Pickup Code for #${order.orderNumber}: ${otp}`);
+        const smsSent = await this.twilioService.sendSMS(phone, `Erranders Pickup Code for #${order.orderNumber}: ${otp}`);
         if (!smsSent) {
           this.logger.warn(`SMS failed for pickup OTP to ${phone}, falling back to voice call`);
           await this.twilioService.sendVoiceOTP(phone, otp);

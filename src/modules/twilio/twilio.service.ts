@@ -39,7 +39,7 @@ export class TwilioService {
    * Send SMS OTP via Twilio
    */
   async sendSMSOTP(to: string, otp: string): Promise<boolean> {
-    return this.sendSMS(to, `Your Errandr code is: ${otp}`);
+    return this.sendSMS(to, `Your Erranders code is: ${otp}`);
   }
 
   /**

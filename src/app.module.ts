@@ -10,7 +10,7 @@ import { UsersModule } from './modules/users/users.module';
 import { VendorsModule } from './modules/vendors/vendors.module';
 import { ProductsModule } from './modules/products/products.module';
 import { OrdersModule } from './modules/orders/orders.module';
-import { ErrandrModule } from './modules/errandr/errandr.module';
+import { ErrandersModule } from './modules/erranders/erranders.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { TrackingModule } from './modules/tracking/tracking.module';
 import { UploadModule } from './modules/upload/upload.module';
@@ -70,7 +70,7 @@ import { TwilioModule } from './modules/twilio/twilio.module';
     VendorsModule,
     ProductsModule,
     OrdersModule,
-    ErrandrModule,
+    ErrandersModule,
     ChatModule,
     TrackingModule,
     UploadModule,

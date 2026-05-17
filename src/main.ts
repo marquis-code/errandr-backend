@@ -39,7 +39,7 @@ async function bootstrap() {
 
   // Swagger
   const config = new DocumentBuilder()
-    .setTitle('Errandr API')
+    .setTitle('Erranders API')
     .setDescription('School Errand Delivery Platform API')
     .setVersion('1.0')
     .addBearerAuth()
@@ -50,7 +50,7 @@ async function bootstrap() {
   const port = process.env.PORT || 3000;
   
   await app.listen(port);
-  console.log(`🚀 Errandr API running on http://localhost:${port}`);
+  console.log(`🚀 Erranders API running on http://localhost:${port}`);
   console.log(`📚 Swagger docs at http://localhost:${port}/api/docs`);
 }
 bootstrap();

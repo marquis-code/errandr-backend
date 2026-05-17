@@ -49,7 +49,7 @@ export class TwilioController {
     @Res() res: Response,
   ) {
     const response = new twilio.twiml.VoiceResponse();
-    response.say({ voice: 'Polly.Amy' }, `Greetings from Errandr. A new order has been placed. Order number ${orderNumber}.`);
+    response.say({ voice: 'Polly.Amy' }, `Greetings from Erranders. A new order has been placed. Order number ${orderNumber}.`);
     response.pause({ length: 1 });
     response.say({ voice: 'Polly.Amy' }, `Details: ${items}.`);
     response.say({ voice: 'Polly.Amy' }, `Total amount payable is ${total} Naira.`);
@@ -107,7 +107,7 @@ export class TwilioController {
     @Res() res: Response,
   ) {
     const response = new twilio.twiml.VoiceResponse();
-    response.say(`Hello! This is Errandr. A new delivery is available from ${vendorName}.`);
+    response.say(`Hello! This is Erranders. A new delivery is available from ${vendorName}.`);
     response.say(`The delivery fee is ${fee} Naira.`);
     
     const gather = response.gather({
@@ -156,7 +156,7 @@ export class TwilioController {
   async voiceOtp(@Query('otp') otp: string, @Res() res: Response) {
     const response = new twilio.twiml.VoiceResponse();
     const spaced = otp.split('').join(', ');
-    response.say(`Hello. Your Errandr verification code is: ${spaced}. I repeat, ${spaced}. Thank you.`);
+    response.say(`Hello. Your Erranders verification code is: ${spaced}. I repeat, ${spaced}. Thank you.`);
     response.hangup();
 
     res.type('text/xml');

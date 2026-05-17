@@ -82,7 +82,7 @@ export class CronService {
           const weeklyTotal = weeklyStats[0]?.weeklyTotal || totalEarnings;
 
           // 4. Send SMS via Africa's Talking
-          const message = `Errandr: Today you completed ${totalOrders} orders. You earned ₦${totalEarnings.toLocaleString()}. Total this week: ₦${weeklyTotal.toLocaleString()}.`;
+          const message = `Erranders: Today you completed ${totalOrders} orders. You earned ₦${totalEarnings.toLocaleString()}. Total this week: ₦${weeklyTotal.toLocaleString()}.`;
           
           await this.twilioService.sendSMS(owner.phone, message);
           this.logger.log(`Sent earnings summary to vendor: ${vendor.storeName}`);

@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
-const MONGODB_URI = "mongodb+srv://errandr:errandr@errandr.eknah3x.mongodb.net/?appName=errandr";
+const MONGODB_URI = "mongodb+srv://erranders:erranders@erranders.eknah3x.mongodb.net/?appName=erranders";
 
 const userSchema = new mongoose.Schema({}, { strict: false, collection: 'users' });
 const User = mongoose.model('User', userSchema);
@@ -17,15 +17,15 @@ async function alignAndSeed() {
     await mongoose.connect(MONGODB_URI);
     console.log('Connected to MongoDB');
 
-    const passwordHash = await bcrypt.hash('Errandr2026!', 12);
+    const passwordHash = await bcrypt.hash('Erranders2026!', 12);
     
     // 1. Dispatch Rider
-    let rider = await User.findOne({ email: 'rider@errandr.com' });
+    let rider = await User.findOne({ email: 'rider@erranders.com' });
     if (!rider) {
       rider = await User.create({
         firstName: 'Speedy',
         lastName: 'Rider',
-        email: 'rider@errandr.com',
+        email: 'rider@erranders.com',
         password: passwordHash,
         role: 'errander',
         isVerified: true,
@@ -36,8 +36,8 @@ async function alignAndSeed() {
       console.log('Dispatch Rider created successfully!');
     }
     console.log('\n--- DISPATCH RIDER CREDENTIALS ---');
-    console.log('Email: rider@errandr.com');
-    console.log('Password: Errandr2026!');
+    console.log('Email: rider@erranders.com');
+    console.log('Password: Erranders2026!');
     console.log('----------------------------------\n');
 
     // 2. Align All Vendors
@@ -47,7 +47,7 @@ async function alignAndSeed() {
     const vendorLogins = [];
 
     for (const vendor of vendors) {
-      const emailDomain = 'errandr.com';
+      const emailDomain = 'erranders.com';
       const cleanName = (vendor.storeName || 'Vendor').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
       const email = `${cleanName}.vendor@${emailDomain}`;
 
@@ -76,7 +76,7 @@ async function alignAndSeed() {
       vendorLogins.push({ store: vendor.storeName, email });
     }
 
-    console.log('--- VENDOR CREDENTIALS (All passwords: Errandr2026!) ---');
+    console.log('--- VENDOR CREDENTIALS (All passwords: Erranders2026!) ---');
     vendorLogins.forEach(v => {
       console.log(`Store: ${(v.store || 'Vendor').padEnd(20)} | Email: ${v.email}`);
     });

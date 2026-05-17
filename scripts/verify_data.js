@@ -1,14 +1,14 @@
 const { MongoClient, ObjectId } = require('mongodb');
 
 async function verify() {
-  const uri = "mongodb+srv://errandr:errandr@errandr.eknah3x.mongodb.net/?appName=errandr";
+  const uri = "mongodb+srv://erranders:erranders@erranders.eknah3x.mongodb.net/?appName=erranders";
   const client = new MongoClient(uri);
 
   try {
     await client.connect();
-    const db = client.db('test'); // Or 'errandr' if that's the name. Let's try both or check .env
+    const db = client.db('test'); // Or 'erranders' if that's the name. Let's try both or check .env
 
-    const userEmail = 'iyachidera.vendor@errandr.com';
+    const userEmail = 'iyachidera.vendor@erranders.com';
     const user = await db.collection('users').findOne({ email: userEmail });
     console.log('User found:', user ? { id: user._id, email: user.email } : 'Not found');
 
