@@ -94,7 +94,7 @@ export class PaymentsController {
   ) {
     const userId = req.user._id.toString();
     const reference = `ERR-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    const callbackUrl = body.callback_url || body.redirect_url || this.configService.get('PAYSTACK_CALLBACK_URL') || 'https://www.errandr.shop/cart';
+    const callbackUrl = body.callback_url || body.redirect_url || this.configService.get('PAYSTACK_CALLBACK_URL') || 'https://www.erranders.org/cart';
     
     // Security: Enforce userId in metadata to be the logged-in user
     const sanitizedMetadata = {

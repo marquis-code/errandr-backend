@@ -5,10 +5,10 @@ import { Resend } from 'resend';
 @Injectable()
 export class EmailService {
   private resend: Resend | null;
-  private fromEmail = 'Errandr <notifications@errandr.shop>';
+  private fromEmail = 'Errandr <notifications@erranders.org>';
   private primaryColor = '#0061FF';
   private secondaryColor = '#FBBF24';
-  private logoUrl = 'https://errandr.shop/_nuxt/logo.7u_gNOaX.png';
+  private logoUrl = 'https://erranders.org/_nuxt/logo.7u_gNOaX.png';
 
   constructor(private configService: ConfigService) {
     let apiKey = this.configService.get<string>('RESEND_API_KEY');
@@ -172,7 +172,7 @@ export class EmailService {
         </div>
 
         <div style="text-align: center; margin-top: 48px;">
-          <a href="https://errandr.shop" class="button">START YOUR FIRST ORDER</a>
+          <a href="https://erranders.org" class="button">START YOUR FIRST ORDER</a>
         </div>
       </div>
     `, `Welcome to the Errandr family, ${firstName}!`);
@@ -196,7 +196,7 @@ export class EmailService {
         </div>
 
         <div style="text-align: center;">
-          <a href="https://vendor.errandr.shop" class="button">MANAGE MY STORE</a>
+          <a href="https://vendor.erranders.org" class="button">MANAGE MY STORE</a>
         </div>
       </div>
     `, `Welcome Partner! Your store ${storeName} is ready.`);
@@ -255,7 +255,7 @@ export class EmailService {
         </div>
 
         <div style="text-align: center; margin-top: 48px;">
-          <a href="https://errandr.shop/dashboard/orders/${order.orderNumber || order._id}" class="button" style="background: #1A1A1A; box-shadow: 0 20px 40px rgba(0,0,0,0.2);">TRACK MY CHOP 🚀</a>
+          <a href="https://erranders.org/dashboard/orders/${order.orderNumber || order._id}" class="button" style="background: #1A1A1A; box-shadow: 0 20px 40px rgba(0,0,0,0.2);">TRACK MY CHOP 🚀</a>
         </div>
         
         <div style="margin-top: 64px; text-align: center;">
@@ -297,7 +297,7 @@ export class EmailService {
         </div>
 
         <div style="text-align: center; margin-top: 48px;">
-          <a href="https://errandr.shop/dashboard${isTopup ? '/wallet' : '/orders'}" class="button" style="background: #1A1A1A;">${isTopup ? 'VIEW MY BALANCE' : 'TRACK MY ORDER'}</a>
+          <a href="https://erranders.org/dashboard${isTopup ? '/wallet' : '/orders'}" class="button" style="background: #1A1A1A;">${isTopup ? 'VIEW MY BALANCE' : 'TRACK MY ORDER'}</a>
         </div>
       </div>
     `, `Success! We've confirmed your payment of ₦${amount.toLocaleString()}`);
@@ -316,7 +316,7 @@ export class EmailService {
         <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">Good things coming your way. Your order <b>#${orderNumber}</b> has been aggressively updated to its next stage.</p>
         
         <div style="margin: 48px 0; text-align: center;">
-          <a href="https://student.errandr.shop/orders/${orderNumber}" class="button">VIEW LIVE TRACKING</a>
+          <a href="https://student.erranders.org/orders/${orderNumber}" class="button">VIEW LIVE TRACKING</a>
         </div>
       </div>
     `, `Update for order #${orderNumber}: ${status}`);
@@ -337,7 +337,7 @@ export class EmailService {
         <div style="margin: 48px 0; background: #FFD700; border-radius: 40px; padding: 40px; text-align: left;">
           <h2 style="margin-top: 0; font-size: 24px; font-weight: 800;">Was it legendary? ⭐</h2>
           <p style="margin-bottom: 32px; font-weight: 600;">Rating your experience helps us keep Errandr standard and rewards our top dispatchers.</p>
-          <a href="https://errandr.shop/orders/${order.orderNumber}/rate" style="background: #1A1A1A; color: #ffffff; padding: 16px 32px; border-radius: 16px; text-decoration: none; font-weight: 800; font-size: 13px;">TAP TO RATE</a>
+          <a href="https://erranders.org/orders/${order.orderNumber}/rate" style="background: #1A1A1A; color: #ffffff; padding: 16px 32px; border-radius: 16px; text-decoration: none; font-weight: 800; font-size: 13px;">TAP TO RATE</a>
         </div>
       </div>
     `, `Order #${order.orderNumber} successfully delivered!`);
@@ -375,7 +375,7 @@ export class EmailService {
            <p style="font-size: 13px; opacity: 0.9;">${description}</p>
         </div>
         
-        <a href="https://errandr.shop/wallet" class="button">VIEW WALLET</a>
+        <a href="https://erranders.org/wallet" class="button">VIEW WALLET</a>
       </div>
     `, `You've received ₦${amount.toLocaleString()}!`);
     return this.sendEmail(to, `Wallet Credited — Errandr`, html);

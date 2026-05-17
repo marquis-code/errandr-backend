@@ -32,7 +32,7 @@ export class MarketingService {
         "Wake up to the best campus breakfasts!",
         "Don't start your lectures on an empty stomach. From hot akara and bread to fresh coffee, our campus plugs are open and ready to deliver sharp-sharp to your hostel.",
         "ORDER BREAKFAST NOW",
-        "https://errandr.shop/vendors",
+        "https://erranders.org/vendors",
         "https://images.unsplash.com/photo-1533089860892-a7c6f0a88666?w=800&q=80"
       );
     }
@@ -51,7 +51,7 @@ export class MarketingService {
         "Refuel with Errandr Lunch Deals",
         "That 12 PM lecture was long, we know. Skip the cafeteria queue and order from your favorite campus eatery. Best price, fastest delivery, zero stress.",
         "SECURE MY LUNCH",
-        "https://errandr.shop/vendors",
+        "https://erranders.org/vendors",
         "https://images.unsplash.com/photo-1547592180-85f173990554?w=800&q=80"
       );
     }
@@ -70,7 +70,7 @@ export class MarketingService {
         "End your day with a feast",
         "You worked hard today. Treat yourself to something special. From spicy noodles to solid swallow, we've got you covered for the late-night study sessions too.",
         "ORDER DINNER",
-        "https://errandr.shop/vendors",
+        "https://erranders.org/vendors",
         "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800&q=80"
       );
     }

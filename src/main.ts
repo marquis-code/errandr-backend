@@ -12,9 +12,8 @@ async function bootstrap() {
 
   // ACCESS LOGGING
   app.use((req: any, res: any, next: any) => {
-    const fs = require('fs');
-    const log = `[${new Date().toISOString()}] ${req.method} ${req.url}\n`;
-    fs.appendFileSync('access.log', log);
+    const log = `[${new Date().toISOString()}] ${req.method} ${req.url}`;
+    console.log(log);
     next();
   });
 
