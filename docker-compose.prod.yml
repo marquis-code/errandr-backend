@@ -8,7 +8,7 @@ services:
       - "--entryPoints.web.address=:80"
       - "--entryPoints.websecure.address=:443"
       - "--certificatesresolvers.errandersresolver.acme.tlschallenge=true"
-      - "--certificatesresolvers.errandersresolver.acme.email=hello@erranders.com" # Adjust to your Let's Encrypt email
+      - "--certificatesresolvers.errandersresolver.acme.email=hello@erranders.org" # Adjust to your Let's Encrypt email
       - "--certificatesresolvers.errandersresolver.acme.storage=/letsencrypt/acme.json"
     ports:
       - "80:80"
@@ -49,7 +49,7 @@ services:
     labels:
       - "traefik.enable=true"
       # HTTPS router
-      - "traefik.http.routers.api.rule=Host(`api.erranders.com`)" # Adjust to your production domain
+      - "traefik.http.routers.api.rule=Host(`api.erranders.org`)" # Adjust to your production domain
       - "traefik.http.routers.api.entrypoints=websecure"
       - "traefik.http.routers.api.tls.certresolver=errandersresolver"
       - "traefik.http.services.api.loadbalancer.server.port=3000"
