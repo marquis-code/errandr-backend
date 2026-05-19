@@ -4,7 +4,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Order, OrderStatus } from '../orders/schemas/order.schema';
 import { Vendor } from '../vendors/schemas/vendor.schema';
-import { TwilioService } from '../twilio/twilio.service';
+import { AfricasTalkingService } from '../africastalking/africastalking.service';
 
 @Injectable()
 export class CronService {
@@ -13,7 +13,7 @@ export class CronService {
   constructor(
     @InjectModel(Order.name) private orderModel: Model<Order>,
     @InjectModel(Vendor.name) private vendorModel: Model<Vendor>,
-    private twilioService: TwilioService,
+    private africasTalkingService: AfricasTalkingService,
   ) {}
 
   /**
@@ -84,7 +84,7 @@ export class CronService {
           // 4. Send SMS via Africa's Talking
           const message = `Erranders: Today you completed ${totalOrders} orders. You earned ₦${totalEarnings.toLocaleString()}. Total this week: ₦${weeklyTotal.toLocaleString()}.`;
           
-          await this.twilioService.sendSMS(owner.phone, message);
+          await this.africasTalkingService.sendSMS(owner.phone, message);
           this.logger.log(`Sent earnings summary to vendor: ${vendor.storeName}`);
         }
       }

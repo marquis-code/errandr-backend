@@ -26,7 +26,7 @@ import { PaymentsModule } from './modules/payments/payments.module';
 import { GroupOrdersModule } from './modules/group-orders/group-orders.module';
 import { RewardsModule } from './modules/rewards/rewards.module';
 import { MarketingModule } from './modules/marketing/marketing.module';
-import { TwilioModule } from './modules/twilio/twilio.module';
+import { AfricasTalkingModule } from './modules/africastalking/africastalking.module';
 
 @Module({
   imports: [
@@ -63,7 +63,7 @@ import { TwilioModule } from './modules/twilio/twilio.module';
     ScheduleModule.forRoot(),
 
     // Feature modules
-    TwilioModule,
+    AfricasTalkingModule,
     RedisModule,
     AuthModule,
     UsersModule,

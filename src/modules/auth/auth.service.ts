@@ -10,7 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { EmailService } from '../email/email.service';
 import { WalletsService } from '../wallets/wallets.service';
 import { RewardsService } from '../rewards/rewards.service';
-import { TwilioService } from '../twilio/twilio.service';
+import { AfricasTalkingService } from '../africastalking/africastalking.service';
 
 @Injectable()
 export class AuthService {
@@ -21,7 +21,7 @@ export class AuthService {
     private emailService: EmailService,
     private walletsService: WalletsService,
     private rewardsService: RewardsService,
-    private twilioService: TwilioService,
+    private africasTalkingService: AfricasTalkingService,
   ) {}
 
   async register(registerDto: RegisterDto) {
@@ -122,10 +122,10 @@ export class AuthService {
     await user.save();
 
     if (method === 'sms' && user.phone) {
-      const sent = await this.twilioService.sendSMSOTP(user.phone, otp);
+      const sent = await this.africasTalkingService.sendSMSOTP(user.phone, otp);
       if (sent) return { success: true, message: 'Code sent to your phone via SMS 📱' };
     } else if (method === 'voice' && user.phone) {
-      await this.twilioService.sendVoiceOTP(user.phone, otp);
+      await this.africasTalkingService.sendVoiceOTP(user.phone, otp);
       return { success: true, message: 'Calling you now with the code 📞' };
     }
 

@@ -6,7 +6,7 @@ import { CronService } from './cron.service';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Order, OrderSchema } from '../orders/schemas/order.schema';
 import { Vendor, VendorSchema } from '../vendors/schemas/vendor.schema';
-import { TwilioModule } from '../twilio/twilio.module';
+import { AfricasTalkingModule } from '../africastalking/africastalking.module';
 
 @Global()
 @Module({
@@ -15,7 +15,7 @@ import { TwilioModule } from '../twilio/twilio.module';
       { name: Order.name, schema: OrderSchema },
       { name: Vendor.name, schema: VendorSchema },
     ]),
-    TwilioModule,
+    AfricasTalkingModule,
   ],
   controllers: [NotificationsController],
   providers: [NotificationsService, NotificationsGateway, CronService],

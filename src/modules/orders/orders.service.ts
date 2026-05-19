@@ -20,7 +20,7 @@ import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { ChatService } from '../chat/chat.service';
 import { BatchDeliveryService } from './batch-delivery.service';
 import { RewardsService } from '../rewards/rewards.service';
-import { TwilioService } from '../twilio/twilio.service';
+import { AfricasTalkingService } from '../africastalking/africastalking.service';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
@@ -42,8 +42,8 @@ export class OrdersService {
     private chatService: ChatService,
     private batchDeliveryService: BatchDeliveryService,
     private rewardsService: RewardsService,
-    @Inject(forwardRef(() => TwilioService))
-    private twilioService: TwilioService,
+    @Inject(forwardRef(() => AfricasTalkingService))
+    private africasTalkingService: AfricasTalkingService,
   ) {}
 
   async getBatchStatus() {
@@ -423,7 +423,7 @@ export class OrdersService {
     if (order.paymentStatus === PaymentStatus.PAID && populatedVendor?.phone) {
       try {
         const itemsList = order.items.map(i => `${i.quantity} ${i.name}`);
-        await this.twilioService.sendOrderDispatchCall(populatedVendor.phone, {
+        await this.africasTalkingService.sendOrderDispatchCall(populatedVendor.phone, {
           orderNumber: order.orderNumber,
           orderId: (order._id as any).toString(),
           items: itemsList,
@@ -1256,10 +1256,10 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
       const vendor = await this.vendorModel.findById(order.vendor).populate('owner');
       if (vendor && (vendor.owner as any)?.phone) {
         const phone = (vendor.owner as any).phone;
-        const smsSent = await this.twilioService.sendSMS(phone, `Erranders Pickup Code for #${order.orderNumber}: ${otp}`);
+        const smsSent = await this.africasTalkingService.sendSMS(phone, `Erranders Pickup Code for #${order.orderNumber}: ${otp}`);
         if (!smsSent) {
           this.logger.warn(`SMS failed for pickup OTP to ${phone}, falling back to voice call`);
-          await this.twilioService.sendVoiceOTP(phone, otp);
+          await this.africasTalkingService.sendVoiceOTP(phone, otp);
           method = 'voice';
         }
       }
@@ -1267,10 +1267,10 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
       order.deliveryOtpHash = hash;
       const customer = order.customer as any;
       if (customer && customer.phone) {
-        const smsSent = await this.twilioService.sendSMSOTP(customer.phone, otp);
+        const smsSent = await this.africasTalkingService.sendSMSOTP(customer.phone, otp);
         if (!smsSent) {
           this.logger.warn(`SMS failed for delivery OTP to ${customer.phone}, falling back to voice call`);
-          await this.twilioService.sendVoiceOTP(customer.phone, otp);
+          await this.africasTalkingService.sendVoiceOTP(customer.phone, otp);
           method = 'voice';
         }
       }
@@ -1308,7 +1308,7 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     if (!phone) throw new BadRequestException('Recipient phone number not found');
 
     await order.save();
-    await this.twilioService.sendVoiceOTP(phone, otp);
+    await this.africasTalkingService.sendVoiceOTP(phone, otp);
     
     return { 
       success: true, 

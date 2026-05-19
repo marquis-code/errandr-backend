@@ -9,7 +9,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { WalletsModule } from '../wallets/wallets.module';
 import { RewardsModule } from '../rewards/rewards.module';
-import { TwilioModule } from '../twilio/twilio.module';
+import { AfricasTalkingModule } from '../africastalking/africastalking.module';
 
 @Module({
   imports: [
@@ -25,7 +25,7 @@ import { TwilioModule } from '../twilio/twilio.module';
     MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
     WalletsModule,
     RewardsModule,
-    TwilioModule,
+    AfricasTalkingModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],

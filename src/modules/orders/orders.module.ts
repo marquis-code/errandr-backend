@@ -18,7 +18,7 @@ import { UsersModule } from '../users/users.module';
 import { BatchDeliveryService } from './batch-delivery.service';
 import { RewardsModule } from '../rewards/rewards.module';
 import { SimulationController } from './simulation.controller';
-import { TwilioModule } from '../twilio/twilio.module';
+import { AfricasTalkingModule } from '../africastalking/africastalking.module';
 
 @Module({
   imports: [
@@ -36,7 +36,7 @@ import { TwilioModule } from '../twilio/twilio.module';
     forwardRef(() => WalletsModule),
     forwardRef(() => PaymentsModule),
     RewardsModule,
-    forwardRef(() => TwilioModule),
+    forwardRef(() => AfricasTalkingModule),
   ],
   controllers: [OrdersController, SimulationController],
   providers: [OrdersService, BatchDeliveryService],
