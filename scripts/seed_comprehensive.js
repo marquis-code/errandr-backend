@@ -44,8 +44,8 @@ async function seed() {
     console.log('Connected to MongoDB');
 
     // 1. Fix Iya Chidera specifically
-    const loggedInEmail = 'iya.chidera.vendor@erranders.com';
-    const scriptEmail = 'iyachidera.vendor@erranders.com';
+    const loggedInEmail = 'iya.chidera.vendor@erranders.org';
+    const scriptEmail = 'iyachidera.vendor@erranders.org';
     
     let loggedInUser = await User.findOne({ email: loggedInEmail });
     const vendorIya = await Vendor.findOne({ storeName: 'Iya Chidera' });

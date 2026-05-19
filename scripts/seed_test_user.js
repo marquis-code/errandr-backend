@@ -22,12 +22,12 @@ async function seed() {
 
     const passwordHash = await bcrypt.hash('Erranders2026!', 12);
     
-    let user = await User.findOne({ email: 'teststudent@erranders.com' });
+    let user = await User.findOne({ email: 'teststudent@erranders.org' });
     if (!user) {
       user = await User.create({
         firstName: 'Test',
         lastName: 'Student',
-        email: 'teststudent@erranders.com',
+        email: 'teststudent@erranders.org',
         password: passwordHash,
         role: 'student',
         isVerified: true,
@@ -42,7 +42,7 @@ async function seed() {
     }
 
     console.log('\n--- TEST USER CREDENTIALS ---');
-    console.log('Email: teststudent@erranders.com');
+    console.log('Email: teststudent@erranders.org');
     console.log('Password: Erranders2026!');
     console.log('Wallet Balance: ₦50,000');
     console.log('---');

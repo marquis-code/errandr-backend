@@ -8,7 +8,7 @@ async function verify() {
     await client.connect();
     const db = client.db('test'); // Or 'erranders' if that's the name. Let's try both or check .env
 
-    const userEmail = 'iyachidera.vendor@erranders.com';
+    const userEmail = 'iyachidera.vendor@erranders.org';
     const user = await db.collection('users').findOne({ email: userEmail });
     console.log('User found:', user ? { id: user._id, email: user.email } : 'Not found');
 

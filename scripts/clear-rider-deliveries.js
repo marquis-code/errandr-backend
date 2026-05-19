@@ -21,7 +21,7 @@ function loadEnv() {
 loadEnv();
 
 const MONGODB_URI = process.env.MONGODB_URI;
-const RIDER_EMAIL = 'rider@erranders.com';
+const RIDER_EMAIL = 'rider@erranders.org';
 
 async function main() {
   if (!MONGODB_URI) {

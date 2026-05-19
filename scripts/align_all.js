@@ -20,12 +20,12 @@ async function alignAndSeed() {
     const passwordHash = await bcrypt.hash('Erranders2026!', 12);
     
     // 1. Dispatch Rider
-    let rider = await User.findOne({ email: 'rider@erranders.com' });
+    let rider = await User.findOne({ email: 'rider@erranders.org' });
     if (!rider) {
       rider = await User.create({
         firstName: 'Speedy',
         lastName: 'Rider',
-        email: 'rider@erranders.com',
+        email: 'rider@erranders.org',
         password: passwordHash,
         role: 'errander',
         isVerified: true,
@@ -36,7 +36,7 @@ async function alignAndSeed() {
       console.log('Dispatch Rider created successfully!');
     }
     console.log('\n--- DISPATCH RIDER CREDENTIALS ---');
-    console.log('Email: rider@erranders.com');
+    console.log('Email: rider@erranders.org');
     console.log('Password: Erranders2026!');
     console.log('----------------------------------\n');
 

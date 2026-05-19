@@ -120,7 +120,7 @@ async function seed() {
     const credentials = [];
 
     for (const vInfo of vendorsRaw) {
-      const email = `${vInfo.name.toLowerCase().replace(/ /g, '.')}.vendor@erranders.com`;
+      const email = `${vInfo.name.toLowerCase().replace(/ /g, '.')}.vendor@erranders.org`;
       const password = 'Erranders2026!';
 
       // 1. Create User

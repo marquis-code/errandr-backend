@@ -45,10 +45,10 @@ async function seed() {
     console.log('Connected to MongoDB');
 
     // Find or create a default owner
-    let owner = await User.findOne({ email: 'admin@erranders.com' });
+    let owner = await User.findOne({ email: 'admin@erranders.org' });
     if (!owner) {
       owner = await User.create({
-        email: 'admin@erranders.com',
+        email: 'admin@erranders.org',
         firstName: 'System',
         lastName: 'Admin',
       });
