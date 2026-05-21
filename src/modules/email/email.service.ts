@@ -18,7 +18,7 @@ export class EmailService {
     } else {
       this.resend = null;
     }
-    
+
     let from = this.configService.get<string>('EMAIL_FROM') || this.fromEmail;
     this.fromEmail = from.replace(/['"]+/g, '');
   }
@@ -50,7 +50,7 @@ export class EmailService {
         console.error(`\x1b[31m[EMAIL_AGENT] ❌ Delivery Error: ${error.message}\x1b[0m`);
         throw new InternalServerErrorException(error.message);
       }
-      
+
       console.log(`\x1b[32m[EMAIL_AGENT] ✅ Email delivered successfully! ID: ${data?.id}\x1b[0m`);
       return data;
     } catch (err) {
@@ -114,7 +114,7 @@ export class EmailService {
 
   // LOGS & SYSTEM
   async sendAuthOTP(to: string, otp: string) { return this.sendVerificationOTP(to, otp); }
-  
+
   async sendSignupOTP(to: string, firstName: string, otp: string) {
     return this.sendVerificationOTP(to, otp);
   }
@@ -192,7 +192,7 @@ export class EmailService {
         </p>
         
         <div style="margin: 40px 0; border-left: 6px solid #1A1A1A; padding-left: 24px;">
-           <p style="font-style: italic; color: #6B7280; font-size: 16px;">"The future of campus commerce is digital, and you're leading the charge."</p>
+           <p style="font-style: ; color: #6B7280; font-size: 16px;">"The future of campus commerce is digital, and you're leading the charge."</p>
         </div>
 
         <div style="text-align: center;">

@@ -28,6 +28,9 @@ export class Vendor extends Document {
   @Prop({ required: true })
   storeName: string;
 
+  @Prop({ unique: true, sparse: true, lowercase: true, trim: true })
+  subdomain: string;
+
   @Prop()
   description: string;
 
@@ -37,11 +40,11 @@ export class Vendor extends Document {
   @Prop()
   banner: string;
 
-  @Prop({ type: String, enum: VendorCategory, required: true })
-  category: VendorCategory;
+  @Prop({ required: true })
+  category: string;
 
-  @Prop({ type: [String], enum: Object.values(VendorCategory), default: [] })
-  tags: VendorCategory[];
+  @Prop({ type: [String], default: [] })
+  tags: string[];
 
   @Prop()
   phone: string;
@@ -68,7 +71,7 @@ export class Vendor extends Document {
     coordinates: number[];
   };
 
-  @Prop({ type: String, enum: VendorStatus, default: VendorStatus.PENDING })
+  @Prop({ type: String, enum: VendorStatus, default: VendorStatus.APPROVED })
   status: VendorStatus;
 
   @Prop({ default: true })
@@ -255,3 +258,4 @@ export const VendorSchema = SchemaFactory.createForClass(Vendor);
 VendorSchema.index({ location: '2dsphere' });
 VendorSchema.index({ category: 1 });
 VendorSchema.index({ isOnline: 1, status: 1 });
+VendorSchema.index({ subdomain: 1 }, { unique: true, sparse: true });

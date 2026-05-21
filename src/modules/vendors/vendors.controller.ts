@@ -31,6 +31,7 @@ export class VendorsController {
     @Query('isStudentBusiness') isStudentBusiness?: boolean,
     @Query('preOrderOnly') preOrderOnly?: boolean,
     @Query('search') search?: string,
+    @Query('sortBy') sortBy?: string,
   ) {
     return this.vendorsService.findAll({
       category,
@@ -38,6 +39,7 @@ export class VendorsController {
       isStudentBusiness,
       preOrderOnly,
       search,
+      sortBy,
       page,
       limit,
     });
@@ -59,6 +61,18 @@ export class VendorsController {
   @ApiOperation({ summary: 'Get online vendors' })
   getOnlineVendors() {
     return this.vendorsService.getOnlineVendors();
+  }
+
+  @Get('check-subdomain/:subdomain')
+  @ApiOperation({ summary: 'Check if a subdomain is available' })
+  checkSubdomain(@Param('subdomain') subdomain: string) {
+    return this.vendorsService.checkSubdomainAvailability(subdomain);
+  }
+
+  @Get('subdomain/:subdomain')
+  @ApiOperation({ summary: 'Get vendor by subdomain' })
+  findBySubdomain(@Param('subdomain') subdomain: string) {
+    return this.vendorsService.findBySubdomain(subdomain);
   }
 
   @Get('popular')

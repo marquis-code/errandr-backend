@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Vendor, VendorStatus, VendorCategory } from './schemas/vendor.schema';
@@ -83,10 +83,11 @@ export class VendorsService {
     isStudentBusiness?: boolean;
     preOrderOnly?: boolean;
     search?: string;
+    sortBy?: string;
     page?: number;
     limit?: number;
   }): Promise<{ vendors: Vendor[]; total: number }> {
-    const { category, isInsideCampus, isStudentBusiness, preOrderOnly, search, page = 1, limit = 20 } = query;
+    const { category, isInsideCampus, isStudentBusiness, preOrderOnly, search, sortBy, page = 1, limit = 20 } = query;
     const filter: any = { status: VendorStatus.APPROVED };
 
     if (category) filter.category = category;
@@ -100,9 +101,18 @@ export class VendorsService {
       ];
     }
 
+    let sortOptions: any = { rating: -1 };
+    if (sortBy === 'newest') {
+      sortOptions = { createdAt: -1 };
+    } else if (sortBy === 'trending') {
+      sortOptions = { totalOrders: -1, rating: -1 };
+    } else if (sortBy === 'recommended') {
+      sortOptions = { isFeatured: -1, rating: -1 };
+    }
+
     const skip = (page - 1) * limit;
     const [vendors, total] = await Promise.all([
-      this.vendorModel.find(filter).populate('owner', 'firstName lastName avatar').skip(skip).limit(limit).sort({ rating: -1 }),
+      this.vendorModel.find(filter).populate('owner', 'firstName lastName avatar').skip(skip).limit(limit).sort(sortOptions),
       this.vendorModel.countDocuments(filter),
     ]);
     return { 
@@ -139,6 +149,23 @@ export class VendorsService {
     const vendor = await this.vendorModel.findOne({ owner: new Types.ObjectId(ownerId) });
     if (!vendor) throw new NotFoundException('Vendor not found');
     return vendor;
+  }
+
+  async findBySubdomain(subdomain: string): Promise<Vendor> {
+    const vendor = await this.vendorModel
+      .findOne({ subdomain: subdomain.toLowerCase().trim() })
+      .populate('owner', 'firstName lastName avatar phone');
+    if (!vendor) throw new NotFoundException('Vendor not found for this subdomain');
+    return this.augmentVendor(vendor) as any;
+  }
+
+  async checkSubdomainAvailability(subdomain: string): Promise<{ available: boolean; subdomain: string }> {
+    const cleaned = subdomain.toLowerCase().trim().replace(/[^a-z0-9-]/g, '');
+    if (!cleaned || cleaned.length < 3) {
+      return { available: false, subdomain: cleaned };
+    }
+    const existing = await this.vendorModel.findOne({ subdomain: cleaned });
+    return { available: !existing, subdomain: cleaned };
   }
 
   async update(id: string, ownerId: string, data: Partial<Vendor>): Promise<Vendor> {
