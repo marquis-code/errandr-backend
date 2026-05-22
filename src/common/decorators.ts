@@ -20,6 +20,15 @@ export const Roles = (...roles: UserRole[]) => SetMetadata(ROLES_KEY, roles);
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {}
 
+// Optional JWT Auth Guard
+@Injectable()
+export class OptionalJwtAuthGuard extends AuthGuard('jwt') {
+  handleRequest(err: any, user: any, info: any) {
+    // No error is thrown if no user is found
+    return user;
+  }
+}
+
 // Roles Guard
 @Injectable()
 export class RolesGuard implements CanActivate {
