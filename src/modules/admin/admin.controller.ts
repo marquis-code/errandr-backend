@@ -12,17 +12,49 @@ import { UserRole } from '../users/schemas/user.schema';
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 
-  @Get('dashboard')
+  @Get('stats')
   @ApiOperation({ summary: 'Get admin dashboard statistics' })
   getDashboardStats() {
     return this.adminService.getDashboardStats();
   }
 
+  @Get('users')
+  @ApiOperation({ summary: 'Get all users' })
+  getUsers() {
+    return this.adminService.getUsers();
+  }
+
+  @Get('users/:id')
+  @ApiOperation({ summary: 'Get a user' })
+  getUser(@Param('id') id: string) {
+    return this.adminService.getUser(id);
+  }
+
+  @Get('vendors')
+  @ApiOperation({ summary: 'Get all vendors' })
+  getVendors() {
+    return this.adminService.getVendors();
+  }
+
+  @Get('vendors/:id')
+  @ApiOperation({ summary: 'Get a vendor' })
+  getVendor(@Param('id') id: string) {
+    return this.adminService.getVendor(id);
+  }
+
+  @Get('vendors/pending')
+  @ApiOperation({ summary: 'Get pending vendors' })
   getPendingVendors(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number = 10,
   ) {
     return this.adminService.getPendingVendors(page, limit);
+  }
+
+  @Get('reports')
+  @ApiOperation({ summary: 'Get all reports' })
+  getReports() {
+    return this.adminService.getReports();
   }
 
   @Put('vendors/:id/approve')
@@ -49,6 +81,8 @@ export class AdminController {
     return this.adminService.activateUser(id);
   }
 
+  @Get('orders/recent')
+  @ApiOperation({ summary: 'Get recent orders' })
   getRecentOrders(
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number = 10,
   ) {

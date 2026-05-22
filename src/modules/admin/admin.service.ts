@@ -5,6 +5,7 @@ import { User } from '../users/schemas/user.schema';
 import { Vendor, VendorStatus } from '../vendors/schemas/vendor.schema';
 import { Order, OrderStatus } from '../orders/schemas/order.schema';
 import { Errander } from '../erranders/schemas/errander.schema';
+import { Report } from '../reports/schemas/report.schema';
 
 @Injectable()
 export class AdminService {
@@ -13,6 +14,7 @@ export class AdminService {
     @InjectModel(Vendor.name) private vendorModel: Model<Vendor>,
     @InjectModel(Order.name) private orderModel: Model<Order>,
     @InjectModel(Errander.name) private erranderModel: Model<Errander>,
+    @InjectModel(Report.name) private reportModel: Model<Report>,
   ) {}
 
   async getDashboardStats() {
@@ -50,7 +52,28 @@ export class AdminService {
       completedOrders,
       totalErranders,
       totalRevenue: revenue[0]?.total || 0,
+      totalVolume: revenue[0]?.total || 0, // Admin dashboard expects totalVolume
     };
+  }
+
+  async getUsers() {
+    return this.userModel.find().sort({ createdAt: -1 });
+  }
+
+  async getUser(id: string) {
+    return this.userModel.findById(id);
+  }
+
+  async getVendors() {
+    return this.vendorModel.find().populate('owner', 'firstName lastName email phone').sort({ createdAt: -1 });
+  }
+
+  async getVendor(id: string) {
+    return this.vendorModel.findById(id).populate('owner', 'firstName lastName email phone');
+  }
+
+  async getReports() {
+    return this.reportModel.find().populate('reporter', 'firstName lastName email').sort({ createdAt: -1 });
   }
 
   async getPendingVendors(page = 1, limit = 20) {
@@ -102,7 +125,7 @@ export class AdminService {
   async getRecentOrders(limit = 50) {
     return this.orderModel
       .find()
-      .populate('customer', 'firstName lastName')
+      .populate('customer', 'firstName lastName email')
       .populate('vendor', 'storeName')
       .populate('errander', 'firstName lastName')
       .sort({ createdAt: -1 })
