@@ -148,7 +148,7 @@ export class GroupOrdersService {
     
     await groupOrder.save();
     
-    this.gateway.broadcastItemsUpdated(inviteCode, { userId: userIdStr, items, total });
+    this.gateway.broadcastUpdate(inviteCode, await this.findByCode(inviteCode));
     
     return this.findByCode(inviteCode);
   }
@@ -217,7 +217,7 @@ export class GroupOrdersService {
     return populated;
   }
 
-  async checkout(userId: string, inviteCode: string, paymentReference?: string): Promise<GroupOrder> {
+  async checkout(userId: string, inviteCode: string, paymentReference?: string, guestId?: string): Promise<GroupOrder> {
     const rawOrder = await this.groupOrderModel.findOne({ inviteCode });
     if (!rawOrder) throw new NotFoundException('Group order not found');
     
@@ -226,14 +226,31 @@ export class GroupOrdersService {
     }
 
     // If splitType is sponsor, only the sponsor can checkout
-    if (rawOrder.splitType === 'sponsor' && rawOrder.sponsorId.toString() !== userId.toString()) {
+    if (rawOrder.splitType === 'sponsor' && rawOrder.sponsorId.toString() !== userId.toString() && rawOrder.sponsorId.toString() !== guestId?.toString()) {
       throw new BadRequestException('Only the sponsor can checkout this group order');
     }
 
     // Find the participant
-    const participantIndex = rawOrder.participants.findIndex(
+    let participantIndex = rawOrder.participants.findIndex(
       (p) => p.user.toString() === userId.toString()
     );
+
+    if (participantIndex === -1 && guestId) {
+      participantIndex = rawOrder.participants.findIndex(
+        (p) => p.user.toString() === guestId.toString()
+      );
+      if (participantIndex !== -1) {
+        // Migrate the guest ID to the authenticated user ID
+        rawOrder.participants[participantIndex].user = new Types.ObjectId(userId) as any;
+        if (rawOrder.host.toString() === guestId.toString()) {
+          rawOrder.host = new Types.ObjectId(userId);
+        }
+        if (rawOrder.sponsorId && rawOrder.sponsorId.toString() === guestId.toString()) {
+          rawOrder.sponsorId = new Types.ObjectId(userId) as any;
+        }
+        await rawOrder.save();
+      }
+    }
 
     if (rawOrder.splitType === 'split_bill') {
       if (participantIndex === -1) {
