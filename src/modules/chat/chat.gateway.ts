@@ -95,23 +95,30 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const orderId = data.orderId || (data.roomType === 'order' ? data.roomId : undefined);
     const roomType = data.roomType || (orderId ? 'order' : 'support');
     
-    const savedMessage = await this.chatService.createMessage({ 
-      ...data, 
-      message: messageContent,
-      orderId,
-      roomType 
-    });
-    
-    const populated = await savedMessage.populate([
-      { path: 'sender', select: 'firstName lastName avatar role' },
-    ]);
+    try {
+      const savedMessage = await this.chatService.createMessage({ 
+        ...data, 
+        message: messageContent,
+        orderId,
+        roomType 
+      });
+      
+      const populated = await savedMessage.populate([
+        { path: 'sender', select: 'firstName lastName avatar role' },
+      ]);
 
-    // Format for frontend (which expects 'content')
-    const formattedMessage = {
-      ...populated.toObject(),
-      content: messageContent,
-      senderType: populated.sender['role'] === 'admin' ? 'support' : 'customer'
-    };
+      // Format for frontend (which expects 'content')
+      const msgObj = populated.toObject();
+      const formattedMessage = {
+        ...msgObj,
+        // Explicitly include flat IDs for frontend compatibility
+        orderId: orderId || String(msgObj.order || ''),
+        senderId: data.senderId || String(msgObj.sender?._id || msgObj.sender || ''),
+        receiverId: data.receiverId || String(msgObj.receiver?._id || msgObj.receiver || ''),
+        message: messageContent,
+        content: messageContent,
+        senderType: populated.sender?.['role'] === 'admin' ? 'support' : 'customer'
+      };
 
     // Determine target room
     const targetRoom = roomType === 'order' 
@@ -146,11 +153,52 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         }, 1000);
       }
     } else {
+      const targetRoom = `order:${orderId}`;
       this.server.to(targetRoom).emit('chat:new-message', formattedMessage);
       this.server.to(targetRoom).emit('newMessage', formattedMessage); // compatibility
     }
 
-    return { success: true, data: formattedMessage };
+    // Emit newMessageNotification to all connected order participants (not just receiverId)
+    // This ensures the vendor, customer, and errander all get real-time notifications
+    const notifyTargets: string[] = [];
+    if (data.receiverId) notifyTargets.push(data.receiverId);
+    
+    // Also look up all order participants to notify
+    if (orderId) {
+      try {
+        const order = await this.chatService.getOrderParticipants(orderId);
+        if (order) {
+          const participants = [
+            order.customer?._id?.toString() || order.customer?.toString(),
+            order.vendor?.owner?.toString() || order.vendor?._id?.toString() || order.vendor?.toString(),
+            order.errander?._id?.toString() || order.errander?.toString(),
+          ].filter(Boolean);
+          for (const p of participants) {
+            if (p && p !== data.senderId && !notifyTargets.includes(p)) {
+              notifyTargets.push(p);
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Failed to get order participants for notification', e);
+      }
+    }
+
+    // Also emit a global notification to the specific receiver if they are connected
+    for (const targetId of notifyTargets) {
+      const socketId = this.connectedUsers.get(targetId);
+      if (socketId) {
+        this.server.to(socketId).emit('newMessageNotification', formattedMessage);
+      }
+    }
+
+    console.log(`[ChatGateway] Broadcasted message ${formattedMessage._id} from ${data.senderId} to room ${targetRoom}. notifyTargets:`, notifyTargets);
+
+    return { success: true, message: formattedMessage };
+    } catch (error) {
+      console.error('Failed to handle chat message:', error);
+      return { success: false, error: error.message || 'Internal server error' };
+    }
   }
 
   @SubscribeMessage('typing')

@@ -220,6 +220,7 @@ export class Vendor extends Document {
         isActive: { type: Boolean, default: true },
         startAt: { type: Date },
         endAt: { type: Date },
+        products: { type: [{ type: Types.ObjectId, ref: 'Product' }], default: [] },
       },
     ],
     default: [],
@@ -232,6 +233,7 @@ export class Vendor extends Document {
     isActive: boolean;
     startAt?: Date;
     endAt?: Date;
+    products?: Types.ObjectId[] | string[];
   }[];
 
   // ── Pre-Order Batch Schedule ──

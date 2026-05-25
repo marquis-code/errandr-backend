@@ -74,7 +74,7 @@ async getMyVendorOrders(
   @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number = 10,
 ) {
   this.logger.log(`getMyVendorOrders() user=${user._id}`);
-  return this.ordersService.getOrdersForVendorOwner(user._id.toString(), status, page, limit);
+  return this.ordersService.findByVendorOwner(user._id.toString(), status, page, limit);
 }
 
   @Get('vendor/:vendorId')

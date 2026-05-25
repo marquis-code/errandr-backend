@@ -3,9 +3,29 @@ import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { IoAdapter } from '@nestjs/platform-socket.io';
+import * as admin from 'firebase-admin';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // Initialize Firebase Admin
+  if (!admin.apps.length) {
+    if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
+      admin.initializeApp({
+        credential: admin.credential.cert({
+          projectId: process.env.FIREBASE_PROJECT_ID,
+          clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+          privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+        }),
+      });
+    } else {
+      try {
+        admin.initializeApp();
+      } catch (error) {
+        console.warn('Firebase Admin default initialization failed. Please set credentials.');
+      }
+    }
+  }
 
   // Global prefix
   app.setGlobalPrefix('api/v1');

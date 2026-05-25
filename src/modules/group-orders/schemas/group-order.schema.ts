@@ -37,6 +37,9 @@ export class GroupOrderParticipant {
 
   @Prop({ default: 0 })
   total: number;
+
+  @Prop({ default: false })
+  hasPaid: boolean;
 }
 
 export type GroupOrderDocument = GroupOrder & Document;
@@ -58,6 +61,16 @@ export class GroupOrder {
     default: 'open',
   })
   status: string;
+
+  @Prop({
+    type: String,
+    enum: ['sponsor', 'split_bill'],
+    default: 'sponsor',
+  })
+  splitType: string;
+
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User' })
+  sponsorId: User | MongooseSchema.Types.ObjectId;
 
   @Prop({ type: [GroupOrderParticipant], default: [] })
   participants: GroupOrderParticipant[];

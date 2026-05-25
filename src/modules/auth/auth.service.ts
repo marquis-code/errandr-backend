@@ -80,7 +80,22 @@ export class AuthService {
     };
   }
 
-  async firebaseLogin(firebaseUid: string, email: string, name: string) {
+  async firebaseLogin(idToken: string) {
+    let decodedToken;
+    try {
+      // Import here or at top of file
+      const admin = require('firebase-admin');
+      decodedToken = await admin.auth().verifyIdToken(idToken);
+    } catch (error) {
+      throw new UnauthorizedException('Invalid Firebase ID Token');
+    }
+
+    const { uid: firebaseUid, email, name } = decodedToken;
+
+    if (!email) {
+      throw new BadRequestException('Email is required from Firebase account');
+    }
+
     let user = await this.userModel.findOne({ firebaseUid });
 
     if (!user) {
@@ -89,14 +104,20 @@ export class AuthService {
         user.firebaseUid = firebaseUid;
         await user.save();
       } else {
-        const nameParts = name.split(' ');
+        const nameParts = (name || '').split(' ');
         user = await this.userModel.create({
-          firstName: nameParts[0] || '',
+          firstName: nameParts[0] || 'User',
           lastName: nameParts.slice(1).join(' ') || '',
           email,
           firebaseUid,
           isVerified: true,
         });
+        
+        // Initialize Wallet for new user
+        await this.walletsService.getOrCreateWallet((user._id as unknown) as string);
+        
+        // Generate Referral Code for new user
+        await this.rewardsService.generateReferralCode((user._id as unknown) as string);
       }
     }
 

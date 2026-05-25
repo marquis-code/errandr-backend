@@ -5,14 +5,5 @@ export class FirebaseLoginDto {
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
-  firebaseUid: string;
-
-  @ApiProperty()
-  @IsEmail()
-  email: string;
-
-  @ApiProperty()
-  @IsString()
-  @IsNotEmpty()
-  name: string;
+  idToken: string;
 }

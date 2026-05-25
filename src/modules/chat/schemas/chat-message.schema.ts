@@ -12,7 +12,7 @@ export class ChatMessage extends Document {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   sender: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  @Prop({ type: Types.ObjectId, ref: 'User', required: false })
   receiver: Types.ObjectId;
 
   @Prop({ required: true })

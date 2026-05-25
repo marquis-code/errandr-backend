@@ -61,6 +61,10 @@ export class GroupOrdersGateway implements OnGatewayConnection, OnGatewayDisconn
     this.server.to(inviteCode).emit('items-updated', data);
   }
 
+  broadcastPaymentProgress(inviteCode: string, data: any) {
+    this.server.to(inviteCode).emit('group-order-payment-progress', data);
+  }
+
   broadcastStatusChanged(inviteCode: string, status: string) {
     this.server.to(inviteCode).emit('status-changed', status);
   }

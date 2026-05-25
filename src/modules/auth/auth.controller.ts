@@ -28,7 +28,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login with Firebase social auth' })
   async firebaseLogin(@Body() dto: FirebaseLoginDto) {
-    return this.authService.firebaseLogin(dto.firebaseUid, dto.email, dto.name);
+    return this.authService.firebaseLogin(dto.idToken);
   }
 
   @Post('send-otp')

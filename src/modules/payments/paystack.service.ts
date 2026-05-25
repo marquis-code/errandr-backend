@@ -85,11 +85,22 @@ export class PaystackService {
     callback_url?: string;
     metadata?: any;
   }) {
+    let email = data.email;
+    if (email) {
+      // Paystack rejects non-standard TLDs like .test in sandbox/test mode
+      if (email.endsWith('.test')) {
+        email = email.replace(/\.test$/, '.org');
+      } else if (email.endsWith('.local')) {
+        email = email.replace(/\.local$/, '.com');
+      }
+    }
+
     try {
       const response = await axios.post(
         `${this.baseUrl}/transaction/initialize`,
         {
           ...data,
+          email,
           amount: Math.round(data.amount * 100), // Paystack expects amount in kobo
           currency: 'NGN',
         },
@@ -106,7 +117,7 @@ export class PaystackService {
     } catch (error: any) {
       const errorMessage = error.response?.data?.message || error.message;
       this.logger.error(`Paystack Initialize Error: ${errorMessage}`, {
-        payload: { ...data, amount: Math.round(data.amount * 100) },
+        payload: { ...data, email, amount: Math.round(data.amount * 100) },
         response: error.response?.data
       });
       throw new InternalServerErrorException(

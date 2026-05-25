@@ -19,6 +19,7 @@ export class RewardsController {
     return { points };
   }
 
+  @UseGuards(JwtAuthGuard)
   @Get('my-rewards')
   async getMyRewards(@CurrentUser() user: any) {
     const userId = user._id;
@@ -48,6 +49,7 @@ export class RewardsController {
     return this.rewardsService.getLeaderboard(type);
   }
 
+  @UseGuards(JwtAuthGuard)
   @Get('quests')
   async getQuests(@CurrentUser() user: any) {
     const userId = user._id;

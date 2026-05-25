@@ -33,6 +33,14 @@ export class ChatController {
     return this.chatService.getSupportMessages(userId);
   }
 
+  @Get('unread/orders')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get unread message count per order' })
+  getUnreadCountPerOrder(@CurrentUser() user: User) {
+    return this.chatService.getUnreadCountPerOrder((user._id as unknown) as string);
+  }
+
   @Get('unread')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

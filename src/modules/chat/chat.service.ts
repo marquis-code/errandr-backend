@@ -1,12 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { ChatMessage } from './schemas/chat-message.schema';
+import { Order } from '../orders/schemas/order.schema';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class ChatService {
   constructor(
     @InjectModel(ChatMessage.name) private chatModel: Model<ChatMessage>,
+    @InjectModel(Order.name) private orderModel: Model<Order>,
+    @Inject(forwardRef(() => NotificationsService)) private notificationsService: NotificationsService,
   ) {}
 
   private readonly botAnswers = [
@@ -37,6 +41,51 @@ export class ChatService {
       attachment: data.attachment,
     });
 
+    if (msg.roomType === 'order' && data.orderId) {
+      try {
+        const order = await this.orderModel.findById(data.orderId)
+          .populate('customer')
+          .populate('vendor')
+          .populate('errander');
+
+        if (order) {
+          const senderStr = data.senderId.toString();
+          const customer: any = order.customer;
+          const vendor: any = order.vendor;
+          const errander: any = order.errander;
+          
+          const customerId = customer?._id?.toString() || customer?.toString();
+          const vendorOwnerId = vendor?.owner?.toString() || vendor?._id?.toString() || vendor?.toString();
+          const erranderId = errander?._id?.toString() || errander?.toString();
+          
+          const senderObj = await this.chatModel.findById(msg._id).populate('sender', 'firstName lastName');
+          const senderName = senderObj?.sender ? `${(senderObj.sender as any).firstName || ''} ${(senderObj.sender as any).lastName || ''}`.trim() : 'User';
+
+          const recipients = [customerId, vendorOwnerId, erranderId].filter(id => id && id !== senderStr);
+
+          // Get unique recipients
+          const uniqueRecipients = [...new Set(recipients)];
+
+          for (const r of uniqueRecipients) {
+            await this.notificationsService.sendNotification(r, {
+              title: `New message from ${senderName}`,
+              body: data.messageType === 'image' ? '📸 Sent an image' : (data.messageType === 'voice' ? '🎤 Sent a voice message' : (data.message.length > 50 ? data.message.substring(0, 50) + '...' : data.message)),
+              type: 'NEW_CHAT_MESSAGE',
+              data: {
+                orderId: data.orderId,
+                orderNumber: order.orderNumber,
+                messageId: msg._id,
+              }
+            }).catch(err => console.error(`Failed to send chat notification to ${r}`, err));
+          }
+        }
+      } catch (err) {
+        console.error('Error sending chat notifications:', err);
+      }
+    }
+
+    await msg.populate('sender', 'firstName lastName avatar');
+    await msg.populate('receiver', 'firstName lastName avatar');
     return msg;
   }
 
@@ -46,6 +95,13 @@ export class ChatService {
       a.keywords.some(k => normalized.includes(k))
     );
     return match ? match.answer : null;
+  }
+
+  async getOrderParticipants(orderId: string): Promise<any> {
+    return this.orderModel.findById(orderId)
+      .populate('customer', '_id')
+      .populate('vendor', '_id owner')
+      .populate('errander', '_id');
   }
 
   async getOrderMessages(orderId: string): Promise<ChatMessage[]> {
@@ -145,5 +201,28 @@ export class ChatService {
       receiver: new Types.ObjectId(userId),
       isRead: false,
     });
+  }
+
+  async getUnreadCountPerOrder(userId: string): Promise<Record<string, number>> {
+    const counts = await this.chatModel.aggregate([
+      { 
+        $match: { 
+          receiver: new Types.ObjectId(userId), 
+          isRead: false, 
+          order: { $exists: true } 
+        } 
+      },
+      { 
+        $group: { 
+          _id: '$order', 
+          count: { $sum: 1 } 
+        } 
+      }
+    ]);
+    const result: Record<string, number> = {};
+    counts.forEach(c => { 
+      if (c._id) result[c._id.toString()] = c.count; 
+    });
+    return result;
   }
 }

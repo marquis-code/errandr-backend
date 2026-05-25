@@ -8,6 +8,8 @@ import {
   Param,
   UseGuards,
   Req,
+  Query,
+  BadRequestException,
 } from '@nestjs/common';
 import { GroupOrdersService } from './group-orders.service';
 import { OptionalJwtAuthGuard, CurrentUser } from '../../common/decorators';
@@ -25,9 +27,20 @@ export class GroupOrdersController {
     @Body('vendorId') vendorId: string,
     @Body('name') name?: string,
     @Body('spendingLimit') spendingLimit?: number,
+    @Body('guestId') guestId?: string,
   ) {
-    const hostId = user ? (user._id as unknown as string) : new Types.ObjectId().toString();
+    const hostId = user ? (user._id as unknown as string) : (guestId || new Types.ObjectId().toString());
     return this.groupOrdersService.create(hostId, vendorId, name, spendingLimit);
+  }
+
+  @Get('history')
+  async getHistory(
+    @CurrentUser() user: User | undefined,
+    @Query('guestId') guestId?: string,
+  ) {
+    const userId = user ? (user._id as unknown as string) : guestId;
+    if (!userId) return []; // If unauthenticated and no guestId, return empty history
+    return this.groupOrdersService.getUserHistory(userId);
   }
 
   @Get(':code')
@@ -36,9 +49,25 @@ export class GroupOrdersController {
   }
 
   @Post('join/:code')
-  async join(@CurrentUser() user: User | undefined, @Param('code') code: string) {
-    const userId = user ? (user._id as unknown as string) : new Types.ObjectId().toString();
+  async joinGroupOrder(
+    @Param('code') code: string,
+    @CurrentUser() user: User | undefined,
+    @Body('guestId') guestId?: string,
+  ) {
+    const userId = user ? (user._id as unknown as string) : guestId;
+    if (!userId) throw new BadRequestException('User ID is required');
     return this.groupOrdersService.join(userId, code);
+  }
+
+  @Post('leave/:code')
+  async leaveGroupOrder(
+    @Param('code') code: string,
+    @CurrentUser() user: User | undefined,
+    @Body('guestId') guestId?: string,
+  ) {
+    const userId = user ? (user._id as unknown as string) : guestId;
+    if (!userId) throw new BadRequestException('User ID is required');
+    return this.groupOrdersService.leave(userId, code);
   }
 
   @Patch(':code/items')
@@ -46,14 +75,9 @@ export class GroupOrdersController {
     @CurrentUser() user: User | undefined,
     @Param('code') code: string,
     @Body('items') items: any[],
+    @Body('guestId') guestId?: string,
   ) {
-    const userId = user ? (user._id as unknown as string) : new Types.ObjectId().toString();
-    // For guest users, we need a way to track them. 
-    // Since we don't have a stable guest ID right now, we will just use the code as is. 
-    // Wait, updateItems relies on finding the participant by userId!
-    // If we generate a new Types.ObjectId here, it won't match the one from `join`!
-    // Let's pass the first participant if the user is a guest? No, that's unsafe.
-    // For now, I will let it be userId. If it's a guest, they will get a new ID and it will fail `participantIndex === -1`.
+    const userId = user ? (user._id as unknown as string) : (guestId || new Types.ObjectId().toString());
     return this.groupOrdersService.updateItems(userId, code, items);
   }
 
@@ -72,19 +96,34 @@ export class GroupOrdersController {
     @CurrentUser() user: User | undefined,
     @Param('code') code: string,
     @Body('isReady') isReady: boolean,
+    @Body('guestId') guestId?: string,
   ) {
-    const userId = user ? (user._id as unknown as string) : new Types.ObjectId().toString();
+    const userId = user ? (user._id as unknown as string) : (guestId || new Types.ObjectId().toString());
     return this.groupOrdersService.toggleReady(userId, code, isReady);
+  }
+
+  @Post(':code/checkout-initiate')
+  async initiateCheckout(
+    @CurrentUser() user: User | undefined,
+    @Param('code') code: string,
+    @Body('splitType') splitType: string,
+    @Body('guestId') guestId?: string,
+  ) {
+    const hostId = user ? (user._id as unknown as string) : guestId;
+    if (!hostId) throw new BadRequestException('Host ID is required');
+    return this.groupOrdersService.initiateCheckout(hostId, code, splitType);
   }
 
   @Post(':code/checkout')
   async checkout(
     @CurrentUser() user: User | undefined,
     @Param('code') code: string,
+    @Body('guestId') guestId?: string,
     @Body('paymentReference') paymentReference?: string,
   ) {
-    const hostId = user ? (user._id as unknown as string) : '';
-    return this.groupOrdersService.checkout(hostId, code, paymentReference);
+    const userId = user ? (user._id as unknown as string) : guestId;
+    if (!userId) throw new BadRequestException('User ID is required');
+    return this.groupOrdersService.checkout(userId, code, paymentReference);
   }
 
   @Delete(':code')
