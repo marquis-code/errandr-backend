@@ -42,6 +42,9 @@ export class Wallet {
 
   @Prop({ default: true })
   isActive: boolean;
+
+  @Prop({ type: Object, default: {} })
+  metadata?: any;
 }
 
 export const WalletSchema = SchemaFactory.createForClass(Wallet);

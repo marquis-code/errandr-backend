@@ -280,6 +280,26 @@ export class Order extends Document {
   @Prop({ default: 0 })
   weight: number; // in kg
 
+  @Prop({
+    type: [{
+      errander: { type: Types.ObjectId, ref: 'User' },
+      amount: Number,
+      status: { type: String, enum: ['pending', 'accepted', 'rejected'], default: 'pending' },
+      timestamp: { type: Date, default: Date.now }
+    }],
+    default: []
+  })
+  bids: {
+    _id?: any;
+    errander: Types.ObjectId | any;
+    amount: number;
+    status: 'pending' | 'accepted' | 'rejected';
+    timestamp: Date;
+  }[];
+
+  @Prop({ default: Date.now })
+  createdAt: Date;
+
   @Prop({ default: 0 })
   vendorShare: number;
 

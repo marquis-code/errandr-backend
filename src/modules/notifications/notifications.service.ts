@@ -1,5 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import * as admin from 'firebase-admin';
+import { ConfigService } from '@nestjs/config';
 import { RedisService } from '../redis/redis.service';
+import { Order, OrderStatus } from '../orders/schemas/order.schema';
 
 export interface NotificationPayload {
   title: string;
@@ -12,7 +17,11 @@ export interface NotificationPayload {
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
-  constructor(private redisService: RedisService) {}
+  constructor(
+    private redisService: RedisService,
+    private configService: ConfigService,
+    @InjectModel(Order.name) private orderModel: Model<Order>,
+  ) {}
 
   /**
    * Send a notification to a specific user.
@@ -58,6 +67,127 @@ export class NotificationsService {
     // Publish to broadcast channel — gateway will emit to all connected clients
     await this.redisService.publish('notification:broadcast:erranders', payload);
     this.logger.log(`Broadcasted new order ${orderData.orderNumber} to all erranders`);
+  }
+
+  // ─── FCM Push ────────────────
+  async sendPushNotification(fcmToken: string, payload: any) {
+    if (!fcmToken) return;
+    try {
+      await admin.messaging().send({
+        token: fcmToken,
+        notification: {
+          title: payload.title,
+          body: payload.body,
+        },
+        data: payload.data || {},
+      });
+      this.logger.log(`FCM Push sent to token: ${fcmToken}`);
+    } catch (error) {
+      this.logger.error(`FCM Push Failed: ${error.message}`);
+    }
+  }
+
+  // ─── Termii WhatsApp ────────────────
+  async sendWhatsApp(phone: string, templateData: any) {
+    try {
+      const apiKey = this.configService.get<string>('TERMII_API_KEY');
+      if (!apiKey) {
+        this.logger.warn('TERMII_API_KEY is not set');
+        return;
+      }
+      const response = await fetch('https://api.ng.termii.com/api/sms/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: phone,
+          from: 'Erranders',
+          sms: `New Order! ${templateData.body}`,
+          type: 'plain',
+          channel: 'whatsapp',
+          api_key: apiKey,
+        }),
+      });
+      const data = await response.json();
+      this.logger.log(`WhatsApp sent to ${phone}: ${JSON.stringify(data)}`);
+    } catch (error) {
+      this.logger.error(`WhatsApp Failed: ${error.message}`);
+    }
+  }
+
+  // ─── Termii SMS ────────────────
+  async sendSMS(phone: string, text: string) {
+    try {
+      const apiKey = this.configService.get<string>('TERMII_API_KEY');
+      if (!apiKey) {
+        this.logger.warn('TERMII_API_KEY is not set');
+        return;
+      }
+      const response = await fetch('https://api.ng.termii.com/api/sms/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: phone,
+          from: 'Erranders',
+          sms: text,
+          type: 'plain',
+          channel: 'generic',
+          api_key: apiKey,
+        }),
+      });
+      const data = await response.json();
+      this.logger.log(`SMS sent to ${phone}: ${JSON.stringify(data)}`);
+    } catch (error) {
+      this.logger.error(`SMS Failed: ${error.message}`);
+    }
+  }
+
+  // ─── Cascade Orchestrator ────────────────
+  async notifyVendor(vendor: any, order: any) {
+    const title = '🚨 New Order on Erranders!';
+    const body = `Order #${order.orderNumber} for ${order.total} NGN has arrived. Please confirm now.`;
+    
+    // 1. Send in-app Redis notification (Instant)
+    await this.sendNotification(vendor.owner.toString(), {
+      title,
+      body,
+      type: 'NEW_ORDER',
+      data: { orderId: order._id.toString() },
+    });
+    
+    // 2. Send FCM Push (Instant)
+    if (vendor.fcmToken) {
+      await this.sendPushNotification(vendor.fcmToken, { title, body, data: { orderId: order._id.toString() } });
+    }
+
+    // 3. Wait 60s, check if confirmed. If not -> WhatsApp
+    setTimeout(async () => {
+      try {
+        const checkOrder = await this.orderModel.findById(order._id);
+        if (checkOrder && checkOrder.status === OrderStatus.PENDING) {
+          const ownerPhone = vendor.owner?.phone;
+          if (ownerPhone) {
+            await this.sendWhatsApp(ownerPhone, { body });
+          }
+        }
+      } catch (e) {
+        this.logger.error(`Cascade WhatsApp Check Failed: ${e.message}`);
+      }
+    }, 60000);
+
+    // 4. Wait 90s, check if confirmed. If not -> SMS
+    setTimeout(async () => {
+      try {
+        const checkOrder = await this.orderModel.findById(order._id);
+        if (checkOrder && checkOrder.status === OrderStatus.PENDING) {
+          const ownerPhone = vendor.owner?.phone;
+          if (ownerPhone) {
+            await this.sendSMS(ownerPhone, body);
+          }
+        }
+      } catch (e) {
+        this.logger.error(`Cascade SMS Check Failed: ${e.message}`);
+      }
+    }, 150000); // 60s + 90s = 150000ms
   }
 
   /**

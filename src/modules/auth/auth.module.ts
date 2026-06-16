@@ -10,6 +10,7 @@ import { User, UserSchema } from '../users/schemas/user.schema';
 import { WalletsModule } from '../wallets/wallets.module';
 import { RewardsModule } from '../rewards/rewards.module';
 import { AfricasTalkingModule } from '../africastalking/africastalking.module';
+import { ReferralsModule } from '../referrals/referrals.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { AfricasTalkingModule } from '../africastalking/africastalking.module';
     WalletsModule,
     RewardsModule,
     AfricasTalkingModule,
+    ReferralsModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],

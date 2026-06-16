@@ -28,9 +28,9 @@ export class WalletsController {
   @ApiOperation({ summary: 'Update payout preferences and bank details' })
   updatePreferences(
     @CurrentUser() user: User,
-    @Body() body: { preference: PayoutPreference; bankDetails?: any },
+    @Body() body: { preference: PayoutPreference; bankDetails?: any; metadata?: any },
   ) {
-    return this.walletsService.updatePreferences((user._id as unknown) as string, body.preference, body.bankDetails);
+    return this.walletsService.updatePreferences((user._id as unknown) as string, body.preference, body.bankDetails, body.metadata);
   }
 
   @Post('withdraw')

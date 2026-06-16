@@ -142,6 +142,34 @@ export class NotificationsGateway
     return { success: true };
   }
 
+  @SubscribeMessage('viewing_errand')
+  handleViewingErrand(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { orderId: string, isViewing: boolean },
+  ) {
+    const userId =
+      client.handshake.query.userId as string ||
+      client.handshake.auth?.userId as string;
+    
+    if (userId && data.orderId) {
+      if (data.isViewing) {
+        client.join(`order:${data.orderId}:viewers`);
+      } else {
+        client.leave(`order:${data.orderId}:viewers`);
+      }
+      
+      const viewersCount = this.server.sockets.adapter.rooms.get(`order:${data.orderId}:viewers`)?.size || 0;
+      
+      // Emit to all clients so the student app can listen and update UI
+      this.server.emit('errand:viewers_update', {
+        orderId: data.orderId,
+        viewersCount
+      });
+      
+      this.logger.log(`User ${userId} is ${data.isViewing ? 'viewing' : 'no longer viewing'} order ${data.orderId}. Total viewers: ${viewersCount}`);
+    }
+  }
+
   // ─── Public methods called by other services ───
 
   /**

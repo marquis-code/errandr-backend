@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { ChatMessage } from './schemas/chat-message.schema';
 import { Order } from '../orders/schemas/order.schema';
+import { Appointment } from '../appointments/schemas/appointment.schema';
 import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
@@ -10,6 +11,7 @@ export class ChatService {
   constructor(
     @InjectModel(ChatMessage.name) private chatModel: Model<ChatMessage>,
     @InjectModel(Order.name) private orderModel: Model<Order>,
+    @InjectModel(Appointment.name) private appointmentModel: Model<Appointment>,
     @Inject(forwardRef(() => NotificationsService)) private notificationsService: NotificationsService,
   ) {}
 
@@ -24,6 +26,7 @@ export class ChatService {
 
   async createMessage(data: {
     orderId?: string;
+    appointmentId?: string;
     senderId: string;
     receiverId?: string;
     message: string;
@@ -33,11 +36,12 @@ export class ChatService {
   }): Promise<ChatMessage> {
     const msg = await this.chatModel.create({
       order: data.orderId ? new Types.ObjectId(data.orderId) : undefined,
+      appointment: data.appointmentId ? new Types.ObjectId(data.appointmentId) : undefined,
       sender: new Types.ObjectId(data.senderId),
       receiver: data.receiverId ? new Types.ObjectId(data.receiverId) : undefined,
       message: data.message,
       messageType: data.messageType || 'text',
-      roomType: data.roomType || (data.orderId ? 'order' : 'support'),
+      roomType: data.roomType || (data.orderId ? 'order' : (data.appointmentId ? 'direct' : 'support')),
       attachment: data.attachment,
     });
 
@@ -82,6 +86,41 @@ export class ChatService {
       } catch (err) {
         console.error('Error sending chat notifications:', err);
       }
+    } else if (msg.roomType === 'direct' && data.appointmentId) {
+      try {
+        const appointment = await this.appointmentModel.findById(data.appointmentId)
+          .populate('user')
+          .populate('vendor');
+
+        if (appointment) {
+          const senderStr = data.senderId.toString();
+          const customer: any = appointment.user;
+          const vendor: any = appointment.vendor;
+          
+          const customerId = customer?._id?.toString() || customer?.toString();
+          const vendorOwnerId = vendor?.owner?.toString();
+          
+          const senderObj = await this.chatModel.findById(msg._id).populate('sender', 'firstName lastName');
+          const senderName = senderObj?.sender ? `${(senderObj.sender as any).firstName || ''} ${(senderObj.sender as any).lastName || ''}`.trim() : 'User';
+
+          const recipients = [customerId, vendorOwnerId].filter(id => id && id !== senderStr);
+          const uniqueRecipients = [...new Set(recipients)];
+
+          for (const r of uniqueRecipients) {
+            await this.notificationsService.sendNotification(r, {
+              title: `New message from ${senderName}`,
+              body: data.messageType === 'image' ? '📸 Sent an image' : (data.messageType === 'voice' ? '🎤 Sent a voice message' : (data.message.length > 50 ? data.message.substring(0, 50) + '...' : data.message)),
+              type: 'NEW_CHAT_MESSAGE',
+              data: {
+                appointmentId: data.appointmentId,
+                messageId: msg._id,
+              }
+            }).catch(err => console.error(`Failed to send chat notification to ${r}`, err));
+          }
+        }
+      } catch (err) {
+        console.error('Error sending chat notifications for appointment:', err);
+      }
     }
 
     await msg.populate('sender', 'firstName lastName avatar');
@@ -104,9 +143,23 @@ export class ChatService {
       .populate('errander', '_id');
   }
 
+  async getAppointmentParticipants(appointmentId: string): Promise<any> {
+    return this.appointmentModel.findById(appointmentId)
+      .populate('user', '_id')
+      .populate('vendor', '_id owner');
+  }
+
   async getOrderMessages(orderId: string): Promise<ChatMessage[]> {
     return this.chatModel
       .find({ order: new Types.ObjectId(orderId) })
+      .populate('sender', 'firstName lastName avatar')
+      .populate('receiver', 'firstName lastName avatar')
+      .sort({ createdAt: 1 });
+  }
+
+  async getAppointmentMessages(appointmentId: string): Promise<ChatMessage[]> {
+    return this.chatModel
+      .find({ appointment: new Types.ObjectId(appointmentId) })
       .populate('sender', 'firstName lastName avatar')
       .populate('receiver', 'firstName lastName avatar')
       .sort({ createdAt: 1 });
@@ -173,6 +226,63 @@ export class ChatService {
       
       if (!msg.isRead && receiver.role === 'admin') {
           threads.get(userIdStr).unreadCount += 1;
+      }
+    }
+
+      return Array.from(threads.values());
+  }
+
+  async getDirectMessages(userId: string, vendorOwnerId: string): Promise<ChatMessage[]> {
+    return this.chatModel
+      .find({
+        roomType: 'direct',
+        appointment: { $exists: false },
+        $or: [
+          { sender: new Types.ObjectId(userId), receiver: new Types.ObjectId(vendorOwnerId) },
+          { sender: new Types.ObjectId(vendorOwnerId), receiver: new Types.ObjectId(userId) }
+        ]
+      })
+      .populate('sender', 'firstName lastName avatar role')
+      .populate('receiver', 'firstName lastName avatar role')
+      .sort({ createdAt: 1 });
+  }
+
+  async getDirectConversations(userId: string): Promise<any[]> {
+    const messages = await this.chatModel
+      .find({
+        roomType: 'direct',
+        appointment: { $exists: false },
+        $or: [
+          { sender: new Types.ObjectId(userId) },
+          { receiver: new Types.ObjectId(userId) }
+        ]
+      })
+      .populate('sender', 'firstName lastName avatar storeName')
+      .populate('receiver', 'firstName lastName avatar storeName')
+      .sort({ createdAt: -1 });
+
+    const threads = new Map<string, any>();
+
+    for (const msg of messages) {
+      const sender: any = msg.sender || {};
+      const receiver: any = msg.receiver || {};
+
+      // The other user is the one that is NOT the current userId
+      const otherUser = sender._id?.toString() === userId ? receiver : sender;
+      if (!otherUser._id) continue;
+
+      const otherUserId = otherUser._id.toString();
+
+      if (!threads.has(otherUserId)) {
+        threads.set(otherUserId, {
+          user: otherUser,
+          lastMessage: msg,
+          unreadCount: 0 // Will populate this later if needed
+        });
+      }
+
+      if (msg.receiver?.toString() === userId && !msg.isRead) {
+        threads.get(otherUserId).unreadCount++;
       }
     }
 

@@ -11,6 +11,7 @@ import { EmailService } from '../email/email.service';
 import { WalletsService } from '../wallets/wallets.service';
 import { RewardsService } from '../rewards/rewards.service';
 import { AfricasTalkingService } from '../africastalking/africastalking.service';
+import { ReferralsService } from '../referrals/referrals.service';
 
 @Injectable()
 export class AuthService {
@@ -22,6 +23,7 @@ export class AuthService {
     private walletsService: WalletsService,
     private rewardsService: RewardsService,
     private africasTalkingService: AfricasTalkingService,
+    private referralsService: ReferralsService,
   ) {}
 
   async register(registerDto: RegisterDto) {
@@ -43,9 +45,9 @@ export class AuthService {
     // Generate Referral Code for New User
     await this.rewardsService.generateReferralCode((user._id as unknown) as string);
 
-    // Process Referral if applicable
+    // Process Referral if applicable (using new tracked referral system)
     if (registerDto.referredBy) {
-      await this.rewardsService.processReferral((user._id as unknown) as string, registerDto.referredBy);
+      await this.referralsService.processReferral((user._id as unknown) as string, registerDto.referredBy);
     }
 
     // Send initial OTP instead of welcome email (which comes after verification)
@@ -126,6 +128,41 @@ export class AuthService {
     return {
       user: this.sanitizeUser(user),
       token,
+    };
+  }
+
+  async guestCheckout(guestDto: { firstName: string, lastName: string, email: string, phone: string }) {
+    let user = await this.userModel.findOne({ email: guestDto.email });
+
+    if (user) {
+      if (!user.isGuest) {
+        throw new BadRequestException('An account with this email already exists. Please login to continue.');
+      }
+      // Update guest info
+      user.firstName = guestDto.firstName;
+      user.lastName = guestDto.lastName;
+      user.phone = guestDto.phone;
+      await user.save();
+    } else {
+      user = await this.userModel.create({
+        firstName: guestDto.firstName,
+        lastName: guestDto.lastName,
+        email: guestDto.email,
+        phone: guestDto.phone,
+        isGuest: true,
+        isVerified: false,
+      });
+
+      // Initialize Wallet for guest
+      await this.walletsService.getOrCreateWallet((user._id as unknown) as string);
+    }
+
+    const token = this.generateToken(user);
+
+    return {
+      user: this.sanitizeUser(user),
+      token,
+      message: 'Guest session created successfully.'
     };
   }
 

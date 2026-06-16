@@ -5,7 +5,7 @@ import { JwtAuthGuard, CurrentUser, Roles, RolesGuard } from '../../common/decor
 import { User, UserRole } from '../users/schemas/user.schema';
 
 @ApiTags('Erranders')
-@Controller('erranders')
+@Controller(['erranders', 'errandr'])
 export class ErrandersController {
   constructor(private readonly errandersService: ErrandersService) {}
 

@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Put, Body, Param, Query,
+  Controller, Get, Post, Put, Patch, Body, Param, Query,
   UseGuards, Logger, DefaultValuePipe, ParseIntPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
@@ -139,6 +139,14 @@ export class VendorsController {
   @ApiOperation({ summary: 'Update vendor profile' })
   update(@Param('id') id: string, @CurrentUser() user: User, @Body() body: any) {
     return this.vendorsService.update(id, (user._id as unknown) as string, body);
+  }
+
+  @Patch('fcm-token')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update vendor FCM token' })
+  updateFcmToken(@CurrentUser() user: User, @Body('fcmToken') fcmToken: string) {
+    return this.vendorsService.updateFcmToken((user._id as unknown) as string, fcmToken);
   }
 
   @Put(':id/toggle-online')

@@ -142,23 +142,21 @@ export class OrdersService {
 
   async create(customerId: string, data: any): Promise<Order> {
     if (data.type === 'custom_errand') {
-      const baseFee = data.urgency === 'express' ? 850 : 450;
-      const itemCost = Number(data.estimatedItemCost) || 0;
-      const serviceFee = Math.round((baseFee + itemCost) * 0.05); // 5% service fee
-      const total = baseFee + itemCost + serviceFee;
-
-      // PAYSTACK VERIFICATION for Custom Errands
-      if (data.paymentReference) {
-        const verification = await this.paystackService.verifyTransaction(data.paymentReference);
-        if (verification?.status !== 'success') {
-          throw new BadRequestException('Payment verification failed');
-        }
-        if (Math.round(verification.amount) < total) {
-           throw new BadRequestException('Payment amount mismatch');
-        }
-      } else {
-        throw new BadRequestException('Payment reference is required for custom errands');
+      const runnerFee = Number(data.runnerFee);
+      if (!runnerFee || runnerFee <= 0) {
+        throw new BadRequestException('Runner fee must be greater than 0');
       }
+
+      const itemCost = Number(data.estimatedItemCost) || 0;
+      // Flat Buyer's Convenience Fee
+      const serviceFee = 50; 
+      // Total ONLY includes runner fee + service fee (Model A)
+      const total = runnerFee + serviceFee;
+
+      // Commission from Runner (Primary Model)
+      const commissionAmount = Math.round(runnerFee * 0.10); // 10%
+      const erranderShare = runnerFee - commissionAmount;
+      const platformShare = serviceFee + commissionAmount;
 
       const order = await this.orderModel.create({
         orderNumber: `EXT-${uuidv4().slice(0, 8).toUpperCase()}`,
@@ -172,15 +170,16 @@ export class OrdersService {
           estimatedItemCost: itemCost,
           urgency: data.urgency || 'standard',
         },
-        subtotal: itemCost,
-        deliveryFee: baseFee,
+        subtotal: itemCost, // Reference only
+        deliveryFee: runnerFee,
         serviceFee,
+        erranderShare,
+        platformShare,
         total,
-        paymentStatus: PaymentStatus.PAID,
-        paymentReference: data.paymentReference,
+        paymentStatus: PaymentStatus.PENDING,
         status: OrderStatus.PENDING,
         statusHistory: [
-          { status: OrderStatus.PENDING, timestamp: new Date(), note: 'Custom errand paid and initiated' },
+          { status: OrderStatus.PENDING, timestamp: new Date(), note: 'Custom errand created, pending errander acceptance' },
         ],
       });
       await this.broadcastNewOrderToErranders(order);
@@ -392,14 +391,12 @@ export class OrdersService {
     await this.broadcastNewOrderToErranders(order);
 
 
-    // Notify Vendor (Real-time alert)
-    const populatedVendor = await this.vendorModel.findById(data.vendorId).select('owner');
-    if (populatedVendor?.owner) {
-      await this.notificationsService.sendNotification(populatedVendor.owner.toString(), {
-        title: 'New Order',
-        body: `You have a new order #${order.orderNumber}`,
-        type: 'NEW_ORDER',
-        data: { orderId: order._id, orderNumber: order.orderNumber }
+    // Trigger Vendor Notification Cascade
+    const populatedVendor = await this.vendorModel.findById(data.vendorId).populate('owner');
+    if (populatedVendor) {
+      // Fire-and-forget cascade
+      this.notificationsService.notifyVendor(populatedVendor, order).catch(e => {
+        this.logger.error(`Vendor notification cascade failed: ${e.message}`);
       });
     }
 
@@ -620,11 +617,17 @@ export class OrdersService {
     const isBatchActive = await this.batchDeliveryService.isWindowActive();
     const maxOrders = isBatchActive ? 5 : 1;
 
-    // Find errander profile
-    const errander = await this.erranderModel.findOne({
+    // Find errander profile, or auto-create if they just signed up and haven't fetched profile
+    let errander = await this.erranderModel.findOne({
       user: new Types.ObjectId(erranderId),
     });
-    if (!errander) throw new NotFoundException('Errander profile not found');
+    
+    if (!errander) {
+      errander = await this.erranderModel.create({
+        user: new Types.ObjectId(erranderId),
+        status: ErranderStatus.OFFLINE,
+      });
+    }
 
     // Check current load
     const currentActiveCount = (errander.batchOrders?.length || 0) + (errander.currentOrder ? 1 : 0);
@@ -952,7 +955,8 @@ export class OrdersService {
       .findById(id)
       .populate('customer', 'firstName lastName phone avatar deliveryAddress location')
       .populate('vendor', 'storeName logo phone address location user')
-      .populate('errander', 'firstName lastName phone avatar user');
+      .populate('errander', 'firstName lastName phone avatar user')
+      .populate('bids.errander', 'firstName lastName avatar phone');
     if (!order) throw new NotFoundException('Order not found');
     return order;
   }
@@ -1315,5 +1319,302 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
       message: 'Voice call initiated',
       method: 'voice' 
     };
+  }
+
+  async trackOrder(orderNumber: string, email: string) {
+    const order = await this.orderModel.findOne({ orderNumber })
+      .populate('vendor', 'storeName businessType businessName address logo')
+      .populate('customer', 'firstName lastName email phone')
+      .populate('errander', 'firstName lastName phone avatar vehicleType')
+      .populate('items.product', 'name images')
+      .populate('packs.items.product', 'name images');
+    
+    if (!order) throw new NotFoundException('Order not found');
+
+    const customerEmail = (order.customer as any)?.email;
+
+    if (customerEmail !== email) {
+      throw new BadRequestException('Invalid email for this order number');
+    }
+
+    return order;
+  }
+
+  async cancelTrackedOrder(orderNumber: string, email: string) {
+    const order = await this.trackOrder(orderNumber, email);
+
+    const cancellableStatuses = [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.AWAITING_PAYMENT];
+    if (!cancellableStatuses.includes(order.status)) {
+      throw new BadRequestException(`Cannot cancel order that is already ${order.status}`);
+    }
+
+    order.status = OrderStatus.CANCELLED;
+    order.cancelReason = 'Cancelled by customer via tracking portal';
+    order.statusHistory.push({
+      status: OrderStatus.CANCELLED,
+      timestamp: new Date(),
+      note: 'Cancelled by customer via tracking portal'
+    });
+
+    await order.save();
+
+    if (order.vendor) {
+      this.notifyOrderStatusUpdate(order, OrderStatus.CANCELLED, 'Order was cancelled by the customer.');
+    }
+
+    return { success: true, message: 'Order cancelled successfully', order };
+  }
+
+  async acceptCustomErrand(orderId: string, erranderId: string): Promise<Order> {
+    const order = await this.orderModel.findById(orderId);
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.type !== OrderType.CUSTOM_ERRAND) {
+      throw new BadRequestException('Only custom errands can use this endpoint');
+    }
+    if (order.status !== OrderStatus.PENDING) {
+      throw new BadRequestException('Order is no longer available');
+    }
+
+    // Find errander profile, or auto-create if they just signed up
+    let errander = await this.erranderModel.findOne({
+      user: new Types.ObjectId(erranderId),
+    });
+    
+    if (!errander) {
+      errander = await this.erranderModel.create({
+        user: new Types.ObjectId(erranderId),
+        status: ErranderStatus.OFFLINE,
+      });
+    }
+
+    order.errander = new Types.ObjectId(erranderId);
+    order.status = OrderStatus.AWAITING_PAYMENT;
+    order.statusHistory.push({
+      status: OrderStatus.AWAITING_PAYMENT,
+      timestamp: new Date(),
+      note: 'Errander accepted, awaiting student payment'
+    });
+    
+    await order.save();
+
+    await this.notificationsService.sendNotification(order.customer.toString(), {
+      title: 'Errand Accepted!',
+      body: 'A rider has accepted your errand. Please make payment to confirm and open chat.',
+      type: 'ORDER_AWAITING_PAYMENT',
+      data: { orderId: order._id.toString() },
+    });
+
+    return order;
+  }
+
+  async payForCustomErrand(orderId: string, customerId: string, paymentReference: string): Promise<Order> {
+    const order = await this.orderModel.findById(orderId).populate('errander');
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.customer.toString() !== customerId) throw new BadRequestException('Not your order');
+    if (order.status !== OrderStatus.AWAITING_PAYMENT) {
+      throw new BadRequestException('Order is not awaiting payment');
+    }
+
+    const verification = await this.paystackService.verifyTransaction(paymentReference);
+    if (verification?.status !== 'success') {
+      throw new BadRequestException('Payment verification failed');
+    }
+    if (Math.round(verification.amount) < order.total) {
+      throw new BadRequestException('Payment amount mismatch');
+    }
+
+    order.paymentReference = paymentReference;
+    order.paymentStatus = PaymentStatus.PAID;
+    order.status = OrderStatus.CONFIRMED;
+    order.statusHistory.push({
+      status: OrderStatus.CONFIRMED,
+      timestamp: new Date(),
+      note: 'Payment verified, order confirmed'
+    });
+
+    await order.save();
+
+    // Auto-create initial chat message for the order
+    try {
+      const erranderUser: any = order.errander;
+      if (erranderUser) {
+        await this.chatService.createMessage({
+          orderId: order._id.toString(),
+          senderId: erranderUser._id.toString(),
+          receiverId: customerId,
+          message: `Hi! I'm ${erranderUser.firstName || 'your rider'} and I've locked in your custom errand #${order.orderNumber}. Let's discuss! 🚀`,
+          messageType: 'text',
+        });
+      }
+    } catch (err) {
+      this.logger.error('Failed to auto-create initial chat message for custom errand:', err);
+    }
+
+    await this.notificationsService.sendNotification(order.errander.toString(), {
+      title: 'Payment Confirmed!',
+      body: `Customer has paid for Order #${order.orderNumber}. You can now start the errand!`,
+      type: 'ORDER_CONFIRMED',
+      data: { orderId: order._id.toString() },
+    });
+
+    return order;
+  }
+
+  async updateErrandFee(orderId: string, customerId: string, newFee: number): Promise<Order> {
+    const order = await this.orderModel.findById(orderId);
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.customer.toString() !== customerId.toString()) throw new BadRequestException('Not your order');
+    if (order.status !== OrderStatus.PENDING) {
+      throw new BadRequestException('Cannot increase fee after acceptance');
+    }
+    if (newFee <= order.deliveryFee) {
+      throw new BadRequestException('New fee must be higher than current fee');
+    }
+
+    const serviceFee = 50; 
+    const total = newFee + serviceFee;
+    const commissionAmount = Math.round(newFee * 0.10); 
+    const erranderShare = newFee - commissionAmount;
+    const platformShare = serviceFee + commissionAmount;
+
+    order.deliveryFee = newFee;
+    order.erranderShare = erranderShare;
+    order.platformShare = platformShare;
+    order.total = total;
+    
+    await order.save();
+
+    await this.broadcastNewOrderToErranders(order);
+    return order;
+  }
+
+  async placeBid(orderId: string, erranderId: string, amount: number): Promise<Order> {
+    const order = await this.orderModel.findById(orderId).populate('bids.errander');
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.status !== OrderStatus.PENDING) throw new BadRequestException('Order is no longer pending');
+
+    // check if this errander already bid
+    const existingBidIndex = order.bids.findIndex(b => b.errander._id.toString() === erranderId.toString() && b.status === 'pending');
+    if (existingBidIndex >= 0) {
+      // update bid
+      order.bids[existingBidIndex].amount = amount;
+      order.bids[existingBidIndex].timestamp = new Date();
+    } else {
+      order.bids.push({
+        errander: new Types.ObjectId(erranderId),
+        amount,
+        status: 'pending',
+        timestamp: new Date()
+      });
+    }
+
+    await order.save();
+    const populatedOrder = await this.orderModel.findById(order._id).populate('bids.errander');
+
+    await this.notificationsService.sendNotification(order.customer.toString(), {
+      title: 'New Bid Received',
+      body: `A rider has proposed a counter-offer of ₦${amount} for your errand.`,
+      type: 'ORDER_BIDS_UPDATE',
+      data: { orderId: order._id.toString(), order: populatedOrder },
+    });
+
+    return populatedOrder as Order;
+  }
+
+  async rejectBid(orderId: string, bidId: string, customerId: string): Promise<Order> {
+    const order = await this.orderModel.findById(orderId).populate('bids.errander');
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.customer.toString() !== customerId.toString()) throw new BadRequestException('Not your order');
+
+    const bid = order.bids.find(b => b._id.toString() === bidId);
+    if (!bid) throw new NotFoundException('Bid not found');
+    if (bid.status !== 'pending') throw new BadRequestException('Bid is not pending');
+
+    bid.status = 'rejected';
+    await order.save();
+
+    const populatedOrder = await this.orderModel.findById(order._id).populate('bids.errander');
+
+    // Notify the errander that their bid was rejected
+    if (bid.errander) {
+      await this.notificationsService.sendNotification(bid.errander._id.toString(), {
+        title: 'Offer Declined',
+        body: `Your offer of ₦${bid.amount} was declined by the student.`,
+        type: 'ORDER_BIDS_UPDATE',
+        data: { orderId: order._id.toString() },
+      });
+    }
+
+    return populatedOrder as Order;
+  }
+
+  async acceptBid(orderId: string, bidId: string, customerId: string): Promise<Order> {
+    const order = await this.orderModel.findById(orderId).populate('bids.errander');
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.customer.toString() !== customerId.toString()) throw new BadRequestException('Not your order');
+    if (order.status !== OrderStatus.PENDING) throw new BadRequestException('Order is no longer pending');
+
+    const bid = order.bids.find(b => b._id.toString() === bidId);
+    if (!bid) throw new NotFoundException('Bid not found');
+    if (bid.status !== 'pending') throw new BadRequestException('Bid is not pending');
+
+    // Mark this bid as accepted, others rejected
+    order.bids.forEach(b => {
+      if (b._id.toString() === bidId) b.status = 'accepted';
+      else b.status = 'rejected';
+    });
+
+    const newFee = bid.amount;
+    const serviceFee = 50; 
+    const total = newFee + serviceFee;
+    const commissionAmount = Math.round(newFee * 0.10); 
+    const erranderShare = newFee - commissionAmount;
+    const platformShare = serviceFee + commissionAmount;
+
+    order.deliveryFee = newFee;
+    order.erranderShare = erranderShare;
+    order.platformShare = platformShare;
+    order.total = total;
+
+    // Assign the errander
+    let errander = await this.erranderModel.findOne({ user: bid.errander._id });
+    if (!errander) {
+      errander = await this.erranderModel.create({
+        user: bid.errander._id,
+        status: 'OFFLINE',
+      });
+    }
+
+    order.errander = bid.errander._id;
+    order.status = OrderStatus.AWAITING_PAYMENT;
+    order.statusHistory.push({
+      status: OrderStatus.AWAITING_PAYMENT,
+      timestamp: new Date(),
+      note: 'Customer accepted a counter-offer bid, awaiting payment'
+    });
+
+    await order.save();
+    
+    const populatedOrder = await this.orderModel.findById(order._id)
+      .populate('customer', 'firstName lastName email phone avatar')
+      .populate('errander', 'firstName lastName phone avatar vehicleType');
+
+    // Notify the accepted errander
+    await this.notificationsService.sendNotification(bid.errander._id.toString(), {
+      title: 'Bid Accepted!',
+      body: `Your counter-offer for Order #${order.orderNumber} was accepted!`,
+      type: 'ORDER_BID_ACCEPTED',
+      data: { orderId: order._id.toString() },
+    });
+
+    // Notify customer to refresh
+    await this.notificationsService.sendNotification(order.customer.toString(), {
+      title: 'Errand Accepted!',
+      body: 'You have accepted a bid. Please make payment to confirm and open chat.',
+      type: 'ORDER_ACCEPTED',
+      data: { orderId: order._id.toString(), order: populatedOrder },
+    });
+
+    return populatedOrder as Order;
   }
 }

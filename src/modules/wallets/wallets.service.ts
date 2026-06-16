@@ -112,11 +112,14 @@ export class WalletsService {
     });
   }
 
-  async updatePreferences(userId: string, preference: PayoutPreference, bankDetails?: any): Promise<WalletDocument> {
+  async updatePreferences(userId: string, preference: PayoutPreference, bankDetails?: any, metadata?: any): Promise<WalletDocument> {
     const wallet = await this.getOrCreateWallet(userId);
     wallet.payoutPreference = preference;
-    if (bankDetails) {
+    if (bankDetails !== undefined) {
       wallet.bankDetails = bankDetails;
+    }
+    if (metadata !== undefined) {
+      wallet.metadata = { ...wallet.metadata, ...metadata };
     }
     return wallet.save();
   }

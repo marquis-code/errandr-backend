@@ -6,6 +6,9 @@ export class ChatMessage extends Document {
   @Prop({ type: Types.ObjectId, ref: 'Order' })
   order?: Types.ObjectId;
 
+  @Prop({ type: Types.ObjectId, ref: 'Appointment' })
+  appointment?: Types.ObjectId;
+
   @Prop({ type: String, enum: ['order', 'support', 'direct'], default: 'order' })
   roomType: string;
 
@@ -36,5 +39,6 @@ export class ChatMessage extends Document {
 
 export const ChatMessageSchema = SchemaFactory.createForClass(ChatMessage);
 ChatMessageSchema.index({ order: 1, createdAt: 1 });
+ChatMessageSchema.index({ appointment: 1, createdAt: 1 });
 ChatMessageSchema.index({ sender: 1 });
 ChatMessageSchema.index({ receiver: 1 });

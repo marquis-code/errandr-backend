@@ -27,6 +27,10 @@ import { GroupOrdersModule } from './modules/group-orders/group-orders.module';
 import { RewardsModule } from './modules/rewards/rewards.module';
 import { MarketingModule } from './modules/marketing/marketing.module';
 import { AfricasTalkingModule } from './modules/africastalking/africastalking.module';
+import { ReferralsModule } from './modules/referrals/referrals.module';
+import { ServicesModule } from './modules/services/services.module';
+import { AppointmentsModule } from './modules/appointments/appointments.module';
+import { FirebaseModule } from './modules/firebase/firebase.module';
 
 @Module({
   imports: [
@@ -85,6 +89,10 @@ import { AfricasTalkingModule } from './modules/africastalking/africastalking.mo
     GroupOrdersModule,
     RewardsModule,
     MarketingModule,
+    ReferralsModule,
+    ServicesModule,
+    AppointmentsModule,
+    FirebaseModule,
   ],
 })
 export class AppModule {}

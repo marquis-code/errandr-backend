@@ -109,6 +109,9 @@ export class User extends Document {
 
   @Prop({ default: false })
   isPro: boolean;
+
+  @Prop({ default: false })
+  isGuest: boolean;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

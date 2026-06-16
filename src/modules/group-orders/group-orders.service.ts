@@ -243,7 +243,7 @@ export class GroupOrdersService {
         // Migrate the guest ID to the authenticated user ID
         rawOrder.participants[participantIndex].user = new Types.ObjectId(userId) as any;
         if (rawOrder.host.toString() === guestId.toString()) {
-          rawOrder.host = new Types.ObjectId(userId);
+          rawOrder.host = new Types.ObjectId(userId) as any;
         }
         if (rawOrder.sponsorId && rawOrder.sponsorId.toString() === guestId.toString()) {
           rawOrder.sponsorId = new Types.ObjectId(userId) as any;

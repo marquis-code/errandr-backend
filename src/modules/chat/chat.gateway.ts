@@ -49,14 +49,19 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('joinOrder')
+  @SubscribeMessage('joinAppointment')
   @SubscribeMessage('chat:join-room')
   handleJoinOrder(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { orderId?: string; roomId?: string; userId?: string },
+    @MessageBody() data: { orderId?: string; appointmentId?: string; roomId?: string; userId?: string; roomType?: string },
   ) {
-    const id = data.roomId || data.orderId || data.userId;
-    if (data.orderId || (data.roomId && !data.userId)) {
+    const id = data.roomId || data.appointmentId || data.orderId || data.userId;
+    if (data.orderId || (data.roomId && data.roomType === 'order')) {
       client.join(`order:${id}`);
+    } else if (data.appointmentId || (data.roomId && data.roomType === 'direct' && !data.roomId.includes('_'))) {
+      client.join(`appointment:${id}`);
+    } else if (data.roomType === 'direct') {
+      client.join(`direct:${id}`);
     } else {
       client.join(`support:${id}`);
       client.join('admin:support');
@@ -81,6 +86,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody()
     data: {
       orderId?: string;
+      appointmentId?: string;
       roomId?: string; // Standardized
       senderId: string;
       receiverId?: string;
@@ -93,13 +99,19 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     const messageContent = data.content || data.message || '';
     const orderId = data.orderId || (data.roomType === 'order' ? data.roomId : undefined);
-    const roomType = data.roomType || (orderId ? 'order' : 'support');
+    // If it's a generic direct chat, it might have roomId like "userId_vendorId"
+    let appointmentId = data.appointmentId;
+    if (data.roomType === 'direct' && data.roomId && !data.roomId.includes('_')) {
+      appointmentId = data.roomId;
+    }
+    const roomType = data.roomType || (orderId ? 'order' : (appointmentId ? 'direct' : 'support'));
     
     try {
       const savedMessage = await this.chatService.createMessage({ 
         ...data, 
         message: messageContent,
         orderId,
+        appointmentId,
         roomType 
       });
       
@@ -113,6 +125,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         ...msgObj,
         // Explicitly include flat IDs for frontend compatibility
         orderId: orderId || String(msgObj.order || ''),
+        appointmentId: appointmentId || String(msgObj.appointment || ''),
         senderId: data.senderId || String(msgObj.sender?._id || msgObj.sender || ''),
         receiverId: data.receiverId || String(msgObj.receiver?._id || msgObj.receiver || ''),
         message: messageContent,
@@ -121,9 +134,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       };
 
     // Determine target room
-    const targetRoom = roomType === 'order' 
-      ? `order:${orderId}` 
-      : `support:${data.senderId}`;
+    let targetRoom = `support:${data.senderId}`;
+    if (roomType === 'order') targetRoom = `order:${orderId}`;
+    if (roomType === 'direct') {
+      targetRoom = appointmentId ? `appointment:${appointmentId}` : `direct:${data.roomId || `${Math.min(data.senderId as any, data.receiverId as any)}_${Math.max(data.senderId as any, data.receiverId as any)}`}`;
+    }
 
     // Emit to rooms
     if (roomType === 'support') {
@@ -153,7 +168,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         }, 1000);
       }
     } else {
-      const targetRoom = `order:${orderId}`;
       this.server.to(targetRoom).emit('chat:new-message', formattedMessage);
       this.server.to(targetRoom).emit('newMessage', formattedMessage); // compatibility
     }
@@ -183,6 +197,25 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         console.error('Failed to get order participants for notification', e);
       }
     }
+    
+    if (appointmentId) {
+      try {
+        const appointment = await this.chatService.getAppointmentParticipants(appointmentId);
+        if (appointment) {
+          const participants = [
+            appointment.user?._id?.toString() || appointment.user?.toString(),
+            appointment.vendor?.owner?.toString() || appointment.vendor?._id?.toString() || appointment.vendor?.toString(),
+          ].filter(Boolean);
+          for (const p of participants) {
+            if (p && p !== data.senderId && !notifyTargets.includes(p)) {
+              notifyTargets.push(p);
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Failed to get appointment participants for notification', e);
+      }
+    }
 
     // Also emit a global notification to the specific receiver if they are connected
     for (const targetId of notifyTargets) {
@@ -205,7 +238,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('chat:typing')
   handleTyping(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { orderId?: string; roomId?: string; userId?: string; roomType?: string; isTyping: boolean },
+    @MessageBody() data: any,
   ) {
     const id = data.roomId || data.orderId || data.userId;
     const room = (data.roomType === 'support' || data.userId) ? `support:${id}` : `order:${id}`;
@@ -219,7 +252,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('markRead')
   @SubscribeMessage('chat:mark-read')
   async handleMarkRead(
-    @MessageBody() data: { orderId?: string; roomId?: string; userId: string; roomType?: string },
+    @MessageBody() data: any,
   ) {
     const id = data.roomId || data.orderId || '';
     await this.chatService.markAllAsRead(id, data.userId);

@@ -18,7 +18,7 @@ async function main() {
     await mongoose.connect(MONGODB_URI);
     console.log('✅ Connected successfully to MongoDB');
     
-    const db = mongoose.connection.db;
+    const db = mongoose.connection.db!;
     const usersCollection = db.collection('users');
     const ordersCollection = db.collection('orders');
 

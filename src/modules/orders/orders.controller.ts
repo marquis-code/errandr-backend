@@ -184,10 +184,71 @@ async getMyVendorOrders(
   @Put(':id/accept')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Accept order as errander' })
+  @ApiOperation({ summary: 'Accept order as errander (Marketplace)' })
   acceptOrder(@Param('id') id: string, @CurrentUser() user: User) {
     this.logger.log(`acceptOrder() id=${id} user=${user._id}`);
     return this.ordersService.acceptOrder(id, (user._id as unknown) as string);
+  }
+
+  @Put(':id/custom/accept')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Accept custom errand as errander' })
+  acceptCustomErrand(@Param('id') id: string, @CurrentUser() user: User) {
+    this.logger.log(`acceptCustomErrand() id=${id} user=${user._id}`);
+    return this.ordersService.acceptCustomErrand(id, (user._id as unknown) as string);
+  }
+
+  @Post(':id/custom/pay')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Finalize payment for custom errand' })
+  payForCustomErrand(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+    @Body() body: { paymentReference: string },
+  ) {
+    this.logger.log(`payForCustomErrand() id=${id} user=${user._id}`);
+    return this.ordersService.payForCustomErrand(id, (user._id as unknown) as string, body.paymentReference);
+  }
+
+  @Put(':id/custom/fee')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Increase fee for custom errand' })
+  updateErrandFee(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+    @Body() body: { newFee: number },
+  ) {
+    this.logger.log(`updateErrandFee() id=${id} user=${user._id} newFee=${body.newFee}`);
+    return this.ordersService.updateErrandFee(id, (user._id as unknown) as string, body.newFee);
+  }
+
+  @Post(':id/custom/bid')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Place a counter-offer bid for a custom errand' })
+  placeBid(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+    @Body() body: { amount: number },
+  ) {
+    this.logger.log(`placeBid() id=${id} user=${user._id} amount=${body.amount}`);
+    return this.ordersService.placeBid(id, (user._id as unknown) as string, body.amount);
+  }
+
+  @Put(':id/custom/bid/:bidId/accept')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Accept a counter-offer bid for a custom errand' })
+  acceptBid(
+    @Param('id') id: string,
+    @Param('bidId') bidId: string,
+    @CurrentUser() user: User,
+  ) {
+    this.logger.log(`acceptBid() id=${id} bidId=${bidId} user=${user._id}`);
+    return this.ordersService.acceptBid(id, bidId, (user._id as unknown) as string);
   }
 
   @Put(':id/rate')
@@ -240,5 +301,17 @@ async getMyVendorOrders(
   ) {
     this.logger.log(`completeOrder() id=${id} user=${user._id}`);
     return this.ordersService.completeOrder(id, (user._id as unknown) as string, body.verificationCode);
+  }
+
+  @Get('track/guest')
+  @ApiOperation({ summary: 'Track order by orderNumber and email' })
+  trackOrder(@Query('orderNumber') orderNumber: string, @Query('email') email: string) {
+    return this.ordersService.trackOrder(orderNumber, email);
+  }
+
+  @Put('track/cancel')
+  @ApiOperation({ summary: 'Cancel tracked order by orderNumber and email' })
+  cancelTrackedOrder(@Body() body: { orderNumber: string; email: string }) {
+    return this.ordersService.cancelTrackedOrder(body.orderNumber, body.email);
   }
 }

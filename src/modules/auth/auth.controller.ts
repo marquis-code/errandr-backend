@@ -31,6 +31,16 @@ export class AuthController {
     return this.authService.firebaseLogin(dto.idToken);
   }
 
+  @Post('guest')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Create or login as guest user for checkout' })
+  async guestCheckout(@Body() body: { firstName: string, lastName: string, email: string, phone: string }) {
+    if (!body.firstName || !body.lastName || !body.email || !body.phone) {
+      throw new BadRequestException('All fields (firstName, lastName, email, phone) are required for guest checkout');
+    }
+    return this.authService.guestCheckout(body);
+  }
+
   @Post('send-otp')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Send OTP for verification' })
