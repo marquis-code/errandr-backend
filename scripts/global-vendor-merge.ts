@@ -19,7 +19,6 @@ async function run() {
   const orderModel = app.get<Model<Order>>(getModelToken(Order.name));
   const productModel = app.get<Model<Product>>(getModelToken(Product.name));
 
-  console.log('--- STARTING GLOBAL VENDOR MERGE ---');
 
   const allVendors = await vendorModel.find().lean();
   
@@ -73,7 +72,6 @@ async function run() {
     // If we found a specific "active" owner (like the user who just logged in), 
     // ensure the authoritative record is owned by them.
     if (activeOwnerId && !authoritativeRecord.owner.equals(activeOwnerId)) {
-      console.log(`  ! Updating authoritative record ${authoritativeRecord._id} owner to ${activeOwnerId}`);
       await vendorModel.updateOne({ _id: authoritativeRecord._id }, { $set: { owner: activeOwnerId } });
     }
 
