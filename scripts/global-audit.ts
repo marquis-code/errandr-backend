@@ -12,7 +12,6 @@ async function run() {
   const orderModel = app.get<Model<Order>>(getModelToken(Order.name));
   const productModel = app.get<Model<Product>>(getModelToken(Product.name));
 
-  console.log('--- GLOBAL VENDOR AUDIT ---');
 
   const duplicates = await vendorModel.aggregate([
     { $group: { 
@@ -33,7 +32,6 @@ async function run() {
       const owner = dup.owners[i];
       const orderCount = await orderModel.countDocuments({ vendor: vid });
       const productCount = await productModel.countDocuments({ vendor: vid });
-      console.log(`  - ID: ${vid} | Owner: ${owner} | Orders: ${orderCount} | Products: ${productCount}`);
     }
   }
 
