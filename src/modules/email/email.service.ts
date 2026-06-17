@@ -101,7 +101,7 @@ export class EmailService {
         <p style="margin: 0 0 6px; font-size: 12px; font-weight: 700; color: #EA580C; text-transform: uppercase; letter-spacing: 0.5px;">Join the Erranders Ecosystem</p>
         <p style="margin: 0 0 16px; font-size: 13px; color: #52525b; line-height: 1.5;">Order food & essentials · Become a vendor · Earn as a rider</p>
         <div style="display: inline-block;">
-          <a href="https://student.erranders.org" style="display: inline-block; padding: 8px 16px; background: #FF5C1A; color: #ffffff; text-decoration: none; border-radius: 6px; font-size: 11px; font-weight: 600; margin: 0 4px;">Order Now</a>
+          <a href="https://www.erranders.org" style="display: inline-block; padding: 8px 16px; background: #FF5C1A; color: #ffffff; text-decoration: none; border-radius: 6px; font-size: 11px; font-weight: 600; margin: 0 4px;">Order Now</a>
           <a href="https://vendor.erranders.org/auth/register" style="display: inline-block; padding: 8px 16px; background: #ffffff; color: #52525b; text-decoration: none; border-radius: 6px; font-size: 11px; font-weight: 600; margin: 0 4px; border: 1px solid #e4e4e7;">Sell on Erranders</a>
         </div>
       </div>
@@ -138,7 +138,7 @@ export class EmailService {
               <p style="margin: 0 0 20px; line-height: 1.5; color: #71717a; font-size: 12px;">Seamless delivery, smart commerce, and real opportunities for students across Africa.</p>
               <div style="margin-bottom: 20px;">
                 <a href="https://erranders.org" style="color: #FF5C1A; text-decoration: none; font-size: 12px; margin: 0 8px; font-weight: 500;">Website</a>
-                <a href="https://student.erranders.org" style="color: #FF5C1A; text-decoration: none; font-size: 12px; margin: 0 8px; font-weight: 500;">Order</a>
+                <a href="https://www.erranders.org" style="color: #FF5C1A; text-decoration: none; font-size: 12px; margin: 0 8px; font-weight: 500;">Order</a>
                 <a href="https://vendor.erranders.org" style="color: #FF5C1A; text-decoration: none; font-size: 12px; margin: 0 8px; font-weight: 500;">Vendors</a>
               </div>
               <p style="margin: 0; font-size: 11px; color: #a1a1aa;">© ${new Date().getFullYear()} Erranders Ltd. Lagos, Nigeria.</p>
@@ -215,7 +215,7 @@ export class EmailService {
           </table>
         </div>
         <div style="text-align: center;">
-          <a href="https://student.erranders.org" class="btn">Start Your First Order</a>
+          <a href="https://www.erranders.org" class="btn">Start Your First Order</a>
         </div>
       </div>
     `, `Welcome to Erranders, ${firstName}!`);
@@ -273,7 +273,7 @@ export class EmailService {
         </div>
 
         <div style="text-align: center;">
-          <a href="https://student.erranders.org/dashboard/orders/${order._id}" class="btn">Track Order</a>
+          <a href="https://www.erranders.org/dashboard/orders/${order._id}" class="btn">Track Order</a>
         </div>
       </div>
     `, `Order #${order.orderNumber} confirmed!`);
@@ -301,7 +301,7 @@ export class EmailService {
           </table>
         </div>
 
-        <a href="https://student.erranders.org/dashboard" class="btn btn-light">Go to Dashboard</a>
+        <a href="https://www.erranders.org/dashboard" class="btn btn-light">Go to Dashboard</a>
       </div>
     `, `Receipt: ₦${amount.toLocaleString()}`);
     return this.sendEmail(to, `✅ Payment Receipt: ₦${amount.toLocaleString()}`, html);
@@ -334,7 +334,7 @@ export class EmailService {
         </div>
 
         <p style="font-size: 12px; color: #71717a; margin: 0 0 16px; line-height: 1.5;">Keep your reference safe — use it to track or cancel your booking.</p>
-        <a href="https://student.erranders.org/manage-booking" class="btn">Manage Booking</a>
+        <a href="https://www.erranders.org/manage-booking" class="btn">Manage Booking</a>
       </div>
     `, `Booking Confirmed! Ref: ${reference}`);
     return this.sendEmail(to, `✅ Booking Confirmed: ₦${amount.toLocaleString()}`, html);
@@ -347,7 +347,7 @@ export class EmailService {
         <span style="font-size: 48px; display: block; margin: 0 0 16px;">${icon}</span>
         <h1 class="title" style="text-transform: capitalize;">Order ${status.replace(/_/g, ' ').toLowerCase()}</h1>
         <p style="color: #52525b; font-size: 14px; margin: 0 0 24px;">Order <b>#${orderNumber}</b> has been updated.</p>
-        <a href="https://student.erranders.org/dashboard/orders" class="btn btn-light">View Order</a>
+        <a href="https://www.erranders.org/dashboard/orders" class="btn btn-light">View Order</a>
       </div>
     `, `Order #${orderNumber}: ${status}`);
     return this.sendEmail(to, `Order Update: ${status} — #${orderNumber}`, html);
@@ -366,7 +366,7 @@ export class EmailService {
         <div class="card" style="background: #FFF7ED; border-color: #ffedd5; text-align: left;">
           <p style="font-size: 14px; font-weight: 700; color: #EA580C; margin: 0 0 6px;">Rate your experience ⭐</p>
           <p style="font-size: 13px; color: #9a3412; margin: 0 0 16px; line-height: 1.5;">Ratings help us maintain quality and reward top riders.</p>
-          <a href="https://student.erranders.org/dashboard/orders/${order._id}" class="btn" style="padding: 8px 16px; font-size: 12px;">Tap to Rate</a>
+          <a href="https://www.erranders.org/dashboard/orders/${order._id}" class="btn" style="padding: 8px 16px; font-size: 12px;">Tap to Rate</a>
         </div>
       </div>
     `, `Order #${order.orderNumber} delivered!`);
@@ -406,7 +406,7 @@ export class EmailService {
           <p class="card-value" style="color: #059669;">+₦${amount.toLocaleString()}</p>
           <p style="font-size: 12px; color: #047857; margin: 0;">${description}</p>
         </div>
-        <a href="https://student.erranders.org/dashboard/wallet" class="btn btn-green">View Wallet</a>
+        <a href="https://www.erranders.org/dashboard/wallet" class="btn btn-green">View Wallet</a>
       </div>
     `, `You received ₦${amount.toLocaleString()}!`);
     return this.sendEmail(to, `Wallet Credited — ₦${amount.toLocaleString()}`, html);
@@ -446,7 +446,7 @@ export class EmailService {
           <p style="font-size: 12px; color: #71717a; margin: 0;">Share with students, vendors, and riders.</p>
         </div>
         <div style="text-align: center;">
-          <a href="https://student.erranders.org" class="btn">Start Sharing</a>
+          <a href="https://www.erranders.org" class="btn">Start Sharing</a>
         </div>
       </div>
     `, `Your referral code: ${referralCode}`);
