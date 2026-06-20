@@ -31,6 +31,8 @@ import { ReferralsModule } from './modules/referrals/referrals.module';
 import { ServicesModule } from './modules/services/services.module';
 import { AppointmentsModule } from './modules/appointments/appointments.module';
 import { FirebaseModule } from './modules/firebase/firebase.module';
+import { SearchModule } from './modules/search/search.module';
+import { ReviewsModule } from './modules/reviews/reviews.module';
 
 @Module({
   imports: [
@@ -93,6 +95,8 @@ import { FirebaseModule } from './modules/firebase/firebase.module';
     ServicesModule,
     AppointmentsModule,
     FirebaseModule,
+    SearchModule,
+    ReviewsModule,
   ],
 })
 export class AppModule {}

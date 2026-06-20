@@ -1,6 +1,6 @@
 import {
   Controller, Get, Post, Put, Patch, Body, Param, Query,
-  UseGuards, Logger, DefaultValuePipe, ParseIntPipe,
+  UseGuards, Logger, DefaultValuePipe, ParseIntPipe, BadRequestException
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { VendorsService } from './vendors.service';
@@ -12,6 +12,15 @@ import { VendorCategory } from './schemas/vendor.schema';
 @Controller('vendors')
 export class VendorsController {
   constructor(private readonly vendorsService: VendorsService) {}
+
+  @Post(':id/notify')
+  @ApiOperation({ summary: 'Request notification when a vendor comes online' })
+  notifyWhenOnline(@Param('id') vendorId: string, @Body() body: { email: string, pushSubscription?: any }) {
+    if (!body.email) {
+      throw new BadRequestException('Email is required');
+    }
+    return this.vendorsService.addNotificationRequest(vendorId, body.email, body.pushSubscription);
+  }
 
   @Post()
   @UseGuards(JwtAuthGuard)

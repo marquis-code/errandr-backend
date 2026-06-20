@@ -40,7 +40,7 @@ export class FavoritesService {
       })
       .populate({
         path: 'vendor',
-        select: 'storeName logo isOnline',
+        select: 'storeName logo banner isOnline rating totalRatings category address location isStudentBusiness isFeatured businessType serviceLocation minOrder deliveryFee',
       })
       .sort({ createdAt: -1 });
   }

@@ -6,12 +6,18 @@ import { RedisService } from '../redis/redis.service';
 import { EmailService } from '../email/email.service';
 import { User } from '../users/schemas/user.schema';
 import { Order, OrderStatus } from '../orders/schemas/order.schema';
+import { VendorNotification } from './schemas/vendor-notification.schema';
+import { Product } from '../products/schemas/product.schema';
+import { Service } from '../services/schemas/service.schema';
 
 @Injectable()
 export class VendorsService {
   constructor(
     @InjectModel(Vendor.name) private vendorModel: Model<Vendor>,
     @InjectModel(Order.name) private orderModel: Model<Order>,
+    @InjectModel(VendorNotification.name) private vendorNotificationModel: Model<VendorNotification>,
+    @InjectModel(Product.name) private productModel: Model<Product>,
+    @InjectModel(Service.name) private serviceModel: Model<Service>,
     private redisService: RedisService,
     private emailService: EmailService,
   ) {}
@@ -95,9 +101,33 @@ export class VendorsService {
     if (isStudentBusiness !== undefined) filter.isStudentBusiness = isStudentBusiness;
     if (preOrderOnly !== undefined) filter.preOrderOnly = preOrderOnly;
     if (search) {
+      const matchingProducts = await this.productModel.find({
+        $or: [
+          { name: { $regex: search, $options: 'i' } },
+          { category: { $regex: search, $options: 'i' } },
+          { description: { $regex: search, $options: 'i' } },
+        ]
+      }).select('vendor').lean();
+
+      const matchingServices = await this.serviceModel.find({
+        $or: [
+          { name: { $regex: search, $options: 'i' } },
+          { category: { $regex: search, $options: 'i' } },
+          { description: { $regex: search, $options: 'i' } },
+        ]
+      }).select('vendor').lean();
+
+      const vendorIdsFromItems = [
+        ...matchingProducts.map(p => p.vendor),
+        ...matchingServices.map(s => s.vendor)
+      ];
+
       filter.$or = [
         { storeName: { $regex: search, $options: 'i' } },
         { description: { $regex: search, $options: 'i' } },
+        { category: { $regex: search, $options: 'i' } },
+        { tags: { $regex: search, $options: 'i' } },
+        { _id: { $in: vendorIdsFromItems } }
       ];
     }
 
@@ -143,6 +173,31 @@ export class VendorsService {
       .populate('owner', 'firstName lastName avatar phone');
     if (!vendor) throw new NotFoundException('Vendor not found');
     return this.augmentVendor(vendor) as any;
+  }
+
+  async toggleVendorOnlineStatus(vendorId: string, isOnline: boolean) {
+    const vendor = await this.vendorModel.findByIdAndUpdate(vendorId, { isOnline }, { new: true });
+    // Clear cache
+    await this.redisService.del('all_approved_vendors');
+    return vendor;
+  }
+
+  async addNotificationRequest(vendorId: string, email: string, pushSubscription?: any) {
+    const vendor = await this.vendorModel.findById(vendorId);
+    if (!vendor) throw new NotFoundException('Vendor not found');
+
+    let existing = await this.vendorNotificationModel.findOne({ vendorId, email, isNotified: false });
+    if (existing) {
+      if (pushSubscription && !existing.pushSubscription) {
+        existing.pushSubscription = pushSubscription;
+        await existing.save();
+        return { message: 'Push notifications enabled for this vendor.' };
+      }
+      return { message: 'You are already on the notification list for this vendor.' };
+    }
+
+    await this.vendorNotificationModel.create({ vendorId, email, pushSubscription });
+    return { message: 'We will notify you when this vendor comes online.' };
   }
 
   async findByOwner(ownerId: string): Promise<Vendor> {

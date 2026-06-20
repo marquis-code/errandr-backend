@@ -950,14 +950,22 @@ export class OrdersService {
       .sort({ createdAt: -1 });
   }
 
-  async findById(id: string): Promise<Order> {
+  async findById(id: string): Promise<any> {
     const order = await this.orderModel
       .findById(id)
       .populate('customer', 'firstName lastName phone avatar deliveryAddress location')
       .populate('vendor', 'storeName logo phone address location user')
       .populate('errander', 'firstName lastName phone avatar user')
-      .populate('bids.errander', 'firstName lastName avatar phone');
+      .populate('bids.errander', 'firstName lastName avatar phone')
+      .lean();
     if (!order) throw new NotFoundException('Order not found');
+
+    if (order.errander) {
+      const erranderDetails = await this.erranderModel.findOne({ user: (order.errander as any)._id }).lean();
+      if (erranderDetails) {
+        (order as any).erranderDetails = erranderDetails;
+      }
+    }
     return order;
   }
 

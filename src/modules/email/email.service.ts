@@ -452,4 +452,20 @@ export class EmailService {
     `, `Your referral code: ${referralCode}`);
     return this.sendEmail(to, `Welcome to the Squad, ${firstName}! Code: ${referralCode}`, html);
   }
+
+  // ─── NOTIFICATIONS ───────────────────────────────────────────────
+
+  async sendVendorOnlineNotification(to: string, storeName: string, link: string) {
+    const html = this.wrap(`
+      <div class="content" style="text-align: center;">
+        <div style="width: 48px; height: 48px; background: #ECFDF5; border: 1px solid #10B981; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; margin: 0 0 16px;">
+          <span style="font-size: 24px;">🏪</span>
+        </div>
+        <h1 class="title">They're Back!</h1>
+        <p style="color: #52525b; font-size: 14px; margin: 0 0 24px;">Great news! <b>${storeName}</b> is now online and ready to accept your orders.</p>
+        <a href="${link}" class="btn">Order Now</a>
+      </div>
+    `, `${storeName} is now online!`);
+    return this.sendEmail(to, `${storeName} is Open for Business! 🥳`, html);
+  }
 }

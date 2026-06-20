@@ -27,6 +27,9 @@ export class Product extends Document {
   @Prop({ type: [String], default: [] })
   images: string[];
 
+  @Prop({ type: [String], default: [] })
+  videos: string[];
+
   @Prop({ required: true })
   category: string;
 
