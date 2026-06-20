@@ -22,7 +22,7 @@ export class WebPushService {
       await webpush.sendNotification(subscription, JSON.stringify(payload));
       return true;
     } catch (error) {
-      this.logger.error(\`Failed to send push notification: \${error.message}\`);
+      this.logger.error(`Failed to send push notification: ${error.message}`);
       // If error is 410 (Gone) or 404 (Not Found), it means the subscription is no longer valid
       if (error.statusCode === 410 || error.statusCode === 404) {
         return false; // Indicating the subscription should probably be removed
