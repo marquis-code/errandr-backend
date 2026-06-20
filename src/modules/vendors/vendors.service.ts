@@ -343,7 +343,12 @@ export class VendorsService {
   }
 
   async getCategories(): Promise<string[]> {
-    return Object.values(VendorCategory);
+    const categories = await this.vendorModel.distinct('category', { status: VendorStatus.APPROVED }).exec();
+    const predefined = Object.values(VendorCategory);
+    
+    // Combine predefined and dynamic, remove empties, make unique
+    const allCategories = [...new Set([...predefined, ...categories])];
+    return allCategories.filter(c => c && c.trim() !== '');
   }
 
   async approveVendor(id: string): Promise<Vendor> {
