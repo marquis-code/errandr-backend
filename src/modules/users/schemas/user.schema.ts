@@ -112,6 +112,9 @@ export class User extends Document {
 
   @Prop({ default: false })
   isGuest: boolean;
+
+  @Prop({ type: Object, default: null })
+  vendorOnboardingSession: Record<string, any>;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

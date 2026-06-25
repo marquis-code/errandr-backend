@@ -24,6 +24,12 @@ export class ReferralsController {
     return this.referralsService.getAdminReferralStats();
   }
 
+  @Get('validate-code/:code')
+  @ApiOperation({ summary: 'Validate a referral code' })
+  validateCode(@Param('code') code: string) {
+    return this.referralsService.validateCode(code.toUpperCase());
+  }
+
   // ─── All Referrals ─────────────────────────────────────────────
 
   @Get()

@@ -445,6 +445,11 @@ export class ReferralsService {
 
   // ─── Helpers ──────────────────────────────────────────────────────
 
+  async validateCode(code: string): Promise<{ valid: boolean }> {
+    const isValid = await this.isCodeTaken(code);
+    return { valid: isValid };
+  }
+
   private generateBrandedCode(name: string): string {
     // Take first name, uppercase, prefix with ERR-
     const firstName = name.split(' ')[0].toUpperCase().replace(/[^A-Z]/g, '');

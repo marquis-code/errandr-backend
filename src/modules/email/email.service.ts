@@ -2,6 +2,14 @@ import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Resend } from 'resend';
 
+export interface EmailTemplateOptions {
+  preheader?: string;
+  badge?: { text: string; color: 'orange' | 'blue' | 'green' | 'purple' };
+  title: string;
+  subtitle: string;
+  content: string;
+}
+
 @Injectable()
 export class EmailService {
   private resend: Resend | null;
@@ -64,51 +72,154 @@ export class EmailService {
       <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
         body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f4f4f5; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
-        .container { max-width: 520px; width: 100%; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; margin-top: 20px; margin-bottom: 20px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
-        .content { padding: 32px 24px; color: #3f3f46; }
-        .footer { padding: 24px; text-align: center; color: #71717a; font-size: 12px; background-color: #ffffff; border-top: 1px solid #f4f4f5; }
-        .btn { display: inline-block; padding: 12px 28px; background-color: #FF5C1A; color: #ffffff !important; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 13px; text-align: center; transition: all 0.2s; }
+        .wrapper { width: 100%; padding: 40px 0; background-color: #f4f4f5; }
+        .header-logo { text-align: center; margin-bottom: 24px; }
+        .header-logo img { height: 40px; }
+        .container { max-width: 520px; width: 100%; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+        
+        .content-header { background-color: #171721; padding: 40px 32px; color: #ffffff; }
+        .content-body { padding: 32px; background-color: #ffffff; color: #3f3f46; text-align: center; }
+        
+        .badge { display: inline-block; padding: 6px 14px; border-radius: 20px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 20px; }
+        .badge-orange { background-color: rgba(255, 92, 26, 0.15); border: 1px solid rgba(255, 92, 26, 0.3); color: #FF5C1A; }
+        .badge-blue { background-color: rgba(37, 99, 235, 0.15); border: 1px solid rgba(37, 99, 235, 0.3); color: #60A5FA; }
+        .badge-green { background-color: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); color: #34D399; }
+        .badge-purple { background-color: rgba(124, 58, 237, 0.15); border: 1px solid rgba(124, 58, 237, 0.3); color: #A78BFA; }
+        
+        h1.title { font-size: 28px; font-weight: 800; line-height: 1.2; margin: 0 0 12px; color: #ffffff; letter-spacing: -0.5px; }
+        p.subtitle { font-size: 14px; color: #a1a1aa; line-height: 1.6; margin: 0; font-weight: 500; }
+        
+        .ecosystem { background-color: #ffffff; padding: 40px 32px; border-top: 1px solid #f4f4f5; }
+        .ecosystem-title { font-size: 11px; font-weight: 800; color: #a1a1aa; text-transform: uppercase; letter-spacing: 1.5px; margin: 0 0 6px; }
+        .ecosystem-subtitle { font-size: 13px; color: #71717a; margin: 0 0 24px; font-weight: 500; }
+        
+        .footer { padding: 40px 32px; text-align: center; background-color: #171721; color: #a1a1aa; }
+        .footer-logo { display: inline-flex; align-items: center; justify-content: center; margin-bottom: 20px; }
+        .footer-logo img { height: 24px; }
+        .footer-tagline { color: #ffffff; font-weight: 700; font-size: 15px; margin: 0 0 8px; }
+        .footer-desc { margin: 0 0 24px; line-height: 1.6; font-size: 13px; max-width: 400px; margin-left: auto; margin-right: auto; }
+        .footer-links { margin-bottom: 24px; }
+        .footer-links a { color: #FF5C1A; text-decoration: none; font-size: 13px; margin: 0 12px; font-weight: 600; }
+        .footer-copy { margin: 0; font-size: 11px; color: #71717a; }
+        
+        .outer-footer { text-align: center; margin-top: 24px; color: #a1a1aa; font-size: 11px; font-weight: 500; }
+        
+        .btn { display: inline-block; padding: 12px 28px; background-color: #FF5C1A; color: #ffffff !important; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 13px; text-align: center; transition: all 0.2s; border: none; cursor: pointer; }
         .btn-light { background-color: #f4f4f5; color: #3f3f46 !important; border: 1px solid #e4e4e7; }
         .btn-green { background-color: #059669; }
-        h1.title { font-size: 24px; font-weight: 700; line-height: 1.3; margin: 0 0 12px; color: #27272a; }
-        .badge { display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
-        .badge-orange { background-color: #FFF7ED; color: #EA580C; }
-        .badge-blue { background-color: #EFF6FF; color: #2563EB; }
-        .badge-green { background-color: #ECFDF5; color: #059669; }
-        .badge-purple { background-color: #F5F3FF; color: #7C3AED; }
+        .btn-outline { background-color: transparent; border: 1px solid #e4e4e7; color: #3f3f46 !important; }
+        
         .card { background-color: #ffffff; border: 1px solid #e4e4e7; border-radius: 12px; padding: 24px; margin: 0 0 20px; text-align: center; }
         .card-value { font-size: 28px; font-weight: 800; margin: 8px 0 16px; color: #27272a; }
         .card-label { font-size: 10px; font-weight: 600; color: #71717a; text-transform: uppercase; letter-spacing: 0.5px; margin: 0; }
+        
         .data-table { width: 100%; border-collapse: collapse; text-align: left; }
-        .data-table td { padding: 8px 0; font-size: 13px; border-bottom: 1px solid #f4f4f5; }
+        .data-table td { padding: 12px 0; font-size: 13px; border-bottom: 1px solid #f4f4f5; }
         .data-table tr:last-child td { border-bottom: none; }
-        .data-table .label { color: #71717a; }
+        .data-table .label { color: #71717a; font-weight: 500; }
         .data-table .value { font-weight: 600; color: #3f3f46; text-align: right; }
         .data-table .value-highlight { font-weight: 700; color: #FF5C1A; text-align: right; }
+        
+        /* OTP specific */
+        .otp-container { display: flex; justify-content: center; gap: 8px; margin: 32px 0; }
+        .otp-box { width: 48px; height: 56px; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 800; color: #27272a; border: 1px solid #e4e4e7; border-radius: 8px; background: #fafafa; }
+        .otp-box.highlight { border-color: #FF5C1A; color: #FF5C1A; background: #FFF7ED; }
+        .otp-warning { font-size: 12px; color: #a1a1aa; background: #fafafa; padding: 12px; border-radius: 8px; margin: 0; display: flex; align-items: center; justify-content: center; gap: 8px; }
+
         @media only screen and (max-width: 520px) {
-          .container { margin-top: 0; margin-bottom: 0; border-radius: 0; }
-          .content { padding: 24px 16px !important; }
-          .footer { padding: 24px 16px !important; }
+          .wrapper { padding: 0; }
+          .container { border-radius: 0; }
+          .content-header { padding: 32px 20px; }
+          .content-body { padding: 24px 20px; }
+          .ecosystem { padding: 32px 20px; }
+          .footer { padding: 32px 20px; }
           .btn { display: block !important; width: 100% !important; box-sizing: border-box !important; }
+          .otp-box { width: 40px; height: 48px; font-size: 20px; }
         }
       </style>
     `;
   }
 
-  private marketingBanner() {
+  private ecosystemBanner() {
     return `
-      <div style="background: linear-gradient(to right, #FFF7ED, #ffffff); padding: 24px; text-align: center; border-top: 1px solid #f4f4f5; border-bottom: 1px solid #f4f4f5;">
-        <p style="margin: 0 0 6px; font-size: 12px; font-weight: 700; color: #EA580C; text-transform: uppercase; letter-spacing: 0.5px;">Join the Erranders Ecosystem</p>
-        <p style="margin: 0 0 16px; font-size: 13px; color: #52525b; line-height: 1.5;">Order food & essentials · Become a vendor · Earn as a rider</p>
-        <div style="display: inline-block;">
-          <a href="https://www.erranders.org" style="display: inline-block; padding: 8px 16px; background: #FF5C1A; color: #ffffff; text-decoration: none; border-radius: 6px; font-size: 11px; font-weight: 600; margin: 0 4px;">Order Now</a>
-          <a href="https://vendor.erranders.org/auth/register" style="display: inline-block; padding: 8px 16px; background: #ffffff; color: #52525b; text-decoration: none; border-radius: 6px; font-size: 11px; font-weight: 600; margin: 0 4px; border: 1px solid #e4e4e7;">Sell on Erranders</a>
-        </div>
+      <div class="ecosystem">
+        <p class="ecosystem-title">The Erranders Ecosystem</p>
+        <p class="ecosystem-subtitle">Three ways to be part of something bigger on campus.</p>
+        
+        <table style="width: 100%; border-collapse: separate; border-spacing: 0 12px;">
+          <!-- Order Card -->
+          <tr>
+            <td style="border: 1px solid #e4e4e7; border-radius: 12px; padding: 16px; background: #ffffff;">
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="width: 40px; vertical-align: top;">
+                    <div style="width: 32px; height: 32px; background: #171721; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; text-align: center; line-height: 32px;">
+                       🛍️
+                    </div>
+                  </td>
+                  <td style="padding-left: 12px; vertical-align: top;">
+                    <p style="margin: 0 0 4px; font-size: 13px; font-weight: 700; color: #27272a;">Order on Erranders</p>
+                    <p style="margin: 0; font-size: 12px; color: #71717a; line-height: 1.4;">Food, groceries & essentials delivered fast to your door.</p>
+                  </td>
+                  <td style="width: 100px; text-align: right; vertical-align: middle;">
+                    <a href="https://www.erranders.org" class="btn" style="padding: 8px 16px; font-size: 11px;">Order Now</a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          
+          <!-- Sell Card -->
+          <tr>
+            <td style="border: 1px solid #e4e4e7; border-radius: 12px; padding: 16px; background: #ffffff;">
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="width: 40px; vertical-align: top;">
+                    <div style="width: 32px; height: 32px; background: #171721; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; text-align: center; line-height: 32px;">
+                       🏪
+                    </div>
+                  </td>
+                  <td style="padding-left: 12px; vertical-align: top;">
+                    <p style="margin: 0 0 4px; font-size: 13px; font-weight: 700; color: #27272a;">Sell on Erranders</p>
+                    <p style="margin: 0; font-size: 12px; color: #71717a; line-height: 1.4;">List your products and reach thousands of campus buyers.</p>
+                  </td>
+                  <td style="width: 100px; text-align: right; vertical-align: middle;">
+                    <a href="https://vendor.erranders.org" class="btn btn-outline" style="padding: 8px 16px; font-size: 11px; background: transparent; color: #27272a !important;">Start Selling</a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Dispatch Card -->
+          <tr>
+            <td style="border: 1px solid #FFEDD5; border-radius: 12px; padding: 16px; background: #FFF7ED;">
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="width: 40px; vertical-align: top;">
+                    <div style="width: 32px; height: 32px; background: #EA580C; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; text-align: center; line-height: 32px;">
+                       🛵
+                    </div>
+                  </td>
+                  <td style="padding-left: 12px; vertical-align: top;">
+                    <p style="margin: 0 0 4px; font-size: 13px; font-weight: 700; color: #27272a;">Become a Dispatch Rider <span style="background: #FF5C1A; color: #ffffff; padding: 2px 6px; border-radius: 4px; font-size: 9px; margin-left: 4px; vertical-align: middle;">EARN</span></p>
+                    <p style="margin: 0; font-size: 12px; color: #9A3412; line-height: 1.4;">Deliver orders & happiness to people across campus.</p>
+                  </td>
+                  <td style="width: 100px; text-align: right; vertical-align: middle;">
+                    <a href="https://dispatch.erranders.org" class="btn" style="padding: 8px 16px; font-size: 11px;">Join Fleet</a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
       </div>
     `;
   }
 
-  private wrap(content: string, preheader: string = '') {
+  private wrap(options: EmailTemplateOptions) {
+    const badgeHtml = options.badge ? `<div class="badge badge-${options.badge.color}">${options.badge.text}</div>` : '';
+    
     return `
       <!DOCTYPE html>
       <html>
@@ -117,33 +228,50 @@ export class EmailService {
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           ${this.getBaseStyles()}
         </head>
-        <body style="margin: 0; padding: 0; background-color: #f4f4f5;">
-          <div style="display: none; max-height: 0px; overflow: hidden; opacity: 0;">${preheader}</div>
-          <div class="container">
-
-            <!-- HEADER: Logo -->
-            <div style="padding: 24px 24px 0; text-align: left;">
-              <img src="${this.logoUrl}" style="height: 32px;" alt="Erranders">
+        <body>
+          <div class="wrapper">
+            <div style="display: none; max-height: 0px; overflow: hidden; opacity: 0;">${options.preheader || ''}</div>
+            
+            <div class="header-logo">
+              <img src="${this.logoUrl}" alt="Erranders">
             </div>
 
-            ${content}
-
-            <!-- MARKETING BANNER -->
-            ${this.marketingBanner()}
-
-            <!-- FOOTER -->
-            <div class="footer">
-              <img src="${this.logoUrl}" style="height: 24px; margin-bottom: 16px; opacity: 0.7;" alt="Erranders">
-              <p style="color: #3f3f46; font-weight: 600; font-size: 13px; margin: 0 0 8px;">Erranders — Campus life, elevated.</p>
-              <p style="margin: 0 0 20px; line-height: 1.5; color: #71717a; font-size: 12px;">Seamless delivery, smart commerce, and real opportunities for students across Africa.</p>
-              <div style="margin-bottom: 20px;">
-                <a href="https://erranders.org" style="color: #FF5C1A; text-decoration: none; font-size: 12px; margin: 0 8px; font-weight: 500;">Website</a>
-                <a href="https://www.erranders.org" style="color: #FF5C1A; text-decoration: none; font-size: 12px; margin: 0 8px; font-weight: 500;">Order</a>
-                <a href="https://vendor.erranders.org" style="color: #FF5C1A; text-decoration: none; font-size: 12px; margin: 0 8px; font-weight: 500;">Vendors</a>
+            <div class="container">
+              <!-- HEADER -->
+              <div class="content-header">
+                ${badgeHtml}
+                <h1 class="title">${options.title}</h1>
+                <p class="subtitle">${options.subtitle}</p>
               </div>
-              <p style="margin: 0; font-size: 11px; color: #a1a1aa;">© ${new Date().getFullYear()} Erranders Ltd. Lagos, Nigeria.</p>
+
+              <!-- CONTENT BODY -->
+              <div class="content-body">
+                ${options.content}
+              </div>
+
+              <!-- ECOSYSTEM -->
+              ${this.ecosystemBanner()}
+
+              <!-- FOOTER -->
+              <div class="footer">
+                <div class="footer-logo">
+                  <img src="${this.logoUrl}" alt="Erranders">
+                </div>
+                <p class="footer-tagline">Campus life, elevated.</p>
+                <p class="footer-desc">Seamless delivery, smart commerce, and real opportunities for students across Africa.</p>
+                <div class="footer-links">
+                  <a href="https://erranders.org">Website</a>
+                  <a href="https://www.erranders.org">Order</a>
+                  <a href="https://vendor.erranders.org">Vendors</a>
+                </div>
+                <p class="footer-copy">© ${new Date().getFullYear()} Erranders Ltd. Lagos, Nigeria.</p>
+              </div>
+
             </div>
 
+            <div class="outer-footer">
+              This is an automated message. Please do not reply.
+            </div>
           </div>
         </body>
       </html>
@@ -158,46 +286,59 @@ export class EmailService {
     return this.sendVerificationOTP(to, otp);
   }
 
+  private getOtpBoxes(otp: string) {
+    let boxes = '';
+    for (let i = 0; i < otp.length; i++) {
+      boxes += `<div class="otp-box ${i >= 3 ? 'highlight' : ''}">${otp[i]}</div>`;
+    }
+    return `<div class="otp-container">${boxes}</div>`;
+  }
+
   async sendVerificationOTP(to: string, otp: string) {
-    const html = this.wrap(`
-      <div class="content" style="text-align: center;">
-        <div class="badge badge-orange">VERIFICATION</div>
-        <h1 class="title">Verify your email</h1>
-        <p style="color: #52525b; font-size: 14px; line-height: 1.5; margin: 0 0 24px;">Enter the code below to complete verification. Expires in 10 minutes.</p>
-        <div class="card" style="background-color: #fafafa; border-color: #f4f4f5;">
-          <div style="font-size: 40px; font-weight: 700; letter-spacing: 8px; color: #FF5C1A; font-family: 'Courier New', monospace;">${otp}</div>
-        </div>
-        <p style="font-size: 12px; color: #a1a1aa; margin: 0;">Didn't request this? Ignore this email.</p>
-      </div>
-    `, `Your Erranders code: ${otp}`);
+    const html = this.wrap({
+      preheader: `Your Erranders code: ${otp}`,
+      badge: { text: 'EMAIL VERIFICATION', color: 'orange' },
+      title: 'Verify your email address',
+      subtitle: 'Use the code below to complete your verification. It expires in <b>10 minutes</b>.',
+      content: `
+        <p style="text-align: left; font-size: 10px; font-weight: 700; color: #a1a1aa; letter-spacing: 1px; margin: 0; text-transform: uppercase;">YOUR ONE-TIME CODE</p>
+        ${this.getOtpBoxes(otp)}
+        <p class="otp-warning">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          Didn't request this? You can safely ignore this email.
+        </p>
+      `
+    });
     return this.sendEmail(to, `${otp} is your verification code`, html);
   }
 
   async sendPasswordResetOTP(to: string, otp: string) {
-    const html = this.wrap(`
-      <div class="content" style="text-align: center;">
-        <div class="badge badge-blue">PASSWORD RESET</div>
-        <h1 class="title">Reset your password</h1>
-        <p style="color: #52525b; font-size: 14px; line-height: 1.5; margin: 0 0 24px;">Enter this code to set a new password. If you didn't request this, your account is safe.</p>
-        <div class="card" style="background-color: #fafafa; border-color: #f4f4f5;">
-          <div style="font-size: 40px; font-weight: 700; letter-spacing: 8px; color: #2563EB; font-family: 'Courier New', monospace;">${otp}</div>
-        </div>
-        <p style="font-size: 12px; color: #a1a1aa; margin: 0;">Your credentials remain secure if you didn't request this.</p>
-      </div>
-    `, `Reset code: ${otp}`);
+    const html = this.wrap({
+      preheader: `Reset code: ${otp}`,
+      badge: { text: 'PASSWORD RESET', color: 'blue' },
+      title: 'Reset your password',
+      subtitle: 'Enter this code to set a new password. If you didn\'t request this, your account is safe.',
+      content: `
+        <p style="text-align: left; font-size: 10px; font-weight: 700; color: #a1a1aa; letter-spacing: 1px; margin: 0; text-transform: uppercase;">RESET CODE</p>
+        ${this.getOtpBoxes(otp)}
+        <p class="otp-warning">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          Your credentials remain secure if you didn't request this.
+        </p>
+      `
+    });
     return this.sendEmail(to, `${otp} — Reset Your Password`, html);
   }
 
   // ─── WELCOME EMAILS ─────────────────────────────────────────────
 
   async sendWelcomeEmail(to: string, firstName: string) {
-    const html = this.wrap(`
-      <div class="content">
-        <div class="badge badge-orange">WELCOME 🎉</div>
-        <h1 class="title">Hey ${firstName}, you're in.</h1>
-        <p style="font-size: 14px; line-height: 1.6; color: #52525b; margin: 0 0 24px;">
-          Erranders is your campus shortcut — food, essentials, and custom errands, delivered fast.
-        </p>
+    const html = this.wrap({
+      preheader: `Welcome to Erranders, ${firstName}!`,
+      badge: { text: 'WELCOME 🎉', color: 'orange' },
+      title: `Hey ${firstName}, you're in.`,
+      subtitle: 'Erranders is your campus shortcut — food, essentials, and custom errands, delivered fast.',
+      content: `
         <div class="card" style="text-align: left;">
           <table style="width: 100%; border-collapse: collapse;">
             <tr>
@@ -217,19 +358,18 @@ export class EmailService {
         <div style="text-align: center;">
           <a href="https://www.erranders.org" class="btn">Start Your First Order</a>
         </div>
-      </div>
-    `, `Welcome to Erranders, ${firstName}!`);
+      `
+    });
     return this.sendEmail(to, `Welcome to Erranders, ${firstName}! 🚀`, html);
   }
 
   async sendVendorWelcome(to: string, firstName: string, storeName: string) {
-    const html = this.wrap(`
-      <div class="content">
-        <div class="badge badge-green">PARTNER ACTIVE</div>
-        <h1 class="title">Welcome, ${firstName}.</h1>
-        <p style="font-size: 14px; line-height: 1.6; color: #52525b; margin: 0 0 24px;">
-          <b>${storeName}</b> is live on Erranders. Thousands of students are ready to discover your products.
-        </p>
+    const html = this.wrap({
+      preheader: `${storeName} is live on Erranders!`,
+      badge: { text: 'PARTNER ACTIVE', color: 'green' },
+      title: `Welcome, ${firstName}.`,
+      subtitle: `<b>${storeName}</b> is live on Erranders. Thousands of students are ready to discover your products.`,
+      content: `
         <div class="card" style="background: #f0fdf4; border-color: #d1fae5; text-align: left;">
           <table style="width: 100%; border-collapse: collapse;">
             <tr><td style="padding: 8px 0; font-size: 14px; color: #065f46;">📦 Add your products & set prices</td></tr>
@@ -240,8 +380,8 @@ export class EmailService {
         <div style="text-align: center;">
           <a href="https://vendor.erranders.org" class="btn btn-green">Manage My Store</a>
         </div>
-      </div>
-    `, `${storeName} is live on Erranders!`);
+      `
+    });
     return this.sendEmail(to, `Welcome to Erranders Vendors, ${firstName}!`, html);
   }
 
@@ -255,12 +395,12 @@ export class EmailService {
       </tr>
     `).join('') || '';
 
-    const html = this.wrap(`
-      <div class="content">
-        <div class="badge badge-orange">ORDER CONFIRMED</div>
-        <h1 class="title">Your order is being prepped!</h1>
-        <p style="color: #52525b; font-size: 14px; margin: 0 0 24px;">Order <b>#${order.orderNumber}</b> is confirmed and the vendor is preparing it now.</p>
-
+    const html = this.wrap({
+      preheader: `Order #${order.orderNumber} confirmed!`,
+      badge: { text: 'ORDER CONFIRMED', color: 'orange' },
+      title: 'Your order is being prepped!',
+      subtitle: `Order <b>#${order.orderNumber}</b> is confirmed and the vendor is preparing it now.`,
+      content: `
         <div class="card" style="text-align: left;">
           <p class="card-label" style="margin-bottom: 12px;">Order Summary</p>
           <table class="data-table">
@@ -275,21 +415,19 @@ export class EmailService {
         <div style="text-align: center;">
           <a href="https://www.erranders.org/dashboard/orders/${order._id}" class="btn">Track Order</a>
         </div>
-      </div>
-    `, `Order #${order.orderNumber} confirmed!`);
+      `
+    });
     return this.sendEmail(to, `🚀 Order Confirmed: #${order.orderNumber}`, html);
   }
 
   async sendPaymentReceipt(to: string, amount: number, reference: string, method: string = 'Card', senderName: string = 'Erranders User', dateStr?: string) {
     const displayDate = dateStr || new Date().toLocaleString('en-US', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-    const html = this.wrap(`
-      <div class="content" style="text-align: center;">
-        <div style="width: 48px; height: 48px; background: #ECFDF5; border: 1px solid #10B981; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; margin: 0 0 16px;">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-        </div>
-        <h1 class="title">Payment Successful</h1>
-        <p style="color: #71717a; font-size: 13px; margin: 0 0 24px;">Transaction processed securely.</p>
-
+    const html = this.wrap({
+      preheader: `Receipt: ₦${amount.toLocaleString()}`,
+      badge: { text: 'PAYMENT SUCCESS', color: 'green' },
+      title: 'Payment Successful',
+      subtitle: 'Your transaction was processed securely.',
+      content: `
         <div class="card">
           <p class="card-label">Amount Paid</p>
           <p class="card-value">₦${amount.toLocaleString()}</p>
@@ -302,8 +440,8 @@ export class EmailService {
         </div>
 
         <a href="https://www.erranders.org/dashboard" class="btn btn-light">Go to Dashboard</a>
-      </div>
-    `, `Receipt: ₦${amount.toLocaleString()}`);
+      `
+    });
     return this.sendEmail(to, `✅ Payment Receipt: ₦${amount.toLocaleString()}`, html);
   }
 
@@ -313,14 +451,12 @@ export class EmailService {
 
   async sendBookingReceipt(to: string, amount: number, reference: string, appointment: any, senderName: string = 'Erranders User') {
     const displayDate = new Date(appointment.scheduledDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-    const html = this.wrap(`
-      <div class="content" style="text-align: center;">
-        <div style="width: 48px; height: 48px; background: #ECFDF5; border: 1px solid #10B981; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; margin: 0 0 16px;">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-        </div>
-        <h1 class="title">Booking Confirmed</h1>
-        <p style="color: #71717a; font-size: 13px; margin: 0 0 24px;">Your appointment is booked and paid.</p>
-
+    const html = this.wrap({
+      preheader: `Booking Confirmed! Ref: ${reference}`,
+      badge: { text: 'BOOKING CONFIRMED', color: 'green' },
+      title: 'Booking Confirmed',
+      subtitle: 'Your appointment is booked and paid.',
+      content: `
         <div class="card">
           <p class="card-label">Total Paid</p>
           <p class="card-value">₦${amount.toLocaleString()}</p>
@@ -335,21 +471,23 @@ export class EmailService {
 
         <p style="font-size: 12px; color: #71717a; margin: 0 0 16px; line-height: 1.5;">Keep your reference safe — use it to track or cancel your booking.</p>
         <a href="https://www.erranders.org/manage-booking" class="btn">Manage Booking</a>
-      </div>
-    `, `Booking Confirmed! Ref: ${reference}`);
+      `
+    });
     return this.sendEmail(to, `✅ Booking Confirmed: ₦${amount.toLocaleString()}`, html);
   }
 
   async sendStatusUpdate(to: string, orderNumber: string, status: string, emoji: string = '🚚') {
     const icon = status.includes('PREP') ? '🍳' : (status.includes('TRANSIT') ? '🚲' : (status.includes('DELIVER') ? '✅' : emoji));
-    const html = this.wrap(`
-      <div class="content" style="text-align: center;">
-        <span style="font-size: 48px; display: block; margin: 0 0 16px;">${icon}</span>
-        <h1 class="title" style="text-transform: capitalize;">Order ${status.replace(/_/g, ' ').toLowerCase()}</h1>
-        <p style="color: #52525b; font-size: 14px; margin: 0 0 24px;">Order <b>#${orderNumber}</b> has been updated.</p>
+    const html = this.wrap({
+      preheader: `Order #${orderNumber}: ${status}`,
+      badge: { text: 'UPDATE', color: 'blue' },
+      title: `Order ${status.replace(/_/g, ' ').toLowerCase()}`,
+      subtitle: `Order <b>#${orderNumber}</b> has been updated.`,
+      content: `
+        <span style="font-size: 64px; display: block; margin: 0 0 24px;">${icon}</span>
         <a href="https://www.erranders.org/dashboard/orders" class="btn btn-light">View Order</a>
-      </div>
-    `, `Order #${orderNumber}: ${status}`);
+      `
+    });
     return this.sendEmail(to, `Order Update: ${status} — #${orderNumber}`, html);
   }
 
@@ -358,74 +496,77 @@ export class EmailService {
   }
 
   async sendOrderDelivered(to: string, order: any) {
-    const html = this.wrap(`
-      <div class="content" style="text-align: center;">
-        <span style="font-size: 48px; display: block; margin: 0 0 16px;">🏁</span>
-        <h1 class="title">Order Delivered!</h1>
-        <p style="color: #52525b; font-size: 14px; margin: 0 0 24px;">Order <b>#${order.orderNumber}</b> has been delivered. Enjoy!</p>
+    const html = this.wrap({
+      preheader: `Order #${order.orderNumber} delivered!`,
+      badge: { text: 'DELIVERED', color: 'green' },
+      title: 'Order Delivered!',
+      subtitle: `Order <b>#${order.orderNumber}</b> has been delivered. Enjoy!`,
+      content: `
+        <span style="font-size: 64px; display: block; margin: 0 0 24px;">🏁</span>
         <div class="card" style="background: #FFF7ED; border-color: #ffedd5; text-align: left;">
           <p style="font-size: 14px; font-weight: 700; color: #EA580C; margin: 0 0 6px;">Rate your experience ⭐</p>
           <p style="font-size: 13px; color: #9a3412; margin: 0 0 16px; line-height: 1.5;">Ratings help us maintain quality and reward top riders.</p>
           <a href="https://www.erranders.org/dashboard/orders/${order._id}" class="btn" style="padding: 8px 16px; font-size: 12px;">Tap to Rate</a>
         </div>
-      </div>
-    `, `Order #${order.orderNumber} delivered!`);
+      `
+    });
     return this.sendEmail(to, `Order Delivered! 🍽️ #${order.orderNumber}`, html);
   }
 
   // ─── SUPPORT ─────────────────────────────────────────────────────
 
   async sendComplaintReceipt(to: string, ticketId: string, subject: string) {
-    const html = this.wrap(`
-      <div class="content">
-        <div class="badge badge-orange">SUPPORT TICKET</div>
-        <h1 class="title">We're on it.</h1>
-        <p style="color: #52525b; font-size: 14px; line-height: 1.5; margin: 0 0 24px;">We received your report regarding "<b>${subject}</b>". Ticket <b>#${ticketId}</b> has been opened.</p>
+    const html = this.wrap({
+      preheader: `Support Ticket #${ticketId}`,
+      badge: { text: 'SUPPORT TICKET', color: 'orange' },
+      title: `We're on it.`,
+      subtitle: `We received your report regarding "<b>${subject}</b>". Ticket <b>#${ticketId}</b> has been opened.`,
+      content: `
         <div class="card">
           <p class="card-label">Ticket Reference</p>
           <p class="card-value" style="color: #FF5C1A; font-family: 'Courier New', monospace; font-size: 24px;">ERR-${ticketId}</p>
         </div>
         <p style="font-size: 12px; color: #71717a; text-align: center; margin: 0;">Our team typically responds within 2–4 hours.</p>
-      </div>
-    `, `Support Ticket #${ticketId}`);
+      `
+    });
     return this.sendEmail(to, `Support Receipt: #${ticketId}`, html);
   }
 
   // ─── WALLET & PAYOUTS ───────────────────────────────────────────
 
   async sendPayoutNotification(to: string, amount: number, description: string) {
-    const html = this.wrap(`
-      <div class="content" style="text-align: center;">
-        <div style="width: 48px; height: 48px; background: #ECFDF5; border: 1px solid #10B981; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; margin: 0 0 16px;">
-          <span style="color: #10B981; font-size: 20px; font-weight: 700;">₦</span>
-        </div>
-        <h1 class="title">Wallet Credited</h1>
-        <p style="font-size: 13px; color: #71717a; margin: 0 0 24px;">You've received a payout in your Erranders wallet.</p>
+    const html = this.wrap({
+      preheader: `You received ₦${amount.toLocaleString()}!`,
+      badge: { text: 'PAYOUT', color: 'green' },
+      title: 'Wallet Credited',
+      subtitle: 'You\'ve received a payout in your Erranders wallet.',
+      content: `
         <div class="card" style="background: #f0fdf4; border-color: #d1fae5;">
           <p class="card-label" style="color: #059669;">Settlement Amount</p>
           <p class="card-value" style="color: #059669;">+₦${amount.toLocaleString()}</p>
           <p style="font-size: 12px; color: #047857; margin: 0;">${description}</p>
         </div>
         <a href="https://www.erranders.org/dashboard/wallet" class="btn btn-green">View Wallet</a>
-      </div>
-    `, `You received ₦${amount.toLocaleString()}!`);
+      `
+    });
     return this.sendEmail(to, `Wallet Credited — ₦${amount.toLocaleString()}`, html);
   }
 
   // ─── PROMOTIONAL ────────────────────────────────────────────────
 
   async sendPromotionalEmail(to: string, subject: string, title: string, content: string, ctaText: string, ctaLink: string, image?: string) {
-    const html = this.wrap(`
-      <div class="content">
-        <div class="badge badge-blue">SPECIAL OFFER</div>
-        <h1 class="title">${title}</h1>
+    const html = this.wrap({
+      preheader: title,
+      badge: { text: 'SPECIAL OFFER', color: 'blue' },
+      title: title,
+      subtitle: content,
+      content: `
         ${image ? `<img src="${image}" style="width: 100%; border-radius: 12px; margin: 0 0 24px; display: block; border: 1px solid #e4e4e7;" alt="Promotion">` : ''}
-        <p style="font-size: 14px; color: #52525b; line-height: 1.6; margin: 0 0 24px;">${content}</p>
         <div style="text-align: center;">
           <a href="${ctaLink}" class="btn">${ctaText}</a>
         </div>
-      </div>
-    `, title);
+      `
+    });
     return this.sendEmail(to, subject, html);
   }
 
@@ -433,13 +574,12 @@ export class EmailService {
 
   async sendFacilitatorWelcomeEmail(to: string, name: string, referralCode: string, skill: string) {
     const firstName = name.split(' ')[0];
-    const html = this.wrap(`
-      <div class="content">
-        <div class="badge badge-purple">CAMPUS AMBASSADOR</div>
-        <h1 class="title">Hey ${firstName}, you're in! 💜</h1>
-        <p style="font-size: 14px; line-height: 1.6; color: #52525b; margin: 0 0 24px;">
-          Every person you bring to Erranders earns you <b>points, rewards, and recognition</b>.
-        </p>
+    const html = this.wrap({
+      preheader: `Your referral code: ${referralCode}`,
+      badge: { text: 'CAMPUS AMBASSADOR', color: 'purple' },
+      title: `Hey ${firstName}, you're in! 💜`,
+      subtitle: 'Every person you bring to Erranders earns you <b>points, rewards, and recognition</b>.',
+      content: `
         <div class="card" style="background: #fafafa;">
           <p class="card-label" style="color: #FF5C1A;">Your Referral Code</p>
           <p class="card-value" style="font-family: 'Courier New', monospace; letter-spacing: 4px;">${referralCode}</p>
@@ -448,24 +588,24 @@ export class EmailService {
         <div style="text-align: center;">
           <a href="https://www.erranders.org" class="btn">Start Sharing</a>
         </div>
-      </div>
-    `, `Your referral code: ${referralCode}`);
+      `
+    });
     return this.sendEmail(to, `Welcome to the Squad, ${firstName}! Code: ${referralCode}`, html);
   }
 
   // ─── NOTIFICATIONS ───────────────────────────────────────────────
 
   async sendVendorOnlineNotification(to: string, storeName: string, link: string) {
-    const html = this.wrap(`
-      <div class="content" style="text-align: center;">
-        <div style="width: 48px; height: 48px; background: #ECFDF5; border: 1px solid #10B981; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; margin: 0 0 16px;">
-          <span style="font-size: 24px;">🏪</span>
-        </div>
-        <h1 class="title">They're Back!</h1>
-        <p style="color: #52525b; font-size: 14px; margin: 0 0 24px;">Great news! <b>${storeName}</b> is now online and ready to accept your orders.</p>
+    const html = this.wrap({
+      preheader: `${storeName} is now online!`,
+      badge: { text: 'STORE ONLINE', color: 'green' },
+      title: 'They\'re Back!',
+      subtitle: `Great news! <b>${storeName}</b> is now online and ready to accept your orders.`,
+      content: `
+        <span style="font-size: 64px; display: block; margin: 0 0 24px;">🏪</span>
         <a href="${link}" class="btn">Order Now</a>
-      </div>
-    `, `${storeName} is now online!`);
+      `
+    });
     return this.sendEmail(to, `${storeName} is Open for Business! 🥳`, html);
   }
 }
