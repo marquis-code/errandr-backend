@@ -123,9 +123,7 @@ export class WalletsService {
     }
     if (metadata !== undefined) {
       wallet.metadata = { ...wallet.metadata, ...metadata };
-      wallet.markModified('metadata');
     }
-    wallet.markModified('bankAccounts');
     return wallet.save();
   }
 

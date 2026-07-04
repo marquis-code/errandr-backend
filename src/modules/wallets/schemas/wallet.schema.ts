@@ -47,7 +47,7 @@ export class Wallet {
       accountName: String,
       bankCode: String,
       purpose: { type: String, default: 'default' },
-      isPrimary: { type: Boolean, default: false }
+      isActive: { type: Boolean, default: false }
     }],
     default: []
   })
@@ -57,7 +57,7 @@ export class Wallet {
     accountName: string;
     bankCode: string;
     purpose: string;
-    isPrimary: boolean;
+    isActive: boolean;
   }>;
 
   @Prop({ default: true })
