@@ -1,9 +1,9 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import { Document, Types, Schema as MongooseSchema } from 'mongoose';
 
 @Schema({ timestamps: true })
 export class Product extends Document {
-  @Prop({ type: Types.ObjectId, ref: 'Vendor', required: true })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Vendor', required: true })
   vendor: Types.ObjectId;
 
   @Prop({ required: true })

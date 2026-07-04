@@ -56,6 +56,10 @@ export class ProductsService {
   }
 
   async update(id: string, data: Partial<Product>): Promise<Product> {
+    // Prevent overriding read-only/critical fields
+    delete data._id;
+    delete data.vendor;
+
     const product = await this.productModel.findByIdAndUpdate(id, data, { new: true });
     if (!product) throw new NotFoundException('Product not found');
     return product;
