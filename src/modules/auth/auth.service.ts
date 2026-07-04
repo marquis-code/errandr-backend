@@ -32,11 +32,13 @@ export class AuthService {
       throw new ConflictException('Email already registered');
     }
 
+    const isVendor = registerDto.role === UserRole.VENDOR;
+
     const hashedPassword = await bcrypt.hash(registerDto.password, 12);
     const user = await this.userModel.create({
       ...registerDto,
       password: hashedPassword,
-      isVerified: false, // Now requires verification via AT/Email
+      isVerified: isVendor ? true : false, // Skip verification for vendors
     });
 
     // Initialize Wallet
@@ -51,15 +53,19 @@ export class AuthService {
     }
 
     // Send initial OTP instead of welcome email (which comes after verification)
-    await this.sendOTP(user.email, 'email', user._id.toString());
+    if (!isVendor) {
+      await this.sendOTP(user.email, 'email', user._id.toString());
+    }
 
     const token = this.generateToken(user);
 
     return {
       user: this.sanitizeUser(user),
       token,
-      requiresVerification: true,
-      message: `Welcome to Erranders, ${user.firstName}! 🚀 We've sent a verification code to your email.`,
+      requiresVerification: !isVendor,
+      message: isVendor 
+        ? `Welcome to Erranders, ${user.firstName}! 🚀` 
+        : `Welcome to Erranders, ${user.firstName}! 🚀 We've sent a verification code to your email.`,
     };
   }
 
