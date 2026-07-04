@@ -40,6 +40,26 @@ export class Wallet {
     bankCode: string;
   };
 
+  @Prop({
+    type: [{
+      bankName: String,
+      accountNumber: String,
+      accountName: String,
+      bankCode: String,
+      purpose: { type: String, default: 'default' },
+      isPrimary: { type: Boolean, default: false }
+    }],
+    default: []
+  })
+  bankAccounts: Array<{
+    bankName: string;
+    accountNumber: string;
+    accountName: string;
+    bankCode: string;
+    purpose: string;
+    isPrimary: boolean;
+  }>;
+
   @Prop({ default: true })
   isActive: boolean;
 

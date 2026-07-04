@@ -112,11 +112,14 @@ export class WalletsService {
     });
   }
 
-  async updatePreferences(userId: string, preference: PayoutPreference, bankDetails?: any, metadata?: any): Promise<WalletDocument> {
+  async updatePreferences(userId: string, preference: PayoutPreference, bankDetails?: any, metadata?: any, bankAccounts?: any[]): Promise<WalletDocument> {
     const wallet = await this.getOrCreateWallet(userId);
     wallet.payoutPreference = preference;
     if (bankDetails !== undefined) {
       wallet.bankDetails = bankDetails;
+    }
+    if (bankAccounts !== undefined) {
+      wallet.bankAccounts = bankAccounts;
     }
     if (metadata !== undefined) {
       wallet.metadata = { ...wallet.metadata, ...metadata };
@@ -124,14 +127,17 @@ export class WalletsService {
     return wallet.save();
   }
 
-  async withdrawFunds(userId: string, amount: number, userEmail: string, userName: string): Promise<void> {
+  async withdrawFunds(userId: string, amount: number, userEmail: string, userName: string, selectedBankAccount?: { accountNumber: string, bankCode: string }): Promise<void> {
     const wallet = await this.getWallet(userId);
 
     if (wallet.balance < amount) {
       throw new Error('Insufficient balance in wallet');
     }
 
-    if (!wallet.bankDetails || !wallet.bankDetails.bankCode || !wallet.bankDetails.accountNumber) {
+    const targetBankCode = selectedBankAccount?.bankCode || wallet.bankDetails?.bankCode;
+    const targetAccountNumber = selectedBankAccount?.accountNumber || wallet.bankDetails?.accountNumber;
+
+    if (!targetBankCode || !targetAccountNumber) {
       throw new Error('Payout preferences not set correctly');
     }
 
@@ -153,8 +159,8 @@ export class WalletsService {
         reference,
         metadata: {
           mock: true,
-          bankCode: wallet.bankDetails.bankCode,
-          accountNumber: wallet.bankDetails.accountNumber
+          bankCode: targetBankCode,
+          accountNumber: targetAccountNumber
         }
       });
 
@@ -164,8 +170,8 @@ export class WalletsService {
     // Resolve bank account first to get account name if needed, then create recipient
     const recipient = await this.paystackService.createTransferRecipient({
       name: userName,
-      account_number: wallet.bankDetails.accountNumber,
-      bank_code: wallet.bankDetails.bankCode,
+      account_number: targetAccountNumber,
+      bank_code: targetBankCode,
     });
 
     // Initiate Paystack Transfer

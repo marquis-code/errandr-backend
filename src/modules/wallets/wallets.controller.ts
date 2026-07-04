@@ -28,22 +28,23 @@ export class WalletsController {
   @ApiOperation({ summary: 'Update payout preferences and bank details' })
   updatePreferences(
     @CurrentUser() user: User,
-    @Body() body: { preference: PayoutPreference; bankDetails?: any; metadata?: any },
+    @Body() body: { preference: PayoutPreference; bankDetails?: any; bankAccounts?: any[]; metadata?: any },
   ) {
-    return this.walletsService.updatePreferences((user._id as unknown) as string, body.preference, body.bankDetails, body.metadata);
+    return this.walletsService.updatePreferences((user._id as unknown) as string, body.preference, body.bankDetails, body.metadata, body.bankAccounts);
   }
 
   @Post('withdraw')
   @ApiOperation({ summary: 'Request a withdrawal via Paystack' })
   async requestWithdrawal(
     @CurrentUser() user: User,
-    @Body() body: { amount: number },
+    @Body() body: { amount: number; bankAccount?: { accountNumber: string, bankCode: string } },
   ) {
     await this.walletsService.withdrawFunds(
       (user._id as unknown) as string,
       body.amount,
       user.email,
       `${user.firstName} ${user.lastName}`,
+      body.bankAccount
     );
     return { success: true, message: 'Withdrawal initiated via Paystack' };
   }
