@@ -132,6 +132,9 @@ export class Order extends Document {
   deliveryFee: number;
 
   @Prop({ default: 0 })
+  erranderPayout: number;
+
+  @Prop({ default: 0 })
   serviceFee: number;
 
   @Prop({ default: 300 })
@@ -147,6 +150,12 @@ export class Order extends Document {
     name: string;
     price: number;
   };
+
+  @Prop({ default: 0 })
+  discount: number;
+
+  @Prop({ default: false })
+  isBirthdayDiscount: boolean;
 
   @Prop({ required: true })
   total: number;

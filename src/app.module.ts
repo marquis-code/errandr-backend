@@ -33,6 +33,7 @@ import { AppointmentsModule } from './modules/appointments/appointments.module';
 import { FirebaseModule } from './modules/firebase/firebase.module';
 import { SearchModule } from './modules/search/search.module';
 import { ReviewsModule } from './modules/reviews/reviews.module';
+import { MapboxModule } from './modules/mapbox/mapbox.module';
 
 @Module({
   imports: [
@@ -69,6 +70,7 @@ import { ReviewsModule } from './modules/reviews/reviews.module';
     ScheduleModule.forRoot(),
 
     // Feature modules
+    MapboxModule,
     AfricasTalkingModule,
     RedisModule,
     AuthModule,

@@ -8,6 +8,7 @@ import { Order, OrderStatus, PaymentStatus, OrderType } from './schemas/order.sc
 
 import { Vendor, VendorStatus } from '../vendors/schemas/vendor.schema';
 import { Errander, ErranderStatus } from '../erranders/schemas/errander.schema';
+import { User } from '../users/schemas/user.schema';
 import { Product } from '../products/schemas/product.schema';
 import { RedisService } from '../redis/redis.service';
 import { InjectQueue } from '@nestjs/bull';
@@ -21,6 +22,7 @@ import { ChatService } from '../chat/chat.service';
 import { BatchDeliveryService } from './batch-delivery.service';
 import { RewardsService } from '../rewards/rewards.service';
 import { AfricasTalkingService } from '../africastalking/africastalking.service';
+import { MapboxService } from '../mapbox/mapbox.service';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
@@ -32,6 +34,7 @@ export class OrdersService {
     @InjectModel(Vendor.name) private vendorModel: Model<Vendor>,
     @InjectModel(Errander.name) private erranderModel: Model<Errander>,
     @InjectModel(Product.name) private productModel: Model<Product>,
+    @InjectModel(User.name) private userModel: Model<User>,
     private redisService: RedisService,
     @InjectQueue('orders') private orderQueue: Queue,
     @Inject(forwardRef(() => WalletsService)) private walletsService: WalletsService,
@@ -44,6 +47,7 @@ export class OrdersService {
     private rewardsService: RewardsService,
     @Inject(forwardRef(() => AfricasTalkingService))
     private africasTalkingService: AfricasTalkingService,
+    private mapboxService: MapboxService,
   ) {}
 
   async getBatchStatus() {
@@ -223,11 +227,12 @@ export class OrdersService {
     const deliveryOption = data.deliveryOption || 'use_an_errander';
     let deliveryFee = 0;
     if (deliveryOption === 'use_an_errander') {
-      deliveryFee = vendor.deliveryFee || 100;
-      const weight = data.weight || 1;
-      if (weight > 2) {
-        deliveryFee += (weight - 2) * 50;
-      }
+      deliveryFee = await this.calculateDynamicFee(
+        data.vendorId, 
+        customerId, 
+        data.deliveryAddress || data.specificAddress, 
+        data.weight || 1
+      );
     }
 
     let groupDiscount = 0;
@@ -286,6 +291,38 @@ export class OrdersService {
       selectedPackData = data.selectedPack;
     }
 
+    // Save original delivery fee as errander payout before discounts
+    const erranderPayout = deliveryFee;
+
+    // Birthday Discount Logic
+    let discount = 0;
+    let isBirthdayDiscount = false;
+    const user = await this.userModel.findById(customerId);
+    
+    if (user && user.dateOfBirth) {
+      const today = new Date();
+      const dob = new Date(user.dateOfBirth);
+      // Check if month and day match
+      if (today.getMonth() === dob.getMonth() && today.getDate() === dob.getDate()) {
+        isBirthdayDiscount = true;
+        // 100% Free delivery
+        discount += deliveryFee;
+        deliveryFee = 0;
+        // 10% off subtotal
+        const subtotalDiscount = Math.round(subtotal * 0.10);
+        discount += subtotalDiscount;
+        subtotal -= subtotalDiscount;
+      }
+    }
+
+    // Gamified Streaks: Free Delivery Token Usage
+    if (data.useFreeDeliveryToken && user && user.freeDeliveryTokens > 0 && deliveryFee > 0) {
+      discount += deliveryFee;
+      deliveryFee = 0;
+      user.freeDeliveryTokens -= 1;
+      await user.save();
+    }
+
     const total = subtotal + deliveryFee + serviceFee + packagingFee;
 
     // PAYSTACK VERIFICATION
@@ -333,8 +370,11 @@ export class OrdersService {
       selectedPack: selectedPackData,
       subtotal,
       deliveryFee,
+      erranderPayout,
       serviceFee,
       packagingFee,
+      discount,
+      isBirthdayDiscount,
       total,
       weight: data.weight || 1,
       deliveryOption,
@@ -430,6 +470,40 @@ export class OrdersService {
       } catch (e) {
         this.logger.error(`Failed to trigger dispatch call: ${e.message}`);
       }
+    }
+
+    // UPDATE GAMIFIED STREAK
+    if (user && order.paymentStatus === PaymentStatus.PAID) {
+      const today = new Date();
+      if (!user.lastOrderDate) {
+        user.streakCount = 1;
+        user.highestStreak = Math.max(1, user.highestStreak || 0);
+      } else {
+        const oneWeek = 7 * 24 * 60 * 60 * 1000;
+        const diff = today.getTime() - new Date(user.lastOrderDate).getTime();
+        
+        // If order was in a previous week (between 7 and 14 days)
+        if (diff >= oneWeek && diff < 2 * oneWeek) {
+          user.streakCount = (user.streakCount || 0) + 1;
+        } 
+        // If order was more than 2 weeks ago, streak resets
+        else if (diff >= 2 * oneWeek) {
+          user.streakCount = 1;
+        }
+        // If less than 1 week, streak doesn't increment (already counted for this week)
+      }
+      
+      user.lastOrderDate = today;
+      if (user.streakCount > (user.highestStreak || 0)) {
+        user.highestStreak = user.streakCount;
+      }
+      
+      // Grant Free Delivery Token every 4 weeks
+      if (user.streakCount > 0 && user.streakCount % 4 === 0) {
+        user.freeDeliveryTokens = (user.freeDeliveryTokens || 0) + 1;
+      }
+      
+      await user.save();
     }
 
     return order.populate([
@@ -775,7 +849,7 @@ export class OrdersService {
     });
 
     // ERRANDER PAYOUT
-    const erranderEarnings = order.deliveryFee;
+    const erranderEarnings = order.erranderPayout || order.deliveryFee;
     await this.walletsService.creditWallet(
       erranderId,
       erranderEarnings,
@@ -984,7 +1058,7 @@ export class OrdersService {
 
     const platformCommissionRate = 0.05;
     const vendorEarnings = Math.round(fullOrder.subtotal * (1 - platformCommissionRate));
-    const erranderEarnings = fullOrder.deliveryFee + (fullOrder as any).tips || 0;
+    const erranderEarnings = (fullOrder.erranderPayout || fullOrder.deliveryFee) + ((fullOrder as any).tips || 0);
     
     // Credit Vendor
     if (fullOrder.vendor && (fullOrder.vendor as any).user) {
@@ -1624,5 +1698,70 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     });
 
     return populatedOrder as Order;
+  }
+
+  async calculateDynamicFee(vendorId: string, customerId: string, deliveryAddress: string, weight: number = 1): Promise<number> {
+    const vendor = await this.vendorModel.findById(vendorId);
+    let user: any = null;
+    if (customerId) {
+      user = await this.userModel.findById(customerId);
+    }
+    
+    let fallbackFee = vendor?.deliveryFee || 150;
+    if (weight > 2) {
+      fallbackFee += (weight - 2) * 50;
+    }
+
+    if (!vendor) return fallbackFee;
+
+    const vendorLocation = vendor.location?.coordinates;
+    let customerLocation = user?.location?.coordinates;
+
+    // Check if vendor location is missing or default [0,0]
+    if (!vendorLocation || (vendorLocation[0] === 0 && vendorLocation[1] === 0)) {
+      // Try geocoding vendor address
+      if (vendor.address) {
+         const geocoded = await this.mapboxService.geocode(vendor.address);
+         if (geocoded) {
+           vendor.location = { type: 'Point', coordinates: geocoded };
+           await vendor.save();
+         }
+      }
+    }
+
+    // Check if customer location is missing or default [0,0]
+    if (!customerLocation || (customerLocation[0] === 0 && customerLocation[1] === 0)) {
+      if (deliveryAddress) {
+         const geocoded = await this.mapboxService.geocode(deliveryAddress);
+         if (geocoded) {
+           customerLocation = geocoded;
+           if (user) {
+             user.location = { type: 'Point', coordinates: geocoded };
+             user.deliveryAddress = deliveryAddress;
+             await user.save();
+           }
+         }
+      }
+    }
+
+    const vCoords = vendor.location?.coordinates;
+    if (vCoords && vCoords[0] !== 0 && customerLocation && customerLocation[0] !== 0) {
+       const distanceKm = await this.mapboxService.getDrivingDistance(
+         vCoords as [number, number],
+         customerLocation as [number, number]
+       );
+
+       if (distanceKm !== null) {
+          const baseFare = 200;
+          const extraDist = Math.max(0, distanceKm - 1);
+          let fee = baseFare + (extraDist * 100);
+          if (weight > 2) {
+             fee += (weight - 2) * 50;
+          }
+          return Math.round(fee);
+       }
+    }
+
+    return fallbackFee;
   }
 }

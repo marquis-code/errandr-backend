@@ -46,4 +46,9 @@ export class RegisterDto {
   @IsOptional()
   @IsString()
   referredBy?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  dateOfBirth?: string;
 }

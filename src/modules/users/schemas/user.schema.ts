@@ -102,6 +102,15 @@ export class User extends Document {
   streakCount: number;
 
   @Prop({ default: 0 })
+  highestStreak: number;
+
+  @Prop()
+  lastOrderDate: Date;
+
+  @Prop({ default: 0 })
+  freeDeliveryTokens: number;
+
+  @Prop({ default: 0 })
   totalOrders: number;
 
   @Prop({ default: 0 })
@@ -113,8 +122,22 @@ export class User extends Document {
   @Prop({ default: false })
   isGuest: boolean;
 
+  @Prop()
+  dateOfBirth: Date;
+
   @Prop({ type: Object, default: null })
   vendorOnboardingSession: Record<string, any>;
+
+  @Prop({
+    type: [
+      {
+        vendor: { type: Types.ObjectId, ref: 'Vendor' },
+        viewedAt: { type: Date, default: Date.now },
+      },
+    ],
+    default: [],
+  })
+  recentlyViewed: { vendor: Types.ObjectId | any; viewedAt: Date }[];
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

@@ -10,6 +10,7 @@ import { Order, OrderSchema } from './schemas/order.schema';
 import { Vendor, VendorSchema } from '../vendors/schemas/vendor.schema';
 import { Product, ProductSchema } from '../products/schemas/product.schema';
 import { Errander, ErranderSchema } from '../erranders/schemas/errander.schema';
+import { User, UserSchema } from '../users/schemas/user.schema';
 
 import { PaymentsModule } from '../payments/payments.module';
 import { ChatModule } from '../chat/chat.module';
@@ -27,6 +28,7 @@ import { AfricasTalkingModule } from '../africastalking/africastalking.module';
       { name: Vendor.name, schema: VendorSchema },
       { name: Product.name, schema: ProductSchema },
       { name: Errander.name, schema: ErranderSchema },
+      { name: User.name, schema: UserSchema },
     ]),
     NotificationsModule,
     ChatModule,

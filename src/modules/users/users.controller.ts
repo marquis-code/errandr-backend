@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Body, Param, UseGuards, Query, DefaultValuePipe, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Put, Body, Param, UseGuards, Query, DefaultValuePipe, ParseIntPipe, Post } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { JwtAuthGuard, CurrentUser, Roles, RolesGuard } from '../../common/decorators';
@@ -41,6 +41,25 @@ export class UsersController {
   @ApiBearerAuth()
   updateFcmToken(@CurrentUser() user: User, @Body() body: { token: string }) {
     return this.usersService.updateFcmToken((user._id as unknown) as string, body.token);
+  }
+
+  @Get('me/recently-viewed')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get recently viewed vendors for the current user' })
+  getRecentlyViewedVendors(@CurrentUser() user: User) {
+    return this.usersService.getRecentlyViewedVendors((user._id as unknown) as string);
+  }
+
+  @Post('me/recently-viewed')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Add a vendor to recently viewed' })
+  addRecentlyViewedVendor(
+    @CurrentUser() user: User,
+    @Body() body: { vendorId: string }
+  ) {
+    return this.usersService.addRecentlyViewedVendor((user._id as unknown) as string, body.vendorId);
   }
 
   @Get(':id')

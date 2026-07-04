@@ -47,4 +47,60 @@ export class UsersService {
   async updateFcmToken(id: string, fcmToken: string): Promise<void> {
     await this.userModel.findByIdAndUpdate(id, { fcmToken });
   }
+
+  async addRecentlyViewedVendor(userId: string, vendorId: string): Promise<void> {
+    const user = await this.userModel.findById(userId);
+    if (!user) return;
+
+    const maxItems = 15;
+    let recentlyViewed = user.recentlyViewed || [];
+    
+    // Remove if it already exists so we can add it to the front/update timestamp
+    recentlyViewed = recentlyViewed.filter(item => item.vendor && item.vendor.toString() !== vendorId);
+    
+    // Add to the front
+    recentlyViewed.unshift({ vendor: new Types.ObjectId(vendorId), viewedAt: new Date() });
+    
+    // Cap the array
+    if (recentlyViewed.length > maxItems) {
+      recentlyViewed = recentlyViewed.slice(0, maxItems);
+    }
+    
+    await this.userModel.findByIdAndUpdate(userId, { recentlyViewed });
+  }
+
+  async getRecentlyViewedVendors(userId: string): Promise<any[]> {
+    const user = await this.userModel.findById(userId).populate({
+      path: 'recentlyViewed.vendor',
+      select: 'storeName image banner logo rating category businessType isOnline preOrderOnly deliveryFee preparationTime'
+    });
+    if (!user) return [];
+
+    // Expiration: 7 days
+    const expirationDate = new Date();
+    expirationDate.setDate(expirationDate.getDate() - 7);
+
+    let needsUpdate = false;
+    const validRecentlyViewed: any[] = [];
+    const vendorsToReturn: any[] = [];
+
+    for (const item of (user.recentlyViewed || [])) {
+      if (item.viewedAt >= expirationDate && item.vendor) {
+        validRecentlyViewed.push({
+          vendor: item.vendor._id || item.vendor,
+          viewedAt: item.viewedAt
+        });
+        vendorsToReturn.push(item.vendor);
+      } else {
+        needsUpdate = true;
+      }
+    }
+
+    if (needsUpdate) {
+      // Update in background
+      this.userModel.findByIdAndUpdate(userId, { recentlyViewed: validRecentlyViewed }).exec().catch(console.error);
+    }
+
+    return vendorsToReturn;
+  }
 }

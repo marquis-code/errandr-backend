@@ -31,6 +31,19 @@ export class OrdersController {
     return this.ordersService.getBatchStatus();
   }
 
+  @Get('calculate-fee')
+  @ApiOperation({ summary: 'Calculate delivery fee dynamically using Mapbox' })
+  async calculateFee(
+    @Query('vendorId') vendorId: string,
+    @Query('deliveryAddress') deliveryAddress: string,
+    @Query('weight', new DefaultValuePipe(1), ParseIntPipe) weight: number,
+    @Query('customerId') customerId?: string,
+  ) {
+    this.logger.log(`calculateFee() vendorId=${vendorId} deliveryAddress=${deliveryAddress}`);
+    const fee = await this.ordersService.calculateDynamicFee(vendorId, customerId || '', deliveryAddress, weight);
+    return { success: true, deliveryFee: fee };
+  }
+
   @Get('mine')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
