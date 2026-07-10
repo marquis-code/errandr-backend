@@ -3,7 +3,7 @@ import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { WalletsService } from './wallets.service';
 import { JwtAuthGuard, CurrentUser } from '../../common/decorators';
 import { User } from '../users/schemas/user.schema';
-import { PayoutPreference } from './schemas/wallet.schema';
+import { UpdatePreferencesDto } from './dto/update-preferences.dto';
 
 @ApiTags('Wallets')
 @Controller('wallets')
@@ -28,7 +28,7 @@ export class WalletsController {
   @ApiOperation({ summary: 'Update payout preferences and bank details' })
   updatePreferences(
     @CurrentUser() user: User,
-    @Body() body: { preference: PayoutPreference; bankDetails?: any; bankAccounts?: any[]; metadata?: any },
+    @Body() body: UpdatePreferencesDto,
   ) {
     return this.walletsService.updatePreferences((user._id as unknown) as string, body.preference, body.bankDetails, body.metadata, body.bankAccounts);
   }

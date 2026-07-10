@@ -11,6 +11,7 @@ import { Product, ProductSchema } from '../products/schemas/product.schema';
 import { Service, ServiceSchema } from '../services/schemas/service.schema';
 import { Order, OrderSchema } from '../orders/schemas/order.schema';
 import { EmailModule } from '../email/email.module';
+import { MenuItem, MenuItemSchema } from '../menu/schemas/menu-item.schema';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { EmailModule } from '../email/email.module';
       { name: Service.name, schema: ServiceSchema },
       { name: Order.name, schema: OrderSchema },
       { name: VendorNotification.name, schema: VendorNotificationSchema },
+      { name: MenuItem.name, schema: MenuItemSchema },
     ]),
     EmailModule,
   ],

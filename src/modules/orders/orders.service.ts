@@ -401,6 +401,7 @@ export class OrdersService {
       ],
       isPreOrder: data.isPreOrder || false,
       scheduledTime: data.scheduledTime || null,
+      vendorNote: data.vendorNote || '',
     });
 
     // Reward for Clear Instructions (Compliance)

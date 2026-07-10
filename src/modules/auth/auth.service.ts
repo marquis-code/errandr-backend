@@ -58,10 +58,12 @@ export class AuthService {
     }
 
     const token = this.generateToken(user);
+    const refreshToken = this.generateRefreshToken(user);
 
     return {
       user: this.sanitizeUser(user),
       token,
+      refreshToken,
       requiresVerification: !isVendor,
       message: isVendor 
         ? `Welcome to Erranders, ${user.firstName}! 🚀` 
@@ -81,10 +83,12 @@ export class AuthService {
     }
 
     const token = this.generateToken(user);
+    const refreshToken = this.generateRefreshToken(user);
 
     return {
       user: this.sanitizeUser(user),
       token,
+      refreshToken,
     };
   }
 
@@ -130,10 +134,12 @@ export class AuthService {
     }
 
     const token = this.generateToken(user);
+    const refreshToken = this.generateRefreshToken(user);
 
     return {
       user: this.sanitizeUser(user),
       token,
+      refreshToken,
     };
   }
 
@@ -164,10 +170,12 @@ export class AuthService {
     }
 
     const token = this.generateToken(user);
+    const refreshToken = this.generateRefreshToken(user);
 
     return {
       user: this.sanitizeUser(user),
       token,
+      refreshToken,
       message: 'Guest session created successfully.'
     };
   }
@@ -227,12 +235,14 @@ export class AuthService {
     }
 
     const token = this.generateToken(user);
+    const refreshToken = this.generateRefreshToken(user);
 
     return {
       success: true,
       message: 'Email verified! You\'re officially legit 🎉',
       user: this.sanitizeUser(user),
       token,
+      refreshToken,
     };
   }
 
@@ -317,6 +327,33 @@ export class AuthService {
       email: user.email,
       role: user.role,
     });
+  }
+
+  private generateRefreshToken(user: User): string {
+    return this.jwtService.sign(
+      { sub: user._id, type: 'refresh' },
+      { expiresIn: '30d' }
+    );
+  }
+
+  async refresh(refreshToken: string) {
+    try {
+      const decoded = this.jwtService.verify(refreshToken);
+      if (decoded.type !== 'refresh') {
+        throw new UnauthorizedException('Invalid token type');
+      }
+      
+      const user = await this.userModel.findById(decoded.sub);
+      if (!user) throw new UnauthorizedException('User not found');
+      
+      return {
+        token: this.generateToken(user),
+        refreshToken: this.generateRefreshToken(user),
+        user: this.sanitizeUser(user)
+      };
+    } catch (error) {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
   }
 
   private sanitizeUser(user: User) {

@@ -9,6 +9,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { VendorsModule } from './modules/vendors/vendors.module';
 import { ProductsModule } from './modules/products/products.module';
+import { MenuModule } from './modules/menu/menu.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { ErrandersModule } from './modules/erranders/erranders.module';
 import { ChatModule } from './modules/chat/chat.module';
@@ -77,6 +78,7 @@ import { MapboxModule } from './modules/mapbox/mapbox.module';
     UsersModule,
     VendorsModule,
     ProductsModule,
+    MenuModule,
     OrdersModule,
     ErrandersModule,
     ChatModule,

@@ -125,6 +125,57 @@ export class Order extends Document {
     }[];
   }[];
 
+  // ── Menu Items (Chowdeck-style, for food vendors) ──
+  @Prop({
+    type: [
+      {
+        menuItem: { type: Types.ObjectId, ref: 'MenuItem' },
+        name: String,
+        price: Number,
+        quantity: Number,
+        variation: {
+          name: String,
+          price: Number,
+        },
+        selectedModifiers: [
+          {
+            modifierName: String,
+            options: [{ name: String, price: Number }],
+          },
+        ],
+        selectedAddOns: [
+          {
+            addOnName: String,
+            options: [{ name: String, price: Number }],
+          },
+        ],
+        selectedPack: {
+          name: String,
+          price: Number,
+        },
+        subtotal: Number,
+      },
+    ],
+    default: [],
+  })
+  menuItems: {
+    menuItem: Types.ObjectId;
+    name: string;
+    price: number;
+    quantity: number;
+    variation?: { name: string; price: number };
+    selectedModifiers: {
+      modifierName: string;
+      options: { name: string; price: number }[];
+    }[];
+    selectedAddOns: {
+      addOnName: string;
+      options: { name: string; price: number }[];
+    }[];
+    selectedPack?: { name: string; price: number };
+    subtotal: number;
+  }[];
+
   @Prop({ required: true })
   subtotal: number;
 
@@ -165,6 +216,9 @@ export class Order extends Document {
 
   @Prop()
   recipientName: string;
+
+  @Prop()
+  vendorNote: string;
 
   @Prop()
   recipientPhone: string;

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, ConflictException, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Vendor, VendorStatus, VendorCategory } from './schemas/vendor.schema';
@@ -9,17 +9,23 @@ import { Order, OrderStatus } from '../orders/schemas/order.schema';
 import { VendorNotification } from './schemas/vendor-notification.schema';
 import { Product } from '../products/schemas/product.schema';
 import { Service } from '../services/schemas/service.schema';
+import { WebPushService } from './web-push.service';
+import { MenuItem } from '../menu/schemas/menu-item.schema';
 
 @Injectable()
 export class VendorsService {
+  private readonly logger = new Logger(VendorsService.name);
+
   constructor(
     @InjectModel(Vendor.name) private vendorModel: Model<Vendor>,
     @InjectModel(Order.name) private orderModel: Model<Order>,
     @InjectModel(VendorNotification.name) private vendorNotificationModel: Model<VendorNotification>,
     @InjectModel(Product.name) private productModel: Model<Product>,
     @InjectModel(Service.name) private serviceModel: Model<Service>,
+    @InjectModel(MenuItem.name) private menuItemModel: Model<MenuItem>,
     private redisService: RedisService,
     private emailService: EmailService,
+    private webPushService: WebPushService,
   ) {}
 
   private checkIsOpen(vendor: Vendor): { isOpen: boolean; message: string } {
@@ -117,9 +123,17 @@ export class VendorsService {
         ]
       }).select('vendor').lean();
 
+      const matchingMenuItems = await this.menuItemModel.find({
+        $or: [
+          { name: { $regex: search, $options: 'i' } },
+          { description: { $regex: search, $options: 'i' } },
+        ]
+      }).select('vendor').lean();
+
       const vendorIdsFromItems = [
         ...matchingProducts.map(p => p.vendor),
-        ...matchingServices.map(s => s.vendor)
+        ...matchingServices.map(s => s.vendor),
+        ...matchingMenuItems.map(m => m.vendor)
       ];
 
       filter.$or = [

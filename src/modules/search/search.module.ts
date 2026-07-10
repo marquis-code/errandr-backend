@@ -5,6 +5,7 @@ import { SearchService } from './search.service';
 import { Vendor, VendorSchema } from '../vendors/schemas/vendor.schema';
 import { Product, ProductSchema } from '../products/schemas/product.schema';
 import { Service, ServiceSchema } from '../services/schemas/service.schema';
+import { MenuItem, MenuItemSchema } from '../menu/schemas/menu-item.schema';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { Service, ServiceSchema } from '../services/schemas/service.schema';
       { name: Vendor.name, schema: VendorSchema },
       { name: Product.name, schema: ProductSchema },
       { name: Service.name, schema: ServiceSchema },
+      { name: MenuItem.name, schema: MenuItemSchema },
     ]),
   ],
   controllers: [SearchController],

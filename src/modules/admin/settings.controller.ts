@@ -23,7 +23,7 @@ export class SettingsController {
       // Seed default settings if not exists
       setting = await this.settingModel.create({
         key: 'custom_errand',
-        value: { baseFee: 450, expressFee: 850, convenienceFee: 50, commissionPercentage: 10 },
+        value: { baseFee: 450, expressFee: 850, convenienceFee: 50, commissionPercentage: 10, platformProcessingFee: 500, platformServiceFeePercentage: 5 },
       });
     }
     return setting.value;
@@ -34,7 +34,7 @@ export class SettingsController {
   @Roles(UserRole.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update custom errand pricing settings (admin only)' })
-  async updateCustomErrandSettings(@Body() body: { baseFee: number; expressFee: number; convenienceFee?: number; commissionPercentage?: number }) {
+  async updateCustomErrandSettings(@Body() body: { baseFee: number; expressFee: number; convenienceFee?: number; commissionPercentage?: number; platformProcessingFee?: number; platformServiceFeePercentage?: number }) {
     let setting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
     if (!setting) {
       setting = new this.settingModel({ key: 'custom_errand' });
@@ -44,6 +44,8 @@ export class SettingsController {
       expressFee: Number(body.expressFee || 850),
       convenienceFee: Number(body.convenienceFee ?? 50),
       commissionPercentage: Number(body.commissionPercentage ?? 10),
+      platformProcessingFee: Number(body.platformProcessingFee ?? 500),
+      platformServiceFeePercentage: Number(body.platformServiceFeePercentage ?? 5),
     };
     await setting.save();
     return setting.value;

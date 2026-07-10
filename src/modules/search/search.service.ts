@@ -4,6 +4,7 @@ import { Model } from 'mongoose';
 import { Vendor } from '../vendors/schemas/vendor.schema';
 import { Product } from '../products/schemas/product.schema';
 import { Service } from '../services/schemas/service.schema';
+import { MenuItem } from '../menu/schemas/menu-item.schema';
 
 @Injectable()
 export class SearchService {
@@ -13,6 +14,7 @@ export class SearchService {
     @InjectModel(Vendor.name) private vendorModel: Model<Vendor>,
     @InjectModel(Product.name) private productModel: Model<Product>,
     @InjectModel(Service.name) private serviceModel: Model<Service>,
+    @InjectModel(MenuItem.name) private menuItemModel: Model<MenuItem>,
   ) {}
 
   async globalSearch(q: string, location?: string, time?: string) {
@@ -59,9 +61,10 @@ export class SearchService {
       vendorIds = filteredVendors.map(v => v._id);
     }
 
-    // 2. Perform search on Products and Services
+    // 2. Perform search on Products, Services, and MenuItems
     const productQuery: any = { isAvailable: true };
     const serviceQuery: any = { isAvailable: true };
+    const menuItemQuery: any = { publishItem: true };
 
     if (q) {
       productQuery.$or = [
@@ -74,16 +77,22 @@ export class SearchService {
         { description: { $regex: q, $options: 'i' } },
         { category: { $regex: q, $options: 'i' } },
       ];
+      menuItemQuery.$or = [
+        { name: { $regex: q, $options: 'i' } },
+        { description: { $regex: q, $options: 'i' } },
+      ];
     }
 
     if (vendorIds !== null) {
       productQuery.vendor = { $in: vendorIds };
       serviceQuery.vendor = { $in: vendorIds };
+      menuItemQuery.vendor = { $in: vendorIds };
     }
 
-    const [products, services] = await Promise.all([
+    const [products, services, menuItems] = await Promise.all([
       this.productModel.find(productQuery).populate('vendor').limit(50).lean().exec(),
       this.serviceModel.find(serviceQuery).populate('vendor').limit(50).lean().exec(),
+      this.menuItemModel.find(menuItemQuery).populate('vendor').limit(50).lean().exec(),
     ]);
 
     // 3. Find Vendors directly matching the query
@@ -112,6 +121,7 @@ export class SearchService {
       data: {
         products,
         services,
+        menuItems,
         vendors,
       }
     };
