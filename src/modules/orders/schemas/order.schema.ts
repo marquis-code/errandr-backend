@@ -50,6 +50,7 @@ export class Order extends Document {
       pickupLocation: String,
       dropoffLocation: String,
       description: String,
+      attachedImage: String,
       estimatedItemCost: { type: Number, default: 0 },
       urgency: { type: String, enum: ['standard', 'express'], default: 'standard' },
     },
@@ -58,6 +59,7 @@ export class Order extends Document {
     pickupLocation: string;
     dropoffLocation: string;
     description: string;
+    attachedImage?: string;
     estimatedItemCost: number;
     urgency: 'standard' | 'express';
   };

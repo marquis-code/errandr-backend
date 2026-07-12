@@ -189,6 +189,7 @@ export class OrdersService {
           pickupLocation: data.pickupLocation,
           dropoffLocation: data.dropoffLocation,
           description: data.description,
+          attachedImage: data.attachedImage,
           estimatedItemCost: itemCost,
           urgency: data.urgency || 'standard',
         },
