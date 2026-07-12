@@ -208,7 +208,7 @@ export class AdminService {
   }
 
   async getDispatcher(id: string) {
-    return this.erranderModel.findById(id).populate('user');
+    return this.erranderModel.findById(id).populate('user', '-password');
   }
 
   async suspendDispatcher(id: string) {
