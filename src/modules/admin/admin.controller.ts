@@ -109,4 +109,31 @@ export class AdminController {
   rejectDispatcher(@Param('id') id: string, @Body() body?: { reason?: string }) {
     return this.adminService.rejectDispatcher(id, body?.reason);
   }
+
+  @Get('dispatchers')
+  @ApiOperation({ summary: 'Get all dispatchers' })
+  getAllDispatchers(
+    @Query('page') page: string = '1',
+    @Query('limit') limit: string = '10',
+  ) {
+    return this.adminService.getAllDispatchers(parseInt(page), parseInt(limit));
+  }
+
+  @Get('dispatchers/:id')
+  @ApiOperation({ summary: 'Get dispatcher details' })
+  getDispatcher(@Param('id') id: string) {
+    return this.adminService.getDispatcher(id);
+  }
+
+  @Put('dispatchers/:id/suspend')
+  @ApiOperation({ summary: 'Suspend a dispatcher' })
+  suspendDispatcher(@Param('id') id: string) {
+    return this.adminService.suspendDispatcher(id);
+  }
+
+  @Put('dispatchers/:id/activate')
+  @ApiOperation({ summary: 'Activate a dispatcher' })
+  activateDispatcher(@Param('id') id: string) {
+    return this.adminService.activateDispatcher(id);
+  }
 }

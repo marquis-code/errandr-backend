@@ -6,6 +6,7 @@ import { Vendor, VendorStatus } from '../vendors/schemas/vendor.schema';
 import { Order, OrderStatus } from '../orders/schemas/order.schema';
 import { Errander } from '../erranders/schemas/errander.schema';
 import { Report } from '../reports/schemas/report.schema';
+import { EmailService } from '../email/email.service';
 
 @Injectable()
 export class AdminService {
@@ -15,6 +16,7 @@ export class AdminService {
     @InjectModel(Order.name) private orderModel: Model<Order>,
     @InjectModel(Errander.name) private erranderModel: Model<Errander>,
     @InjectModel(Report.name) private reportModel: Model<Report>,
+    private emailService: EmailService,
   ) {}
 
   async getDashboardStats() {
@@ -147,14 +149,14 @@ export class AdminService {
   }
 
   async approveDispatcher(id: string) {
-    const errander = await this.erranderModel.findById(id);
+    const errander = await this.erranderModel.findById(id).populate('user');
     if (!errander) return null;
     
     // Automatically determine level to grant based on current level
     const nextLevel = (errander.verificationLevel || 1) + 1;
     const finalLevel = nextLevel > 3 ? 3 : nextLevel;
 
-    return this.erranderModel.findByIdAndUpdate(
+    const updated = await this.erranderModel.findByIdAndUpdate(
       id,
       { 
         verificationStatus: 'approved',
@@ -162,16 +164,65 @@ export class AdminService {
         isVerified: true
       },
       { new: true },
-    );
+    ).populate('user');
+
+    if (updated?.user) {
+      const user: any = updated.user;
+      this.emailService.sendDispatcherVerificationApproved(user.email, user.firstName);
+    }
+
+    return updated;
   }
 
   async rejectDispatcher(id: string, reason?: string) {
-    return this.erranderModel.findByIdAndUpdate(
+    const updated = await this.erranderModel.findByIdAndUpdate(
       id,
       { 
         verificationStatus: 'rejected',
         ...(reason && { rejectionReason: reason })
       },
+      { new: true }
+    ).populate('user');
+
+    if (updated?.user) {
+      const user: any = updated.user;
+      this.emailService.sendDispatcherVerificationRejected(user.email, user.firstName, reason);
+    }
+
+    return updated;
+  }
+
+  async getAllDispatchers(page = 1, limit = 10) {
+    const skip = (page - 1) * limit;
+    const [dispatchers, total] = await Promise.all([
+      this.erranderModel
+        .find()
+        .populate('user', 'firstName lastName email phone avatar role')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      this.erranderModel.countDocuments(),
+    ]);
+
+    return { dispatchers, total };
+  }
+
+  async getDispatcher(id: string) {
+    return this.erranderModel.findById(id).populate('user');
+  }
+
+  async suspendDispatcher(id: string) {
+    return this.erranderModel.findByIdAndUpdate(
+      id,
+      { isApproved: false },
+      { new: true }
+    );
+  }
+
+  async activateDispatcher(id: string) {
+    return this.erranderModel.findByIdAndUpdate(
+      id,
+      { isApproved: true },
       { new: true }
     );
   }

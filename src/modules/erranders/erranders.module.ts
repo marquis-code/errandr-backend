@@ -5,6 +5,7 @@ import { ErrandersController } from './erranders.controller';
 import { Errander, ErranderSchema } from './schemas/errander.schema';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { RewardsModule } from '../rewards/rewards.module';
+import { EmailModule } from '../email/email.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { RewardsModule } from '../rewards/rewards.module';
       { name: User.name, schema: UserSchema },
     ]),
     RewardsModule,
+    EmailModule,
   ],
   controllers: [ErrandersController],
   providers: [ErrandersService],

@@ -608,4 +608,97 @@ export class EmailService {
     });
     return this.sendEmail(to, `${storeName} is Open for Business! 🥳`, html);
   }
+  // ─── DISPATCHER KYC ──────────────────────────────────────────────
+
+  async sendDispatcherVerificationSubmitted(to: string, firstName: string) {
+    const subject = `Your verification is under review, ${firstName} 📋`;
+    const html = `
+      ${this.getBaseStyles()}
+      <div class="wrapper">
+        <div class="header-logo"><img src="${this.logoUrl}" alt="Erranders"></div>
+        <div class="container">
+          <div class="content-header" style="background-color: #2563EB;">
+            <div class="badge badge-blue" style="background-color: rgba(255,255,255,0.2); color: white; border-color: transparent;">Under Review</div>
+            <h1 class="title">Verification Received</h1>
+            <p class="subtitle" style="color: #BFDBFE;">We're reviewing your application.</p>
+          </div>
+          <div class="content-body">
+            <p style="font-size: 15px; color: #3f3f46; margin-bottom: 24px; text-align: left;">
+              Hi <strong>${firstName}</strong>,<br><br>
+              We've received your Tier 2 verification documents. Our admin team is currently reviewing your profile to ensure everything is in order.
+              <br><br>
+              This process usually takes 24-48 hours. We'll notify you as soon as there's an update.
+            </p>
+          </div>
+          ${this.getEcosystemFooter()}
+        </div>
+      </div>
+    `;
+    return this.sendEmail(to, subject, html);
+  }
+
+  async sendDispatcherVerificationApproved(to: string, firstName: string) {
+    const subject = `Congratulations ${firstName}! You're verified 🎉`;
+    const html = `
+      ${this.getBaseStyles()}
+      <div class="wrapper">
+        <div class="header-logo"><img src="${this.logoUrl}" alt="Erranders"></div>
+        <div class="container">
+          <div class="content-header" style="background-color: #10B981;">
+            <div class="badge badge-green" style="background-color: rgba(255,255,255,0.2); color: white; border-color: transparent;">Verified</div>
+            <h1 class="title">Welcome to the Fleet!</h1>
+            <p class="subtitle" style="color: #A7F3D0;">Your account is now fully active.</p>
+          </div>
+          <div class="content-body">
+            <p style="font-size: 15px; color: #3f3f46; margin-bottom: 24px; text-align: left;">
+              Hi <strong>${firstName}</strong>,<br><br>
+              Great news! Your verification documents have been approved. You are now officially a verified dispatcher on Erranders.
+              <br><br>
+              You can now start accepting delivery requests and earning money immediately.
+            </p>
+            <a href="https://dispatch.erranders.org" style="display: inline-block; padding: 14px 28px; background-color: #10B981; color: #ffffff; text-decoration: none; font-weight: 700; border-radius: 12px;">Go to Dashboard</a>
+          </div>
+          ${this.getEcosystemFooter()}
+        </div>
+      </div>
+    `;
+    return this.sendEmail(to, subject, html);
+  }
+
+  async sendDispatcherVerificationRejected(to: string, firstName: string, reason?: string) {
+    const subject = `Update on your verification application ⚠️`;
+    const reasonHtml = reason ? `
+      <div style="background-color: #FEF2F2; border-left: 4px solid #EF4444; padding: 16px; margin: 24px 0; border-radius: 4px; text-align: left;">
+        <p style="font-size: 13px; color: #991B1B; font-weight: 700; margin: 0 0 4px;">Reason for rejection:</p>
+        <p style="font-size: 14px; color: #7F1D1D; margin: 0;">${reason}</p>
+      </div>
+    ` : '';
+
+    const html = `
+      ${this.getBaseStyles()}
+      <div class="wrapper">
+        <div class="header-logo"><img src="${this.logoUrl}" alt="Erranders"></div>
+        <div class="container">
+          <div class="content-header" style="background-color: #EF4444;">
+            <div class="badge badge-orange" style="background-color: rgba(255,255,255,0.2); color: white; border-color: transparent;">Action Required</div>
+            <h1 class="title">Verification Unsuccessful</h1>
+            <p class="subtitle" style="color: #FECACA;">There was an issue with your documents.</p>
+          </div>
+          <div class="content-body">
+            <p style="font-size: 15px; color: #3f3f46; margin-bottom: 16px; text-align: left;">
+              Hi <strong>${firstName}</strong>,<br><br>
+              Unfortunately, we were unable to approve your verification application at this time.
+            </p>
+            ${reasonHtml}
+            <p style="font-size: 15px; color: #3f3f46; margin-bottom: 24px; text-align: left;">
+              Please review the feedback above, gather the correct documents, and resubmit your application through the dispatch app.
+            </p>
+            <a href="https://dispatch.erranders.org" style="display: inline-block; padding: 14px 28px; background-color: #EF4444; color: #ffffff; text-decoration: none; font-weight: 700; border-radius: 12px;">Review Application</a>
+          </div>
+          ${this.getEcosystemFooter()}
+        </div>
+      </div>
+    `;
+    return this.sendEmail(to, subject, html);
+  }
 }

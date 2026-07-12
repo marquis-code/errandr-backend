@@ -9,6 +9,7 @@ import { Order, OrderSchema } from '../orders/schemas/order.schema';
 import { Errander, ErranderSchema } from '../erranders/schemas/errander.schema';
 import { Report, ReportSchema } from '../reports/schemas/report.schema';
 import { SystemSetting, SystemSettingSchema } from './schemas/system-setting.schema';
+import { EmailModule } from '../email/email.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { SystemSetting, SystemSettingSchema } from './schemas/system-setting.sch
       { name: Report.name, schema: ReportSchema },
       { name: SystemSetting.name, schema: SystemSettingSchema },
     ]),
+    EmailModule,
   ],
   controllers: [AdminController, SettingsController],
   providers: [AdminService],
