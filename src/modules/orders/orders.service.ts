@@ -190,6 +190,7 @@ export class OrdersService {
           dropoffLocation: data.dropoffLocation,
           description: data.description,
           attachedImage: data.attachedImage,
+          attachedVoiceNote: data.attachedVoiceNote,
           estimatedItemCost: itemCost,
           urgency: data.urgency || 'standard',
         },

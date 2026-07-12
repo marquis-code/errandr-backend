@@ -51,6 +51,7 @@ export class Order extends Document {
       dropoffLocation: String,
       description: String,
       attachedImage: String,
+      attachedVoiceNote: String,
       estimatedItemCost: { type: Number, default: 0 },
       urgency: { type: String, enum: ['standard', 'express'], default: 'standard' },
     },
@@ -60,6 +61,7 @@ export class Order extends Document {
     dropoffLocation: string;
     description: string;
     attachedImage?: string;
+    attachedVoiceNote?: string;
     estimatedItemCost: number;
     urgency: 'standard' | 'express';
   };
