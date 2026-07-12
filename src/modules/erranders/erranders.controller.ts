@@ -29,7 +29,7 @@ export class ErrandersController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Submit Tier 2 Verification' })
-  submitTier2Verification(@CurrentUser() user: User, @Body() body: { idCardImage: string; selfieImage: string; whatsappNumber?: string }) {
+  submitTier2Verification(@CurrentUser() user: User, @Body() body: { idCardImage: string; selfieImage: string; whatsappNumber?: string; school?: string; matricNumber?: string }) {
     return this.errandersService.submitTier2Verification((user._id as unknown) as string, body);
   }
 

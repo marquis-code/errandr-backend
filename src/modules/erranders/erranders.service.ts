@@ -28,10 +28,12 @@ export class ErrandersService {
     });
   }
 
-  async submitTier2Verification(userId: string, data: { idCardImage: string; selfieImage: string; whatsappNumber?: string }) {
+  async submitTier2Verification(userId: string, data: { idCardImage: string; selfieImage: string; whatsappNumber?: string; school?: string; matricNumber?: string }) {
     const errander = await this.getOrCreateErrander(userId);
     errander.idCardImage = data.idCardImage;
     errander.selfieImage = data.selfieImage;
+    if (data.school) errander.school = data.school;
+    if (data.matricNumber) errander.matricNumber = data.matricNumber;
     errander.verificationStatus = 'reviewing';
     await errander.save();
     return errander;
