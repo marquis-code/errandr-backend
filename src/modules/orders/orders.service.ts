@@ -143,6 +143,22 @@ export class OrdersService {
     // Broadcast via Redis to all backend instances (Render compatibility)
     await this.notificationsService.broadcastNewOrder(orderData);
     this.logger.log(`Broadcasted order ${populated.orderNumber} to all erranders via Redis`);
+
+    // Aggressively send loud push notifications to all available erranders
+    try {
+      const availableErranders = await this.erranderModel.find({ status: ErranderStatus.AVAILABLE }).populate('user', 'fcmToken');
+      for (const e of availableErranders) {
+        if (e.user && (e.user as any).fcmToken) {
+          await this.notificationsService.sendPushNotification((e.user as any).fcmToken, {
+            title: '🚨 NEW ERRAND AVAILABLE!',
+            body: `An order from ${vendorName} needs a runner right now! ₦${orderData.deliveryFee || 0} fee`,
+            data: { type: 'NEW_ORDER', orderId: orderData.orderId.toString() },
+          });
+        }
+      }
+    } catch (e) {
+      this.logger.error(`Failed to push notification to erranders: ${e}`);
+    }
   }
 
 

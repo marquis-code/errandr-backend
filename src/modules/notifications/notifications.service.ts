@@ -80,6 +80,20 @@ export class NotificationsService {
           body: payload.body,
         },
         data: payload.data || {},
+        android: {
+          priority: 'high',
+          notification: {
+            sound: 'default',
+            channelId: 'high_priority_orders',
+          },
+        },
+        apns: {
+          payload: {
+            aps: {
+              sound: 'default',
+            },
+          },
+        },
       });
       this.logger.log(`FCM Push sent to token: ${fcmToken}`);
     } catch (error) {
