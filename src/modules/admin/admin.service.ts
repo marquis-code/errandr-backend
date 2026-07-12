@@ -165,11 +165,14 @@ export class AdminService {
     );
   }
 
-  async rejectDispatcher(id: string) {
+  async rejectDispatcher(id: string, reason?: string) {
     return this.erranderModel.findByIdAndUpdate(
       id,
-      { verificationStatus: 'rejected' },
-      { new: true },
+      { 
+        verificationStatus: 'rejected',
+        ...(reason && { rejectionReason: reason })
+      },
+      { new: true }
     );
   }
 }

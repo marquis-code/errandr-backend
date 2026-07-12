@@ -67,6 +67,9 @@ export class Errander extends Document {
   @Prop({ type: String, enum: ['pending', 'reviewing', 'approved', 'rejected'], default: 'pending' })
   verificationStatus: string;
 
+  @Prop()
+  rejectionReason: string;
+
   @Prop({ type: Object })
   guarantorDetails: {
     name: string;

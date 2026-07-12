@@ -106,7 +106,7 @@ export class AdminController {
 
   @Put('dispatchers/:id/reject')
   @ApiOperation({ summary: 'Reject a dispatcher verification' })
-  rejectDispatcher(@Param('id') id: string) {
-    return this.adminService.rejectDispatcher(id);
+  rejectDispatcher(@Param('id') id: string, @Body() body?: { reason?: string }) {
+    return this.adminService.rejectDispatcher(id, body?.reason);
   }
 }
