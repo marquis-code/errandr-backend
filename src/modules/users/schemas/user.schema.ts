@@ -38,6 +38,9 @@ export class User extends Document {
   matricNumber: string;
 
   @Prop()
+  school: string;
+
+  @Prop()
   department: string;
 
   @Prop()

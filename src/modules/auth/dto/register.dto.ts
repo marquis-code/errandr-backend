@@ -40,6 +40,11 @@ export class RegisterDto {
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()
+  school?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
   department?: string;
 
   @ApiProperty({ required: false })
