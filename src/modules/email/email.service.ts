@@ -217,6 +217,25 @@ export class EmailService {
     `;
   }
 
+  private getEcosystemFooter() {
+    return `
+      ${this.ecosystemBanner()}
+      <div class="footer">
+        <div class="footer-logo">
+          <img src="${this.logoUrl}" alt="Erranders">
+        </div>
+        <p class="footer-tagline">Campus life, elevated.</p>
+        <p class="footer-desc">Seamless delivery, smart commerce, and real opportunities for students across Africa.</p>
+        <div class="footer-links">
+          <a href="https://erranders.org">Website</a>
+          <a href="https://www.erranders.org">Order</a>
+          <a href="https://vendor.erranders.org">Vendors</a>
+        </div>
+        <p class="footer-copy">© ${new Date().getFullYear()} Erranders Ltd. Lagos, Nigeria.</p>
+      </div>
+    `;
+  }
+
   private wrap(options: EmailTemplateOptions) {
     const badgeHtml = options.badge ? `<div class="badge badge-${options.badge.color}">${options.badge.text}</div>` : '';
     

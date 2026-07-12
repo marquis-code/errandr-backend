@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Param, Query, UseGuards, DefaultValuePipe, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Put, Param, Query, UseGuards, DefaultValuePipe, ParseIntPipe, Body } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard, Roles, RolesGuard } from '../../common/decorators';
