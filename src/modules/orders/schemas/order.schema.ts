@@ -106,6 +106,13 @@ export class Order extends Document {
             image: String,
             quantity: Number,
             subtotal: Number,
+            customizations: [
+              {
+                name: String,
+                selected: String,
+                price: Number,
+              },
+            ],
           },
         ],
       },
@@ -122,6 +129,7 @@ export class Order extends Document {
       image: string;
       quantity: number;
       subtotal: number;
+      customizations?: { name: string; selected: string; price: number }[];
     }[];
   }[];
 

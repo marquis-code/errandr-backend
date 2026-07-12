@@ -59,6 +59,12 @@ export enum VendorStatus {
   REJECTED = 'rejected',
 }
 
+export enum VendorType {
+  MINI_MART = 'mini-mart',
+  RESTAURANT = 'restaurant',
+  SINGLE_CATEGORY = 'single-category',
+}
+
 @Schema({
   timestamps: true,
   toJSON: {
@@ -107,6 +113,9 @@ export class Vendor extends Document {
 
   @Prop({ required: true })
   category: string;
+  
+  @Prop({ type: String, enum: VendorType, default: VendorType.RESTAURANT })
+  vendorType: VendorType;
 
   @Prop({ type: [String], default: [] })
   tags: string[];

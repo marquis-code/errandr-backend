@@ -6,6 +6,9 @@ export class Product extends Document {
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Vendor', required: true })
   vendor: Types.ObjectId;
 
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'GlobalProduct', required: false })
+  globalProductId?: Types.ObjectId;
+
   @Prop({ required: true })
   name: string;
 
@@ -41,6 +44,12 @@ export class Product extends Document {
 
   @Prop({ default: false })
   isFeatured: boolean;
+
+  @Prop({ default: false })
+  isPinned: boolean;
+
+  @Prop({ default: 0 })
+  orderCount: number;
 
   @Prop({ default: 0 })
   preparationTime: number; // minutes

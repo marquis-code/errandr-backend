@@ -25,6 +25,7 @@ import { MenuItemController } from './menu-item.controller';
 
 // Vendor schema needed for food-vendor checks in services
 import { VendorsModule } from '../vendors/vendors.module';
+import { GlobalProductsModule } from '../global-products/global-products.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { VendorsModule } from '../vendors/vendors.module';
       { name: ItemRestockRequest.name, schema: ItemRestockRequestSchema },
     ]),
     VendorsModule,
+    GlobalProductsModule,
   ],
   controllers: [
     MenuCategoryController,

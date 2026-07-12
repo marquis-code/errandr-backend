@@ -21,6 +21,14 @@ export class MenuItemController {
     return this.service.create((user._id as unknown) as string, dto);
   }
 
+  @Post('bulk-from-catalog')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Create multiple items from the global catalog' })
+  createBulkFromCatalog(@CurrentUser() user: User, @Body() body: { items: { globalProductId: string, price: number, inStock?: number }[] }) {
+    return this.service.createBulkFromCatalog((user._id as unknown) as string, body.items);
+  }
+
   @Get('mine')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
@@ -42,6 +50,12 @@ export class MenuItemController {
     @Query('tag') tag?: string,
   ) {
     return this.service.findByVendor(vendorId, { category, tag });
+  }
+
+  @Get('vendor/:vendorId/top-picks')
+  @ApiOperation({ summary: 'Get top picks for a vendor' })
+  getTopPicks(@Param('vendorId') vendorId: string) {
+    return this.service.getTopPicks(vendorId);
   }
 
   @Get(':id')

@@ -10,6 +10,7 @@ import { Vendor, VendorStatus } from '../vendors/schemas/vendor.schema';
 import { Errander, ErranderStatus } from '../erranders/schemas/errander.schema';
 import { User } from '../users/schemas/user.schema';
 import { Product } from '../products/schemas/product.schema';
+import { MenuItem } from '../menu/schemas/menu-item.schema';
 import { RedisService } from '../redis/redis.service';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
@@ -34,6 +35,7 @@ export class OrdersService {
     @InjectModel(Vendor.name) private vendorModel: Model<Vendor>,
     @InjectModel(Errander.name) private erranderModel: Model<Errander>,
     @InjectModel(Product.name) private productModel: Model<Product>,
+    @InjectModel(MenuItem.name) private menuItemModel: Model<MenuItem>,
     @InjectModel(User.name) private userModel: Model<User>,
     private redisService: RedisService,
     @InjectQueue('orders') private orderQueue: Queue,
@@ -626,6 +628,33 @@ export class OrdersService {
 
     if (populated.customer && (populated.customer as any).email) {
       // Send receipt and confirmation if moving to CONFIRMED
+      if (status === OrderStatus.DELIVERED && order.status !== OrderStatus.DELIVERED) {
+        const vendorId = order.vendor as any;
+        await this.vendorModel.findByIdAndUpdate(vendorId, {
+          $inc: { 
+            totalOrders: 1,
+            totalRevenue: order.total 
+          }
+        });
+        
+        // Increment orderCount for items
+        if (order.items && order.items.length > 0) {
+          for (const item of order.items) {
+            if (item.product) {
+              await this.productModel.findByIdAndUpdate(item.product, { $inc: { orderCount: item.quantity } });
+            }
+          }
+        }
+        
+        if ((order as any).menuItems && (order as any).menuItems.length > 0) {
+          for (const mItem of (order as any).menuItems) {
+            if (mItem.menuItem) {
+              await this.menuItemModel.findByIdAndUpdate(mItem.menuItem, { $inc: { orderCount: mItem.quantity } });
+            }
+          }
+        }
+      }
+
       if (status === OrderStatus.CONFIRMED) {
         try {
           await this.emailService.sendPaymentReceipt(

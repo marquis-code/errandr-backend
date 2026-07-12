@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import mongoose, { Document, Types } from 'mongoose';
 
 @Schema({ _id: false })
 export class Variation {
@@ -24,6 +24,9 @@ export const VariationSchema = SchemaFactory.createForClass(Variation);
 export class MenuItem extends Document {
   @Prop({ type: Types.ObjectId, ref: 'Vendor', required: true })
   vendor: Types.ObjectId;
+
+  @Prop({ type: Types.ObjectId, ref: 'GlobalProduct', required: false })
+  globalProductId?: Types.ObjectId;
 
   @Prop({ required: true })
   name: string;
@@ -55,13 +58,13 @@ export class MenuItem extends Document {
   @Prop({ type: [VariationSchema], default: [] })
   variations: Variation[];
 
-  @Prop({ type: [{ type: Types.ObjectId, ref: 'Modifier' }], default: [] })
+  @Prop({ type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Modifier' }], default: [] })
   modifiers: Types.ObjectId[];
 
-  @Prop({ type: [{ type: Types.ObjectId, ref: 'AddOn' }], default: [] })
+  @Prop({ type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'AddOn' }], default: [] })
   addOns: Types.ObjectId[];
 
-  @Prop({ type: [{ type: Types.ObjectId, ref: 'MenuPack' }], default: [] })
+  @Prop({ type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'MenuPack' }], default: [] })
   packs: Types.ObjectId[];
 
   @Prop({ type: [String], default: [] })
@@ -87,6 +90,12 @@ export class MenuItem extends Document {
 
   @Prop({ default: true })
   publishItem: boolean;
+
+  @Prop({ default: false })
+  isPinned: boolean;
+
+  @Prop({ default: 0 })
+  orderCount: number;
 }
 
 export const MenuItemSchema = SchemaFactory.createForClass(MenuItem);

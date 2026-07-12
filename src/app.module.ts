@@ -35,6 +35,7 @@ import { FirebaseModule } from './modules/firebase/firebase.module';
 import { SearchModule } from './modules/search/search.module';
 import { ReviewsModule } from './modules/reviews/reviews.module';
 import { MapboxModule } from './modules/mapbox/mapbox.module';
+import { GlobalProductsModule } from './modules/global-products/global-products.module';
 
 @Module({
   imports: [
@@ -101,6 +102,7 @@ import { MapboxModule } from './modules/mapbox/mapbox.module';
     FirebaseModule,
     SearchModule,
     ReviewsModule,
+    GlobalProductsModule,
   ],
 })
 export class AppModule {}

@@ -6,6 +6,7 @@ import { Vendor } from '../vendors/schemas/vendor.schema';
 import { ItemRestockRequest } from './schemas/item-restock-request.schema';
 import { isFoodVendor } from './helpers/food-vendor.helper';
 import { CreateMenuItemDto } from './dto/create-menu-item.dto';
+import { GlobalProductsService } from '../global-products/global-products.service';
 
 @Injectable()
 export class MenuItemService {
@@ -13,6 +14,7 @@ export class MenuItemService {
     @InjectModel(MenuItem.name) private menuItemModel: Model<MenuItem>,
     @InjectModel(Vendor.name) private vendorModel: Model<Vendor>,
     @InjectModel(ItemRestockRequest.name) private restockRequestModel: Model<ItemRestockRequest>,
+    private globalProductsService: GlobalProductsService,
   ) {}
 
   private async resolveVendor(ownerId: string): Promise<Vendor> {
@@ -47,7 +49,52 @@ export class MenuItemService {
       data.packs = dto.packIds.map((id) => new Types.ObjectId(id));
       delete data.packIds;
     }
+    
+    if (!data.globalProductId) {
+      const globalProd = await this.globalProductsService.findOrCreateManual(data.name, data.category, data.imageUrl);
+      data.globalProductId = globalProd._id;
+    } else {
+      await this.globalProductsService.incrementAdoption(data.globalProductId as any);
+    }
+    
     return this.menuItemModel.create(data);
+  }
+
+  async createBulkFromCatalog(ownerId: string, items: { globalProductId: string, price: number, inStock?: number }[]): Promise<MenuItem[]> {
+    const vendor = await this.resolveVendor(ownerId);
+    
+    const globalIds = items.map(i => new Types.ObjectId(i.globalProductId));
+    const globalProducts = await this.globalProductsService.search('', undefined, 1000);
+    const globalProductsMap = new Map();
+    const targetGlobalProducts = await (this.globalProductsService as any).globalProductModel.find({ _id: { $in: globalIds } });
+    targetGlobalProducts.forEach((gp: any) => globalProductsMap.set(gp._id.toString(), gp));
+    
+    const itemsToCreate = items.map(item => {
+      const gp = globalProductsMap.get(item.globalProductId);
+      if (!gp) throw new NotFoundException(`Global product ${item.globalProductId} not found`);
+      
+      return {
+        vendor: vendor._id,
+        globalProductId: gp._id,
+        name: gp.name,
+        imageUrl: gp.image,
+        category: gp.categoryId ? gp.categoryId : undefined,
+        price: item.price,
+        costPrice: item.price, // simple default
+        inStock: item.inStock ?? 0,
+        trackStock: item.inStock !== undefined,
+        isAvailable: true,
+        publishItem: true
+      };
+    });
+    
+    const createdItems = await this.menuItemModel.insertMany(itemsToCreate);
+    
+    for (const item of items) {
+      await this.globalProductsService.incrementAdoption(item.globalProductId);
+    }
+    
+    return createdItems;
   }
 
   async findByOwner(ownerId: string): Promise<MenuItem[]> {
@@ -92,6 +139,26 @@ export class MenuItemService {
       .populate('packs');
     if (!item) throw new NotFoundException('Menu item not found');
     return item;
+  }
+
+  async getTopPicks(vendorId: string): Promise<MenuItem[]> {
+    if (!Types.ObjectId.isValid(vendorId)) return [];
+    
+    const vendor = await this.vendorModel.findById(vendorId);
+    if (!vendor) throw new NotFoundException('Vendor not found');
+    
+    const hasEnoughData = (vendor.totalOrders || 0) >= 20;
+    
+    if (hasEnoughData) {
+      return this.menuItemModel
+        .find({ vendor: new Types.ObjectId(vendorId), publishItem: true })
+        .sort({ orderCount: -1 })
+        .limit(6);
+    } else {
+      return this.menuItemModel
+        .find({ vendor: new Types.ObjectId(vendorId), publishItem: true, isPinned: true })
+        .limit(6);
+    }
   }
 
   async notifyRestock(id: string, userId: string): Promise<{ success: boolean; message: string }> {

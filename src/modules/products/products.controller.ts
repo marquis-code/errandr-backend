@@ -21,6 +21,14 @@ export class ProductsController {
     return this.productsService.createForOwner((user._id as unknown) as string, body);
   }
 
+  @Post('bulk-from-catalog')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Create multiple products from the global catalog' })
+  createBulkFromCatalog(@CurrentUser() user: User, @Body() body: { items: { globalProductId: string, price: number, stockQuantity?: number }[] }) {
+    return this.productsService.createBulkFromCatalog((user._id as unknown) as string, body.items);
+  }
+
   // ── Public Index (Handles /products?q=... or /products) ──
   @Get()
   @ApiOperation({ summary: 'Get products (index / search)' })
@@ -113,10 +121,23 @@ export class ProductsController {
     return this.productsService.getPopular(limit);
   }
 
+  @Get('vendor/:vendorId/top-picks')
+  @ApiOperation({ summary: 'Get top picks for a vendor' })
+  getTopPicks(@Param('vendorId') vendorId: string) {
+    return this.productsService.getTopPicks(vendorId);
+  }
+
   @Get('category/:category')
   @ApiOperation({ summary: 'Get products by category' })
   getByCategory(@Param('category') category: string) {
     return this.productsService.getByCategory(category);
+  }
+
+
+  @Get('vendor/:vendorId/packs')
+  @ApiOperation({ summary: 'Get bundles/packs for a vendor' })
+  getPacks(@Param('vendorId') vendorId: string) {
+    return this.productsService.getPacks(vendorId);
   }
 
   @Get('vendor/:vendorId')
