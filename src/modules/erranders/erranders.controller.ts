@@ -25,6 +25,22 @@ export class ErrandersController {
     return this.errandersService.getProfile((user._id as unknown) as string);
   }
 
+  @Post('verify/submit-tier-2')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Submit Tier 2 Verification' })
+  submitTier2Verification(@CurrentUser() user: User, @Body() body: { idCardImage: string; selfieImage: string; whatsappNumber?: string }) {
+    return this.errandersService.submitTier2Verification((user._id as unknown) as string, body);
+  }
+
+  @Post('verify/submit-tier-3')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Submit Tier 3 Verification' })
+  submitTier3Verification(@CurrentUser() user: User, @Body() body: { guarantorDetails: any }) {
+    return this.errandersService.submitTier3Verification((user._id as unknown) as string, body);
+  }
+
   @Get('earnings')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

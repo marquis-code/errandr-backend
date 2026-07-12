@@ -28,6 +28,23 @@ export class ErrandersService {
     });
   }
 
+  async submitTier2Verification(userId: string, data: { idCardImage: string; selfieImage: string; whatsappNumber?: string }) {
+    const errander = await this.getOrCreateErrander(userId);
+    errander.idCardImage = data.idCardImage;
+    errander.selfieImage = data.selfieImage;
+    errander.verificationStatus = 'reviewing';
+    await errander.save();
+    return errander;
+  }
+
+  async submitTier3Verification(userId: string, data: { guarantorDetails: any }) {
+    const errander = await this.getOrCreateErrander(userId);
+    errander.guarantorDetails = data.guarantorDetails;
+    errander.verificationStatus = 'reviewing';
+    await errander.save();
+    return errander;
+  }
+
   async getProfile(userId: string): Promise<Errander> {
     const errander = await this.erranderModel
       .findOne({ user: new Types.ObjectId(userId) })

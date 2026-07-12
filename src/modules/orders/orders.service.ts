@@ -733,6 +733,26 @@ export class OrdersService {
       });
     }
 
+    // Check verification level limits
+    const targetOrder = await this.orderModel.findById(orderId);
+    if (!targetOrder || targetOrder.status !== OrderStatus.PENDING) {
+      throw new BadRequestException('Order is no longer available');
+    }
+
+    const level = errander.verificationLevel || 1;
+    if (level < 2) {
+      throw new BadRequestException('You must be verified (at least Tier 2) to accept orders.');
+    }
+    if (level < 3) {
+      const orderValue = targetOrder.total || (targetOrder.customDetails?.estimatedItemCost || 0);
+      if (orderValue > 3000) {
+        throw new BadRequestException('You need Tier 3 (Verified Pro) status to accept orders above ₦3,000');
+      }
+      if (targetOrder.paymentMethod === 'cash') {
+        throw new BadRequestException('You need Tier 3 (Verified Pro) status to accept Cash on Delivery orders');
+      }
+    }
+
     // Check current load
     const currentActiveCount = (errander.batchOrders?.length || 0) + (errander.currentOrder ? 1 : 0);
     if (currentActiveCount >= maxOrders) {

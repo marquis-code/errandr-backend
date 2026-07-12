@@ -88,4 +88,25 @@ export class AdminController {
   ) {
     return this.adminService.getRecentOrders(limit);
   }
+
+  @Get('dispatchers/pending')
+  @ApiOperation({ summary: 'Get pending dispatchers' })
+  getPendingDispatchers(
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number = 10,
+  ) {
+    return this.adminService.getPendingDispatchers(page, limit);
+  }
+
+  @Put('dispatchers/:id/approve')
+  @ApiOperation({ summary: 'Approve a dispatcher verification' })
+  approveDispatcher(@Param('id') id: string) {
+    return this.adminService.approveDispatcher(id);
+  }
+
+  @Put('dispatchers/:id/reject')
+  @ApiOperation({ summary: 'Reject a dispatcher verification' })
+  rejectDispatcher(@Param('id') id: string) {
+    return this.adminService.rejectDispatcher(id);
+  }
 }

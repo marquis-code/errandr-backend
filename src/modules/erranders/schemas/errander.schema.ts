@@ -49,6 +49,31 @@ export class Errander extends Document {
   @Prop({ default: false })
   isVerified: boolean;
 
+  @Prop({ type: String, enum: ['UNILAG', 'CMUL', 'YABATECH'] })
+  school: string;
+
+  @Prop()
+  matricNumber: string;
+
+  @Prop({ default: 1 })
+  verificationLevel: number; // 1: Window Shopper, 2: Basic, 3: Pro
+
+  @Prop()
+  idCardImage: string;
+
+  @Prop()
+  selfieImage: string;
+
+  @Prop({ type: String, enum: ['pending', 'reviewing', 'approved', 'rejected'], default: 'pending' })
+  verificationStatus: string;
+
+  @Prop({ type: Object })
+  guarantorDetails: {
+    name: string;
+    phone: string;
+    relationship: string;
+  };
+
   @Prop()
   bankName: string;
 

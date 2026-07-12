@@ -131,4 +131,45 @@ export class AdminService {
       .sort({ createdAt: -1 })
       .limit(limit);
   }
+
+  async getPendingDispatchers(page = 1, limit = 20) {
+    const skip = (page - 1) * limit;
+    const [dispatchers, total] = await Promise.all([
+      this.erranderModel
+        .find({ verificationStatus: 'reviewing' })
+        .populate('user', 'firstName lastName email phone')
+        .skip(skip)
+        .limit(limit)
+        .sort({ createdAt: -1 }),
+      this.erranderModel.countDocuments({ verificationStatus: 'reviewing' }),
+    ]);
+    return { dispatchers, total };
+  }
+
+  async approveDispatcher(id: string) {
+    const errander = await this.erranderModel.findById(id);
+    if (!errander) return null;
+    
+    // Automatically determine level to grant based on current level
+    const nextLevel = (errander.verificationLevel || 1) + 1;
+    const finalLevel = nextLevel > 3 ? 3 : nextLevel;
+
+    return this.erranderModel.findByIdAndUpdate(
+      id,
+      { 
+        verificationStatus: 'approved',
+        verificationLevel: finalLevel,
+        isVerified: true
+      },
+      { new: true },
+    );
+  }
+
+  async rejectDispatcher(id: string) {
+    return this.erranderModel.findByIdAndUpdate(
+      id,
+      { verificationStatus: 'rejected' },
+      { new: true },
+    );
+  }
 }
