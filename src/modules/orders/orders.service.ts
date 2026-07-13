@@ -936,6 +936,10 @@ export class OrdersService {
       if (!errander.currentOrder && (!errander.batchOrders || errander.batchOrders.length === 0)) {
         errander.status = ErranderStatus.AVAILABLE;
       }
+
+      errander.totalDeliveries = (errander.totalDeliveries || 0) + 1;
+      errander.totalEarnings = (errander.totalEarnings || 0) + erranderEarnings;
+
       await errander.save();
     }
 
@@ -1173,6 +1177,18 @@ export class OrdersService {
       order.erranderRating = data.erranderRating;
       order.erranderReview = data.erranderReview || '';
       order.hasRatedErrander = true;
+      
+      // Update Errander Average Rating
+      if (order.errander) {
+         const errander = await this.erranderModel.findOne({ user: new Types.ObjectId(order.errander.toString()) });
+         if (errander) {
+            // Very simple moving average calculation
+            const currentRating = errander.rating || 0;
+            const deliveries = errander.totalDeliveries || 1; 
+            errander.rating = ((currentRating * (deliveries - 1)) + data.erranderRating) / deliveries;
+            await errander.save();
+         }
+      }
       
       // Award points to Erranders for good rating
       if (data.erranderRating >= 4 && order.errander) {
