@@ -172,8 +172,10 @@ export class OrdersService {
       const itemCost = Number(data.estimatedItemCost) || 0;
       // Flat Buyer's Convenience Fee
       const serviceFee = 50; 
-      // Total includes EVERYTHING: item cost + runner fee + service fee
-      const total = itemCost + runnerFee + serviceFee;
+      // Paystack transfer fee: ₦10 for ≤₦5,000, ₦25 for >₦5,000 (charged to customer)
+      const transferFee = itemCost > 0 ? (itemCost <= 5000 ? 10 : 25) : 0;
+      // Total includes EVERYTHING: item cost + runner fee + service fee + transfer fee
+      const total = itemCost + runnerFee + serviceFee + transferFee;
 
       // Commission from Runner (Primary Model)
       const commissionAmount = Math.round(runnerFee * 0.10); // 10%
@@ -210,6 +212,7 @@ export class OrdersService {
         subtotal: itemCost,
         deliveryFee: runnerFee,
         serviceFee,
+        transferFee,
         erranderShare,
         erranderPayout: erranderShare,
         platformShare,
@@ -218,6 +221,7 @@ export class OrdersService {
         paymentReference: data.paymentReference || null,
         status: paymentVerified ? OrderStatus.PENDING : OrderStatus.AWAITING_PAYMENT,
         itemCostDisbursementStatus: itemCost > 0 ? 'pending' : 'not_applicable',
+        reconciliationStatus: itemCost > 0 ? 'pending' : 'not_applicable',
         statusHistory: [
           { status: paymentVerified ? OrderStatus.PENDING : OrderStatus.AWAITING_PAYMENT, timestamp: new Date(), note: paymentVerified ? 'Custom errand paid and broadcasted to riders' : 'Custom errand created, awaiting payment' },
         ],
@@ -1959,5 +1963,130 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     }
 
     return fallbackFee;
+  }
+
+  /**
+   * Errander submits the actual item cost after purchasing items.
+   * Triggers reconciliation flow: if actual < estimated, refund is calculated.
+   */
+  async submitReconciliation(
+    orderId: string,
+    erranderId: string,
+    data: { actualItemCost: number; receiptImage?: string; note?: string },
+  ): Promise<Order> {
+    const order = await this.orderModel.findById(orderId);
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.type !== OrderType.CUSTOM_ERRAND) {
+      throw new BadRequestException('Reconciliation is only available for custom errands');
+    }
+    if (!order.errander || order.errander.toString() !== erranderId) {
+      throw new BadRequestException('Only the assigned errander can submit reconciliation');
+    }
+    if (order.reconciliationStatus === 'approved') {
+      throw new BadRequestException('Reconciliation has already been approved');
+    }
+    if (!data.actualItemCost || data.actualItemCost < 0) {
+      throw new BadRequestException('Actual item cost must be a positive number');
+    }
+
+    const estimatedCost = order.customDetails?.estimatedItemCost || 0;
+    const difference = estimatedCost - data.actualItemCost;
+
+    order.actualItemCost = data.actualItemCost;
+    order.receiptImage = data.receiptImage || '';
+    order.reconciliationNote = data.note || '';
+    order.reconciliationStatus = 'submitted';
+    order.refundAmount = difference > 0 ? difference : 0;
+
+    await order.save();
+
+    // Notify customer about reconciliation
+    const customerId = order.customer?._id || order.customer;
+    if (customerId) {
+      const message = difference > 0
+        ? `Your rider submitted the actual cost of ₦${data.actualItemCost.toLocaleString()} for order #${order.orderNumber}. A refund of ₦${difference.toLocaleString()} will be credited once you approve.`
+        : difference < 0
+          ? `Your rider submitted the actual cost of ₦${data.actualItemCost.toLocaleString()} for order #${order.orderNumber}. The item cost was ₦${Math.abs(difference).toLocaleString()} more than estimated. The rider covered the difference.`
+          : `Your rider confirmed the item cost of ₦${data.actualItemCost.toLocaleString()} for order #${order.orderNumber} matches the estimate. Please approve.`;
+
+      try {
+        await this.notificationsService.create({
+          recipient: customerId.toString(),
+          type: 'ORDER_UPDATE',
+          title: 'Item Cost Reconciliation',
+          message,
+          data: { orderId: order._id, orderNumber: order.orderNumber, refundAmount: order.refundAmount },
+        });
+        this.notificationsGateway.sendToUser(customerId.toString(), 'notification', {
+          type: 'RECONCILIATION_SUBMITTED',
+          orderId: order._id,
+          orderNumber: order.orderNumber,
+          actualItemCost: data.actualItemCost,
+          estimatedItemCost: estimatedCost,
+          refundAmount: order.refundAmount,
+          message,
+        });
+      } catch (e) {
+        this.logger.warn(`Failed to notify customer about reconciliation: ${e}`);
+      }
+    }
+
+    this.logger.log(`Reconciliation submitted for order ${order.orderNumber}: estimated ₦${estimatedCost}, actual ₦${data.actualItemCost}, refund ₦${order.refundAmount}`);
+    return order;
+  }
+
+  /**
+   * Customer approves the reconciliation. If overpaid, refund the difference to their wallet.
+   */
+  async approveReconciliation(orderId: string, customerId: string): Promise<Order> {
+    const order = await this.orderModel.findById(orderId);
+    if (!order) throw new NotFoundException('Order not found');
+    
+    const orderCustomerId = (order.customer?._id || order.customer)?.toString();
+    if (orderCustomerId !== customerId) {
+      throw new BadRequestException('Only the customer can approve reconciliation');
+    }
+    if (order.reconciliationStatus !== 'submitted') {
+      throw new BadRequestException('No pending reconciliation to approve');
+    }
+
+    order.reconciliationStatus = 'approved';
+    await order.save();
+
+    // If customer overpaid, refund the difference to their wallet
+    if (order.refundAmount && order.refundAmount > 0) {
+      try {
+        await this.walletsService.creditWallet(
+          customerId,
+          order.refundAmount,
+          `Refund: Item cost reconciliation for order #${order.orderNumber} (estimated ₦${order.customDetails?.estimatedItemCost?.toLocaleString()}, actual ₦${order.actualItemCost?.toLocaleString()})`,
+          order._id.toString(),
+        );
+        this.logger.log(`Refunded ₦${order.refundAmount} to customer ${customerId} for order ${order.orderNumber}`);
+
+        // Notify customer
+        try {
+          await this.notificationsService.create({
+            recipient: customerId,
+            type: 'ORDER_UPDATE',
+            title: 'Refund Credited',
+            message: `₦${order.refundAmount.toLocaleString()} has been credited to your wallet for order #${order.orderNumber}.`,
+            data: { orderId: order._id, orderNumber: order.orderNumber },
+          });
+          this.notificationsGateway.sendToUser(customerId, 'notification', {
+            type: 'REFUND_CREDITED',
+            orderId: order._id,
+            amount: order.refundAmount,
+          });
+        } catch (e) {
+          this.logger.warn(`Failed to notify customer about refund: ${e}`);
+        }
+      } catch (e) {
+        this.logger.error(`Failed to credit refund for order ${order.orderNumber}: ${e}`);
+        throw new BadRequestException('Refund failed. Please contact support.');
+      }
+    }
+
+    return order;
   }
 }

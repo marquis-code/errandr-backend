@@ -327,4 +327,29 @@ async getMyVendorOrders(
   cancelTrackedOrder(@Body() body: { orderNumber: string; email: string }) {
     return this.ordersService.cancelTrackedOrder(body.orderNumber, body.email);
   }
+
+  @Put(':id/reconcile')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Errander submits actual item cost for reconciliation' })
+  submitReconciliation(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+    @Body() body: { actualItemCost: number; receiptImage?: string; note?: string },
+  ) {
+    this.logger.log(`submitReconciliation() id=${id} user=${user._id} actualCost=${body.actualItemCost}`);
+    return this.ordersService.submitReconciliation(id, (user._id as unknown) as string, body);
+  }
+
+  @Put(':id/reconcile/approve')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Customer approves reconciliation (auto-refund if overpaid)' })
+  approveReconciliation(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+  ) {
+    this.logger.log(`approveReconciliation() id=${id} user=${user._id}`);
+    return this.ordersService.approveReconciliation(id, (user._id as unknown) as string);
+  }
 }

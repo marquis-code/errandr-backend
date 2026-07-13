@@ -411,6 +411,25 @@ export class Order extends Document {
 
   @Prop()
   itemCostTransferReference: string;
+
+  @Prop({ default: 0 })
+  transferFee: number;
+
+  // Reconciliation fields
+  @Prop()
+  actualItemCost: number;
+
+  @Prop()
+  receiptImage: string;
+
+  @Prop({ type: String, enum: ['not_applicable', 'pending', 'submitted', 'approved', 'disputed'], default: 'not_applicable' })
+  reconciliationStatus: 'not_applicable' | 'pending' | 'submitted' | 'approved' | 'disputed';
+
+  @Prop()
+  reconciliationNote: string;
+
+  @Prop()
+  refundAmount: number;
 }
 
 export const OrderSchema = SchemaFactory.createForClass(Order);
