@@ -111,6 +111,9 @@ export class Vendor extends Document {
   @Prop()
   banner: string;
 
+  @Prop()
+  brandColor: string;
+
   @Prop({ required: true })
   category: string;
   

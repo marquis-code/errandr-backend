@@ -2010,21 +2010,23 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
           : `Your rider confirmed the item cost of ₦${data.actualItemCost.toLocaleString()} for order #${order.orderNumber} matches the estimate. Please approve.`;
 
       try {
-        await this.notificationsService.create({
-          recipient: customerId.toString(),
+        await this.notificationsService.sendNotification(customerId.toString(), {
           type: 'ORDER_UPDATE',
           title: 'Item Cost Reconciliation',
-          message,
+          body: message,
           data: { orderId: order._id, orderNumber: order.orderNumber, refundAmount: order.refundAmount },
         });
-        this.notificationsGateway.sendToUser(customerId.toString(), 'notification', {
+        this.notificationsGateway.sendToUser(customerId.toString(), {
+          title: 'Item Cost Reconciliation',
+          body: message,
           type: 'RECONCILIATION_SUBMITTED',
-          orderId: order._id,
-          orderNumber: order.orderNumber,
-          actualItemCost: data.actualItemCost,
-          estimatedItemCost: estimatedCost,
-          refundAmount: order.refundAmount,
-          message,
+          data: {
+            orderId: order._id,
+            orderNumber: order.orderNumber,
+            actualItemCost: data.actualItemCost,
+            estimatedItemCost: estimatedCost,
+            refundAmount: order.refundAmount,
+          }
         });
       } catch (e) {
         this.logger.warn(`Failed to notify customer about reconciliation: ${e}`);
@@ -2066,17 +2068,20 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
 
         // Notify customer
         try {
-          await this.notificationsService.create({
-            recipient: customerId,
+          await this.notificationsService.sendNotification(customerId.toString(), {
             type: 'ORDER_UPDATE',
             title: 'Refund Credited',
-            message: `₦${order.refundAmount.toLocaleString()} has been credited to your wallet for order #${order.orderNumber}.`,
+            body: `₦${order.refundAmount.toLocaleString()} has been credited to your wallet for order #${order.orderNumber}.`,
             data: { orderId: order._id, orderNumber: order.orderNumber },
           });
-          this.notificationsGateway.sendToUser(customerId, 'notification', {
+          this.notificationsGateway.sendToUser(customerId.toString(), {
+            title: 'Refund Credited',
+            body: `₦${order.refundAmount.toLocaleString()} has been credited to your wallet for order #${order.orderNumber}.`,
             type: 'REFUND_CREDITED',
-            orderId: order._id,
-            amount: order.refundAmount,
+            data: {
+              orderId: order._id,
+              amount: order.refundAmount,
+            }
           });
         } catch (e) {
           this.logger.warn(`Failed to notify customer about refund: ${e}`);
