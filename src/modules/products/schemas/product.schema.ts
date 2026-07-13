@@ -125,6 +125,51 @@ export class Product extends Document {
     items: { name: string; price: number }[];
   }[];
 
+  // ── Chowdeck-style: Inventory Tracking ──
+  @Prop({ default: false })
+  trackStock: boolean;
+
+  @Prop()
+  costPrice: number; // Cost price for profit calculation
+
+  @Prop()
+  sku: string; // SKU for internal tracking
+
+  // ── Variations (e.g. Glass vs Bottle of same item) ──
+  @Prop({
+    type: [
+      {
+        name: { type: String },
+        costPrice: { type: Number, default: 0 },
+        price: { type: Number, default: 0 },
+        sku: { type: String },
+        stock: { type: Number, default: 0 },
+      },
+    ],
+    default: [],
+  })
+  variations: {
+    name: string;
+    costPrice: number;
+    price: number;
+    sku: string;
+    stock: number;
+  }[];
+
+  // ── Packs (packaging type for delivery) ──
+  @Prop({ type: [String], default: [] })
+  packs: string[];
+
+  // ── Advanced Quantity Constraints ──
+  @Prop()
+  maxQuantity: number;
+
+  @Prop()
+  maxQuantityAsSide: number;
+
+  @Prop()
+  volumePerPortion: string; // e.g. "1kg"
+
   @Prop({ default: 0 })
   totalOrders: number;
 
