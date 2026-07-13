@@ -77,14 +77,16 @@ export class Product extends Document {
   @Prop({ default: 10 })
   maxOrderQty: number;
 
-  // ── Customizations (add-ons, options) ──
+  // ── Modifiers (e.g. Choose Protein, usually required) ──
   @Prop({
     type: [
       {
         name: { type: String },
-        options: [
+        minSelection: { type: Number, default: 0 },
+        maxSelection: { type: Number, default: 1 },
+        items: [
           {
-            label: { type: String },
+            name: { type: String },
             price: { type: Number, default: 0 },
           },
         ],
@@ -92,9 +94,35 @@ export class Product extends Document {
     ],
     default: [],
   })
-  customizations: {
+  modifiers: {
     name: string;
-    options: { label: string; price: number }[];
+    minSelection: number;
+    maxSelection: number;
+    items: { name: string; price: number }[];
+  }[];
+
+  // ── Add-Ons (e.g. Extra Sauces, usually optional) ──
+  @Prop({
+    type: [
+      {
+        name: { type: String },
+        minSelection: { type: Number, default: 0 },
+        maxSelection: { type: Number, default: 10 },
+        items: [
+          {
+            name: { type: String },
+            price: { type: Number, default: 0 },
+          },
+        ],
+      },
+    ],
+    default: [],
+  })
+  addOns: {
+    name: string;
+    minSelection: number;
+    maxSelection: number;
+    items: { name: string; price: number }[];
   }[];
 
   @Prop({ default: 0 })
