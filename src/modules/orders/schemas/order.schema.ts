@@ -405,6 +405,12 @@ export class Order extends Document {
   
   @Prop()
   deliveryOtpHash: string;
+
+  @Prop({ type: String, enum: ['pending', 'transferred', 'failed', 'not_applicable'], default: 'not_applicable' })
+  itemCostDisbursementStatus: 'pending' | 'transferred' | 'failed' | 'not_applicable';
+
+  @Prop()
+  itemCostTransferReference: string;
 }
 
 export const OrderSchema = SchemaFactory.createForClass(Order);

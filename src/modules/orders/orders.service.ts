@@ -172,13 +172,26 @@ export class OrdersService {
       const itemCost = Number(data.estimatedItemCost) || 0;
       // Flat Buyer's Convenience Fee
       const serviceFee = 50; 
-      // Total ONLY includes runner fee + service fee (Model A)
-      const total = runnerFee + serviceFee;
+      // Total includes EVERYTHING: item cost + runner fee + service fee
+      const total = itemCost + runnerFee + serviceFee;
 
       // Commission from Runner (Primary Model)
       const commissionAmount = Math.round(runnerFee * 0.10); // 10%
       const erranderShare = runnerFee - commissionAmount;
       const platformShare = serviceFee + commissionAmount;
+
+      // Verify Paystack payment if reference is provided
+      let paymentVerified = false;
+      if (data.paymentReference) {
+        const verification = await this.paystackService.verifyTransaction(data.paymentReference);
+        if (verification?.status !== 'success') {
+          throw new BadRequestException('Payment verification failed');
+        }
+        if (Math.round(verification.amount) < total) {
+          throw new BadRequestException(`Payment amount mismatch. Expected ₦${total}, got ₦${Math.round(verification.amount)}`);
+        }
+        paymentVerified = true;
+      }
 
       const order = await this.orderModel.create({
         orderNumber: `EXT-${uuidv4().slice(0, 8).toUpperCase()}`,
@@ -194,19 +207,26 @@ export class OrdersService {
           estimatedItemCost: itemCost,
           urgency: data.urgency || 'standard',
         },
-        subtotal: itemCost, // Reference only
+        subtotal: itemCost,
         deliveryFee: runnerFee,
         serviceFee,
         erranderShare,
+        erranderPayout: erranderShare,
         platformShare,
         total,
-        paymentStatus: PaymentStatus.PENDING,
-        status: OrderStatus.PENDING,
+        paymentStatus: paymentVerified ? PaymentStatus.PAID : PaymentStatus.PENDING,
+        paymentReference: data.paymentReference || null,
+        status: paymentVerified ? OrderStatus.PENDING : OrderStatus.AWAITING_PAYMENT,
+        itemCostDisbursementStatus: itemCost > 0 ? 'pending' : 'not_applicable',
         statusHistory: [
-          { status: OrderStatus.PENDING, timestamp: new Date(), note: 'Custom errand created, pending errander acceptance' },
+          { status: paymentVerified ? OrderStatus.PENDING : OrderStatus.AWAITING_PAYMENT, timestamp: new Date(), note: paymentVerified ? 'Custom errand paid and broadcasted to riders' : 'Custom errand created, awaiting payment' },
         ],
       });
-      await this.broadcastNewOrderToErranders(order);
+
+      // Only broadcast to erranders after payment is confirmed
+      if (paymentVerified) {
+        await this.broadcastNewOrderToErranders(order);
+      }
 
       return order.populate('customer', 'firstName lastName phone avatar');
     }
@@ -813,6 +833,96 @@ export class OrdersService {
       .collection('users')
       .findOne({ _id: new Types.ObjectId(erranderId) });
 
+    // === CUSTOM ERRAND: Transfer item cost to errander's bank account ===
+    if (order.type === OrderType.CUSTOM_ERRAND && order.customDetails?.estimatedItemCost > 0) {
+      const erranderWallet = await this.walletsService.getOrCreateWallet(erranderId);
+      const bankDetails = erranderWallet.bankDetails;
+
+      if (!bankDetails?.accountNumber || !bankDetails?.bankCode) {
+        // Rollback: unassign errander, set status back to PENDING, re-broadcast
+        await this.orderModel.findByIdAndUpdate(orderId, {
+          $unset: { errander: '' },
+          $set: { status: OrderStatus.PENDING },
+          $push: {
+            statusHistory: {
+              status: OrderStatus.PENDING,
+              timestamp: new Date(),
+              note: 'Acceptance rolled back — errander has no bank details',
+            } as any
+          }
+        });
+        errander.status = ErranderStatus.AVAILABLE;
+        errander.currentOrder = null as any;
+        errander.batchOrders = errander.batchOrders?.filter(id => id.toString() !== orderId) || [];
+        await errander.save();
+        throw new BadRequestException('You need to add your bank details in Wallet settings before accepting market-run errands. The item cost needs to be transferred to your bank.');
+      }
+
+      // Initiate Paystack Transfer
+      const itemCost = order.customDetails.estimatedItemCost;
+      const transferRef = `ITEM-${order.orderNumber}-${uuidv4().slice(0, 6).toUpperCase()}`;
+      
+      try {
+        const recipient = await this.paystackService.createTransferRecipient({
+          name: bankDetails.accountName || erranderUser?.firstName || 'Errander',
+          account_number: bankDetails.accountNumber,
+          bank_code: bankDetails.bankCode,
+        });
+
+        const transfer = await this.paystackService.initiateTransfer({
+          amount: itemCost,
+          reference: transferRef,
+          recipient: recipient.recipient_code,
+          reason: `Item cost for errand ${order.orderNumber}`,
+        });
+
+        if ((transfer as any).status === true || (transfer as any).status === 'success') {
+          order.itemCostDisbursementStatus = 'transferred';
+          order.itemCostTransferReference = transferRef;
+          await order.save();
+          this.logger.log(`Item cost ₦${itemCost} transferred to errander ${erranderId} bank for order ${order.orderNumber}`);
+        } else {
+          throw new Error((transfer as any).message || 'Transfer failed');
+        }
+      } catch (transferError: any) {
+        this.logger.error(`Item cost transfer failed for order ${order.orderNumber}: ${transferError.message}`);
+        
+        // Check if this is a test/mock environment
+        const isTestKey = process.env.PAYSTACK_SECRET_KEY?.startsWith('sk_test');
+        const useMock = Boolean(isTestKey || process.env.USE_MOCK_PAYOUT === 'true');
+        
+        if (useMock) {
+          // In test mode, mock the transfer and proceed
+          order.itemCostDisbursementStatus = 'transferred';
+          order.itemCostTransferReference = `MOCK-${transferRef}`;
+          await order.save();
+          this.logger.log(`[MOCK] Item cost ₦${itemCost} mock-transferred for order ${order.orderNumber}`);
+        } else {
+          // In production, rollback the acceptance
+          order.itemCostDisbursementStatus = 'failed';
+          await order.save();
+          
+          await this.orderModel.findByIdAndUpdate(orderId, {
+            $unset: { errander: '' },
+            $set: { status: OrderStatus.PENDING, itemCostDisbursementStatus: 'pending' },
+            $push: {
+              statusHistory: {
+                status: OrderStatus.PENDING,
+                timestamp: new Date(),
+                note: 'Acceptance rolled back — item cost bank transfer failed',
+              } as any
+            }
+          });
+          errander.status = ErranderStatus.AVAILABLE;
+          errander.currentOrder = null as any;
+          errander.batchOrders = errander.batchOrders?.filter(id => id.toString() !== orderId) || [];
+          await errander.save();
+          await this.broadcastNewOrderToErranders(order);
+          throw new BadRequestException('We couldn\'t transfer the item cost to your bank account. Please verify your bank details and try again.');
+        }
+      }
+    }
+
     // Update errander status and batch list
     errander.status = ErranderStatus.BUSY;
     if (isBatchActive) {
@@ -869,18 +979,20 @@ export class OrdersService {
       this.logger.warn(`Failed to auto-create chat for order ${order.orderNumber}: ${e}`);
     }
 
-    // REAL-TIME VENDOR PAYOUT
-    const platformCommissionRate = 0.05;
-    const vendorEarnings = Math.round(order.subtotal * (1 - platformCommissionRate));
-    
-    const populatedVendor = await this.vendorModel.findById(order.vendor);
-    if (populatedVendor && populatedVendor.owner) {
-      await this.walletsService.creditWallet(
-        populatedVendor.owner.toString(),
-        vendorEarnings,
-        `Payment for order ${order.orderNumber} (Accepted by vendor)`,
-        order._id.toString(),
-      );
+    // REAL-TIME VENDOR PAYOUT (only for marketplace orders with a vendor)
+    if (order.vendor) {
+      const platformCommissionRate = 0.05;
+      const vendorEarnings = Math.round(order.subtotal * (1 - platformCommissionRate));
+      
+      const populatedVendor = await this.vendorModel.findById(order.vendor);
+      if (populatedVendor && populatedVendor.owner) {
+        await this.walletsService.creditWallet(
+          populatedVendor.owner.toString(),
+          vendorEarnings,
+          `Payment for order ${order.orderNumber} (Accepted by vendor)`,
+          order._id.toString(),
+        );
+      }
     }
 
     return order.populate([
