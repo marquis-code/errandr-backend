@@ -43,10 +43,14 @@ async function bootstrap() {
 
   // CORS
   app.enableCors({
-    origin: true,
+    origin: (origin, callback) => {
+      // Aggressively allow all origins to reflect back for credentials
+      callback(null, true);
+    },
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
-    allowedHeaders: 'Content-Type, Accept, Authorization, X-Requested-With',
+    allowedHeaders: '*',
+    exposedHeaders: '*',
   });
 
   // Validation
