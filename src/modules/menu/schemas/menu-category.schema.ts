@@ -3,14 +3,11 @@ import { Document, Types } from 'mongoose';
 
 @Schema({ timestamps: true })
 export class MenuCategory extends Document {
+  @Prop({ required: true, trim: true })
+  name: string; // e.g. "Rice Dishes"
+
   @Prop({ type: Types.ObjectId, ref: 'Vendor', required: true })
-  vendor: Types.ObjectId;
-
-  @Prop({ required: true })
-  name: string;
-
-  @Prop()
-  image: string;
+  vendorId: Types.ObjectId;
 
   @Prop({ default: 0 })
   sortOrder: number;
@@ -18,6 +15,4 @@ export class MenuCategory extends Document {
   @Prop({ default: true })
   isActive: boolean;
 }
-
 export const MenuCategorySchema = SchemaFactory.createForClass(MenuCategory);
-MenuCategorySchema.index({ vendor: 1, name: 1 }, { unique: true });

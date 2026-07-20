@@ -315,6 +315,25 @@ export class AuthService {
     };
   }
 
+  async changePassword(userId: string, changePasswordDto: any) {
+    const user = await this.userModel.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+
+    const isPasswordValid = await bcrypt.compare(changePasswordDto.currentPassword, user.password);
+    if (!isPasswordValid) {
+      throw new BadRequestException('Current password is incorrect');
+    }
+
+    const hashedPassword = await bcrypt.hash(changePasswordDto.newPassword, 12);
+    user.password = hashedPassword;
+    await user.save();
+
+    return {
+      success: true,
+      message: 'Password securely updated! 🎉'
+    };
+  }
+
   async getProfile(userId: string) {
     const user = await this.userModel.findById(userId);
     if (!user) throw new NotFoundException('User not found');

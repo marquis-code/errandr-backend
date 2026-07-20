@@ -100,8 +100,14 @@ export class AdminController {
 
   @Put('dispatchers/:id/approve')
   @ApiOperation({ summary: 'Approve a dispatcher verification' })
-  approveDispatcher(@Param('id') id: string) {
-    return this.adminService.approveDispatcher(id);
+  approveDispatcher(@Param('id') id: string, @Body() body?: { level?: number }) {
+    return this.adminService.approveDispatcher(id, body?.level);
+  }
+
+  @Put('dispatchers/:id/tier')
+  @ApiOperation({ summary: 'Update dispatcher tier' })
+  updateDispatcherTier(@Param('id') id: string, @Body() body: { tier: number }) {
+    return this.adminService.updateDispatcherTier(id, body.tier);
   }
 
   @Put('dispatchers/:id/reject')

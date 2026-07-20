@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Body, Param, UseGuards, Query, DefaultValuePipe, ParseIntPipe, Post } from '@nestjs/common';
+import { Controller, Get, Put, Body, Param, UseGuards, Query, DefaultValuePipe, ParseIntPipe, Post, Delete } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { JwtAuthGuard, CurrentUser, Roles, RolesGuard } from '../../common/decorators';
@@ -23,6 +23,14 @@ export class UsersController {
   @ApiOperation({ summary: 'Update current user profile' })
   updateProfile(@CurrentUser() user: User, @Body() updateData: any) {
     return this.usersService.updateProfile((user._id as unknown) as string, updateData);
+  }
+
+  @Delete('me')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Delete current user account' })
+  deleteAccount(@CurrentUser() user: User, @Body() body: { reason?: string }) {
+    return this.usersService.deleteAccount((user._id as unknown) as string, body.reason);
   }
 
   @Put('me/location')

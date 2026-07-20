@@ -148,13 +148,19 @@ export class AdminService {
     return { dispatchers, total };
   }
 
-  async approveDispatcher(id: string) {
+  async approveDispatcher(id: string, explicitLevel?: number) {
     const errander = await this.erranderModel.findById(id).populate('user');
     if (!errander) return null;
     
-    // Automatically determine level to grant based on current level
-    const nextLevel = (errander.verificationLevel || 1) + 1;
-    const finalLevel = nextLevel > 3 ? 3 : nextLevel;
+    let finalLevel = 1;
+    if (explicitLevel) {
+      finalLevel = explicitLevel;
+    } else {
+      // Automatically determine level to grant based on current level
+      const currentLevel = Number(errander.verificationLevel) || 1;
+      const nextLevel = currentLevel + 1;
+      finalLevel = nextLevel > 3 ? 3 : nextLevel;
+    }
 
     const updated = await this.erranderModel.findByIdAndUpdate(
       id,
@@ -172,6 +178,18 @@ export class AdminService {
     }
 
     return updated;
+  }
+
+  async updateDispatcherTier(id: string, tier: number) {
+    return this.erranderModel.findByIdAndUpdate(
+      id,
+      {
+        verificationLevel: tier,
+        isVerified: true,
+        verificationStatus: 'approved'
+      },
+      { new: true }
+    ).populate('user');
   }
 
   async rejectDispatcher(id: string, reason?: string) {

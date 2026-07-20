@@ -1,3 +1,4 @@
+// Force restart
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -20,7 +21,7 @@ export class MenuItemService {
   private async resolveVendor(ownerId: string): Promise<Vendor> {
     const vendor = await this.vendorModel.findOne({ owner: new Types.ObjectId(ownerId) });
     if (!vendor) throw new NotFoundException('Vendor not found');
-    if (!isFoodVendor(vendor.category)) {
+    if (!isFoodVendor(vendor)) {
       throw new ForbiddenException('Menu features are only available for food vendors');
     }
     return vendor;
@@ -32,26 +33,23 @@ export class MenuItemService {
       ...dto,
       vendor: vendor._id,
     };
-    // Map DTO field names to schema field names
+    // Safely extract ObjectId from populated objects or raw strings
+    const toObjectId = (val: any): Types.ObjectId | null => {
+      if (!val) return null;
+      if (typeof val === 'string') return new Types.ObjectId(val);
+      if (val._id) return new Types.ObjectId(val._id);
+      return null;
+    };
+
     if (dto.categoryId) {
-      data.category = new Types.ObjectId(dto.categoryId);
-      delete data.categoryId;
+      data.categoryId = toObjectId(dto.categoryId);
     }
-    if (dto.modifierIds) {
-      data.modifiers = dto.modifierIds.map((id) => new Types.ObjectId(id));
-      delete data.modifierIds;
-    }
-    if (dto.addOnIds) {
-      data.addOns = dto.addOnIds.map((id) => new Types.ObjectId(id));
-      delete data.addOnIds;
-    }
-    if (dto.packIds) {
-      data.packs = dto.packIds.map((id) => new Types.ObjectId(id));
-      delete data.packIds;
+    if (dto.addOnGroupIds) {
+      data.addOnGroupIds = (dto.addOnGroupIds as any[]).map((v: any) => toObjectId(v)).filter(Boolean);
     }
     
     if (!data.globalProductId) {
-      const globalProd = await this.globalProductsService.findOrCreateManual(data.name, data.category, data.imageUrl);
+      const globalProd = await this.globalProductsService.findOrCreateManual(data.name, data.category, data.image);
       data.globalProductId = globalProd._id;
     } else {
       await this.globalProductsService.incrementAdoption(data.globalProductId as any);
@@ -74,17 +72,14 @@ export class MenuItemService {
       if (!gp) throw new NotFoundException(`Global product ${item.globalProductId} not found`);
       
       return {
-        vendor: vendor._id,
+        vendorId: vendor._id,
         globalProductId: gp._id,
         name: gp.name,
         imageUrl: gp.image,
-        category: gp.categoryId ? gp.categoryId : undefined,
-        price: item.price,
-        costPrice: item.price, // simple default
-        inStock: item.inStock ?? 0,
-        trackStock: item.inStock !== undefined,
-        isAvailable: true,
-        publishItem: true
+        categoryId: gp.categoryId ? gp.categoryId : undefined,
+        pricePerPortion: item.price,
+        maxPortionsPerOrder: 0,
+        isAvailable: true
       };
     });
     
@@ -100,43 +95,37 @@ export class MenuItemService {
   async findByOwner(ownerId: string): Promise<MenuItem[]> {
     const vendor = await this.resolveVendor(ownerId);
     return this.menuItemModel
-      .find({ vendor: vendor._id })
-      .populate('category')
-      .populate('modifiers')
-      .populate('addOns')
-      .populate('packs')
+      .find({ vendorId: vendor._id })
+      .populate('categoryId')
+      .populate('addOnGroupIds')
       .sort({ name: 1 });
   }
 
   async findByVendor(vendorId: string, query?: { category?: string; tag?: string }): Promise<MenuItem[]> {
     if (!Types.ObjectId.isValid(vendorId)) return [];
     const filter: any = {
-      vendor: new Types.ObjectId(vendorId),
-      publishItem: true,
+      vendorId: new Types.ObjectId(vendorId),
+      isAvailable: true,
     };
     if (query?.category) {
-      filter.category = new Types.ObjectId(query.category);
+      filter.categoryId = new Types.ObjectId(query.category);
     }
     if (query?.tag) {
       filter.tags = query.tag;
     }
     return this.menuItemModel
       .find(filter)
-      .populate('category')
-      .populate('modifiers')
-      .populate('addOns')
-      .populate('packs')
+      .populate('categoryId')
+      .populate('addOnGroupIds')
       .sort({ name: 1 });
   }
 
   async findById(id: string): Promise<MenuItem> {
     const item = await this.menuItemModel
       .findById(id)
-      .populate('vendor', 'storeName logo isOnline category')
-      .populate('category')
-      .populate('modifiers')
-      .populate('addOns')
-      .populate('packs');
+      .populate('vendorId', 'storeName logo isOnline category')
+      .populate('categoryId')
+      .populate('addOnGroupIds');
     if (!item) throw new NotFoundException('Menu item not found');
     return item;
   }
@@ -151,12 +140,12 @@ export class MenuItemService {
     
     if (hasEnoughData) {
       return this.menuItemModel
-        .find({ vendor: new Types.ObjectId(vendorId), publishItem: true })
+        .find({ vendorId: new Types.ObjectId(vendorId), isAvailable: true })
         .sort({ orderCount: -1 })
         .limit(6);
     } else {
       return this.menuItemModel
-        .find({ vendor: new Types.ObjectId(vendorId), publishItem: true, isPinned: true })
+        .find({ vendorId: new Types.ObjectId(vendorId), isAvailable: true, isPinned: true })
         .limit(6);
     }
   }
@@ -177,7 +166,7 @@ export class MenuItemService {
 
     await this.restockRequestModel.create({
       user: new Types.ObjectId(userId),
-      vendor: item.vendor,
+      vendor: item.vendorId,
       item: item._id,
       itemModel: 'MenuItem'
     });
@@ -188,25 +177,30 @@ export class MenuItemService {
   async update(id: string, ownerId: string, dto: Partial<CreateMenuItemDto>): Promise<MenuItem> {
     const vendor = await this.resolveVendor(ownerId);
     const data: any = { ...dto };
-    // Map DTO field names to schema field names
+
+    // Safely extract ObjectId from populated objects or raw strings
+    const toObjectId = (val: any): Types.ObjectId | null => {
+      if (!val) return null;
+      if (typeof val === 'string') return new Types.ObjectId(val);
+      if (val._id) return new Types.ObjectId(val._id);
+      return null;
+    };
+
     if (dto.categoryId !== undefined) {
-      data.category = dto.categoryId ? new Types.ObjectId(dto.categoryId) : null;
-      delete data.categoryId;
+      data.categoryId = toObjectId(dto.categoryId);
     }
-    if (dto.modifierIds) {
-      data.modifiers = dto.modifierIds.map((id) => new Types.ObjectId(id));
-      delete data.modifierIds;
+    if (dto.addOnGroupIds) {
+      data.addOnGroupIds = (dto.addOnGroupIds as any[]).map((v: any) => toObjectId(v)).filter(Boolean);
     }
-    if (dto.addOnIds) {
-      data.addOns = dto.addOnIds.map((id) => new Types.ObjectId(id));
-      delete data.addOnIds;
-    }
-    if (dto.packIds) {
-      data.packs = dto.packIds.map((id) => new Types.ObjectId(id));
-      delete data.packIds;
-    }
+
+    // Strip populated/computed fields that shouldn't be written back
+    delete data._id;
+    delete data.__v;
+    delete data.vendorId;
+    delete data.createdAt;
+    delete data.updatedAt;
     const item = await this.menuItemModel.findOneAndUpdate(
-      { _id: id, vendor: vendor._id },
+      { _id: id, vendorId: vendor._id },
       data,
       { new: true },
     );
@@ -216,16 +210,16 @@ export class MenuItemService {
 
   async togglePublish(id: string, ownerId: string): Promise<MenuItem> {
     const vendor = await this.resolveVendor(ownerId);
-    const item = await this.menuItemModel.findOne({ _id: id, vendor: vendor._id });
+    const item = await this.menuItemModel.findOne({ _id: id, vendorId: vendor._id });
     if (!item) throw new NotFoundException('Menu item not found');
-    item.publishItem = !item.publishItem;
+    item.isAvailable = !item.isAvailable;
     await item.save();
     return item;
   }
 
   async delete(id: string, ownerId: string): Promise<void> {
     const vendor = await this.resolveVendor(ownerId);
-    const result = await this.menuItemModel.findOneAndDelete({ _id: id, vendor: vendor._id });
+    const result = await this.menuItemModel.findOneAndDelete({ _id: id, vendorId: vendor._id });
     if (!result) throw new NotFoundException('Menu item not found');
   }
 }

@@ -1,5 +1,5 @@
 import {
-  Injectable, NotFoundException, BadRequestException, Inject, forwardRef, Logger
+  Injectable, NotFoundException, BadRequestException, Inject, forwardRef, Logger, ForbiddenException
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -472,8 +472,10 @@ export class OrdersService {
     // Schedule timeout check (e.g. 5 mins)
     await this.orderQueue.add('orderTimeout', { orderId: order._id }, { delay: 300000 });
 
-    // Broadcast to available erranders
-    await this.broadcastNewOrderToErranders(order);
+    // Broadcast to available erranders only if paid
+    if (data.paymentReference) {
+      await this.broadcastNewOrderToErranders(order);
+    }
 
 
     // Trigger Vendor Notification Cascade
@@ -777,7 +779,7 @@ export class OrdersService {
 
     // Check verification level limits
     const targetOrder = await this.orderModel.findById(orderId);
-    if (!targetOrder || targetOrder.status !== OrderStatus.PENDING) {
+    if (!targetOrder || ![OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP].includes(targetOrder.status as any)) {
       throw new BadRequestException('Order is no longer available');
     }
 
@@ -805,21 +807,23 @@ export class OrdersService {
       );
     }
 
-    // ATOMIC UPDATE: Only update if no errander is assigned yet and status is PENDING
+    const newStatus = targetOrder.status === OrderStatus.PENDING ? OrderStatus.CONFIRMED : targetOrder.status;
+
+    // ATOMIC UPDATE: Only update if no errander is assigned yet and status hasn't changed
     const order = await this.orderModel.findOneAndUpdate(
       { 
         _id: new Types.ObjectId(orderId), 
         errander: { $exists: false },
-        status: OrderStatus.PENDING 
+        status: targetOrder.status 
       },
       {
         $set: {
           errander: new Types.ObjectId(erranderId),
-          status: OrderStatus.CONFIRMED,
+          status: newStatus,
         },
         $push: {
           statusHistory: {
-            status: OrderStatus.CONFIRMED,
+            status: newStatus,
             timestamp: new Date(),
             note: isBatchActive ? 'Order accepted as part of Batch Delivery' : 'Order accepted by errander',
           } as any
@@ -1204,8 +1208,13 @@ export class OrdersService {
   async getAvailableOrders() {
     return this.orderModel
       .find({
-        status: OrderStatus.PENDING,
+        status: { $in: [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP] },
         errander: { $exists: false },
+        $or: [
+          { deliveryOption: 'use_an_errander' },
+          { deliveryOption: { $exists: false } },
+          { deliveryOption: null }
+        ]
       })
       .populate('vendor', 'storeName logo address location')
       .populate('customer', 'firstName lastName deliveryAddress location')
@@ -1443,8 +1452,8 @@ export class OrdersService {
     const order = await this.orderModel.findById(orderId);
     if (!order) throw new NotFoundException('Order not found');
     
-    if (order.customer.toString() !== customerId) {
-      throw new BadRequestException('Unauthorized');
+    if (order.customer.toString() !== customerId.toString()) {
+      throw new ForbiddenException('You can only cancel your own orders');
     }
     
     if (order.paymentStatus === PaymentStatus.PAID) {
@@ -1657,7 +1666,6 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
       throw new BadRequestException('Order is no longer available');
     }
 
-    // Find errander profile, or auto-create if they just signed up
     let errander = await this.erranderModel.findOne({
       user: new Types.ObjectId(erranderId),
     });
@@ -1669,15 +1677,20 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
       });
     }
 
-    order.errander = new Types.ObjectId(erranderId);
+    order.errander = errander._id;
     order.status = OrderStatus.AWAITING_PAYMENT;
     order.statusHistory.push({
       status: OrderStatus.AWAITING_PAYMENT,
       timestamp: new Date(),
       note: 'Errander accepted, awaiting student payment'
     });
-    
     await order.save();
+
+    // Broadcast order accepted so it is removed from the dispatch pool
+    await this.redisService.publish('notification:broadcast:erranders', JSON.stringify({
+      type: 'ORDER_ACCEPTED',
+      data: { orderId: order._id.toString() }
+    }));
 
     await this.notificationsService.sendNotification(order.customer.toString(), {
       title: 'Errand Accepted!',
@@ -1692,7 +1705,7 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
   async payForCustomErrand(orderId: string, customerId: string, paymentReference: string): Promise<Order> {
     const order = await this.orderModel.findById(orderId).populate('errander');
     if (!order) throw new NotFoundException('Order not found');
-    if (order.customer.toString() !== customerId) throw new BadRequestException('Not your order');
+    if (order.customer.toString() !== customerId.toString()) throw new BadRequestException('Not your order');
     if (order.status !== OrderStatus.AWAITING_PAYMENT) {
       throw new BadRequestException('Order is not awaiting payment');
     }
@@ -1867,7 +1880,7 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
       });
     }
 
-    order.errander = bid.errander._id;
+    order.errander = errander._id;
     order.status = OrderStatus.AWAITING_PAYMENT;
     order.statusHistory.push({
       status: OrderStatus.AWAITING_PAYMENT,
@@ -1876,6 +1889,12 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     });
 
     await order.save();
+    
+    // Broadcast order accepted so it is removed from the dispatch pool
+    await this.redisService.publish('notification:broadcast:erranders', JSON.stringify({
+      type: 'ORDER_ACCEPTED',
+      data: { orderId: order._id.toString() }
+    }));
     
     const populatedOrder = await this.orderModel.findById(order._id)
       .populate('customer', 'firstName lastName email phone avatar')
@@ -1979,7 +1998,12 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     if (order.type !== OrderType.CUSTOM_ERRAND) {
       throw new BadRequestException('Reconciliation is only available for custom errands');
     }
-    if (!order.errander || order.errander.toString() !== erranderId) {
+    const erranderProfile = await this.erranderModel.findOne({ user: erranderId });
+    if (!erranderProfile) {
+      throw new BadRequestException('Errander profile not found');
+    }
+
+    if (!order.errander || order.errander.toString() !== erranderProfile._id.toString()) {
       throw new BadRequestException('Only the assigned errander can submit reconciliation');
     }
     if (order.reconciliationStatus === 'approved') {

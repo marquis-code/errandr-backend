@@ -1,104 +1,63 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import mongoose, { Document, Types } from 'mongoose';
+import { Document, Types } from 'mongoose';
+import { Modifier, ModifierSchema } from './modifier.schema';
 
-@Schema({ _id: false })
-export class Variation {
-  @Prop({ required: true })
-  name: string;
-
-  @Prop({ required: true, min: 0 })
-  costPrice: number;
-
-  @Prop({ required: true, min: 0 })
-  price: number;
-
-  @Prop()
-  sku: string;
-
-  @Prop({ required: true, min: 0, default: 0 })
-  stock: number;
-}
-export const VariationSchema = SchemaFactory.createForClass(Variation);
-
+/**
+ * An à la carte menu item. Price is ALWAYS per single portion.
+ * Cart quantity multiplies this — the schema never stores a
+ * "2 portions" price; that's a cart-time calculation.
+ */
 @Schema({ timestamps: true })
 export class MenuItem extends Document {
+  @Prop({ required: true, trim: true })
+  name: string; // e.g. "Fried Rice"
+
+  @Prop({ trim: true })
+  description?: string;
+
+  @Prop({ type: Types.ObjectId, ref: 'MenuCategory', required: true })
+  categoryId: Types.ObjectId;
+
   @Prop({ type: Types.ObjectId, ref: 'Vendor', required: true })
-  vendor: Types.ObjectId;
+  vendorId: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'GlobalProduct', required: false })
-  globalProductId?: Types.ObjectId;
+  @Prop({ required: true, min: 0 })
+  pricePerPortion: number; // the ONLY base price field
 
-  @Prop({ required: true })
-  name: string;
+  @Prop({ default: 'plate' })
+  portionUnit: string; // "plate", "wrap", "piece", "bottle"
 
   @Prop()
-  description: string;
+  image?: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'MenuCategory' })
-  category: Types.ObjectId;
+  @Prop({ type: [String], default: [] })
+  images?: string[];
+
+  @Prop({ type: [String], default: [] })
+  videos?: string[];
+
+  @Prop({ type: [String], default: [] })
+  tags?: string[];
 
   @Prop({ default: false })
   trackStock: boolean;
 
-  @Prop({ min: 0, default: 0 })
-  inStock: number;
-
-  @Prop({ default: true })
-  isAvailable: boolean;
-
-  @Prop({ required: true, min: 0 })
-  costPrice: number;
-
-  @Prop({ required: true, min: 0 })
-  price: number;
-
-  @Prop()
-  sku: string;
-
-  @Prop({ type: [VariationSchema], default: [] })
-  variations: Variation[];
-
-  @Prop({ type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Modifier' }], default: [] })
-  modifiers: Types.ObjectId[];
-
-  @Prop({ type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'AddOn' }], default: [] })
-  addOns: Types.ObjectId[];
-
-  @Prop({ type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'MenuPack' }], default: [] })
-  packs: Types.ObjectId[];
-
-  @Prop({ type: [String], default: [] })
-  tags: string[];
-
-  @Prop({ min: 0 })
-  maxQuantity: number;
-
-  @Prop({ min: 0 })
-  maxQuantityAsSide: number;
-
-  @Prop({ min: 0 })
-  volumePerPortion: number;
-
-  @Prop({ enum: ['kg', 'g', 'l', 'ml'], default: 'kg' })
-  volumeUnit: string;
-
-  @Prop({ default: 'portion' })
-  portionUnit: string;
-
-  @Prop()
-  imageUrl: string;
-
-  @Prop({ default: true })
-  publishItem: boolean;
-
-  @Prop({ default: false })
-  isPinned: boolean;
+  @Prop({ default: 0 })
+  stockQuantity: number;
 
   @Prop({ default: 0 })
-  orderCount: number;
-}
+  prepTimeMinutes: number;
 
+  @Prop({ type: [ModifierSchema], default: [] })
+  modifiers: Modifier[]; // required variant choices (spice level, swallow size)
+
+  @Prop({ type: [Types.ObjectId], ref: 'AddOnGroup', default: [] })
+  addOnGroupIds: Types.ObjectId[]; // optional extras, shared/reusable groups
+
+  @Prop({ default: true })
+  isAvailable: boolean; // vendor stockout toggle
+
+  @Prop({ default: 0 })
+  maxPortionsPerOrder: number; // 0 = no cap
+}
 export const MenuItemSchema = SchemaFactory.createForClass(MenuItem);
-MenuItemSchema.index({ vendor: 1 });
-MenuItemSchema.index({ vendor: 1, category: 1 });
-MenuItemSchema.index({ name: 'text', description: 'text', tags: 'text' });

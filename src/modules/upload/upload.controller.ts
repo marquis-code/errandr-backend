@@ -52,8 +52,9 @@ export class UploadController {
   )
   uploadFile(
     @UploadedFile() file: Express.Multer.File,
-    @Query('resourceType') resourceType: 'image' | 'video' | 'raw' | 'auto' = 'auto'
+    @Query('resourceType') resourceType: 'image' | 'video' | 'raw' | 'auto' | 'audio' = 'auto'
   ) {
-    return this.uploadService.uploadFile(file, resourceType);
+    const cloudinaryResourceType = resourceType === 'audio' ? 'video' : (resourceType as 'image' | 'video' | 'raw' | 'auto');
+    return this.uploadService.uploadFile(file, cloudinaryResourceType);
   }
 }

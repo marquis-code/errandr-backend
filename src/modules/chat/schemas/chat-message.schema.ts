@@ -9,6 +9,9 @@ export class ChatMessage extends Document {
   @Prop({ type: Types.ObjectId, ref: 'Appointment' })
   appointment?: Types.ObjectId;
 
+  @Prop({ type: Types.ObjectId, ref: 'ChatMessage' })
+  replyTo?: Types.ObjectId;
+
   @Prop({ type: String, enum: ['order', 'support', 'direct'], default: 'order' })
   roomType: string;
 

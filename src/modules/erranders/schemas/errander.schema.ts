@@ -64,6 +64,12 @@ export class Errander extends Document {
   @Prop()
   selfieImage: string;
 
+  @Prop()
+  ninSlipImage: string;
+
+  @Prop()
+  ninNumber: string;
+
   @Prop({ type: String, enum: ['pending', 'reviewing', 'approved', 'rejected'], default: 'pending' })
   verificationStatus: string;
 

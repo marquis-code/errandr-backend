@@ -1,4 +1,14 @@
-import { IsString, IsOptional, IsNumber, Min } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsArray, IsBoolean, Min, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+
+export class PackComponentDto {
+  @IsString()
+  itemId: string;
+
+  @IsNumber()
+  @Min(1)
+  portions: number;
+}
 
 export class CreateMenuPackDto {
   @IsString()
@@ -8,11 +18,28 @@ export class CreateMenuPackDto {
   @IsString()
   description?: string;
 
-  @IsNumber()
-  @Min(0)
-  price: number;
+  @IsOptional()
+  @IsString()
+  categoryId?: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PackComponentDto)
+  components: PackComponentDto[];
 
   @IsNumber()
   @Min(0)
-  maxVolume: number;
+  bundlePrice: number;
+
+  @IsOptional()
+  @IsArray()
+  addOnGroupIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isAvailable?: boolean;
 }

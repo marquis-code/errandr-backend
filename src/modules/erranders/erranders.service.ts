@@ -30,10 +30,16 @@ export class ErrandersService {
     });
   }
 
-  async submitTier2Verification(userId: string, data: { idCardImage: string; selfieImage: string; whatsappNumber?: string; school?: string; matricNumber?: string }) {
+  async submitTier2Verification(userId: string, data: { idCardImage: string; selfieImage: string; ninSlipImage?: string; ninNumber?: string; whatsappNumber?: string; school?: string; matricNumber?: string }) {
+    if (!data.ninSlipImage && !data.ninNumber) {
+      throw new Error('Either NIN slip image or NIN number must be provided');
+    }
+
     const errander = await this.getOrCreateErrander(userId);
     errander.idCardImage = data.idCardImage;
     errander.selfieImage = data.selfieImage;
+    if (data.ninSlipImage) errander.ninSlipImage = data.ninSlipImage;
+    if (data.ninNumber) errander.ninNumber = data.ninNumber;
     if (data.school) errander.school = data.school;
     if (data.matricNumber) errander.matricNumber = data.matricNumber;
     errander.verificationStatus = 'reviewing';
@@ -53,6 +59,13 @@ export class ErrandersService {
     errander.guarantorDetails = data.guarantorDetails;
     errander.verificationStatus = 'reviewing';
     await errander.save();
+
+    // Trigger email notification
+    const user = await this.userModel.findById(userId);
+    if (user && user.email) {
+      this.emailService.sendDispatcherVerificationSubmitted(user.email, user.firstName);
+    }
+
     return errander;
   }
 

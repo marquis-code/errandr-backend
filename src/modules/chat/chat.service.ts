@@ -33,6 +33,7 @@ export class ChatService {
     messageType?: string;
     roomType?: string;
     attachment?: string;
+    replyTo?: string;
   }): Promise<ChatMessage> {
     const msg = await this.chatModel.create({
       order: data.orderId ? new Types.ObjectId(data.orderId) : undefined,
@@ -43,89 +44,89 @@ export class ChatService {
       messageType: data.messageType || 'text',
       roomType: data.roomType || (data.orderId ? 'order' : (data.appointmentId ? 'direct' : 'support')),
       attachment: data.attachment,
+      replyTo: data.replyTo ? new Types.ObjectId(data.replyTo) : undefined,
     });
 
+    // Fire-and-forget: send push notifications in background WITHOUT blocking the return.
+    // This is critical - previously this was awaited which caused 4+ second delays before
+    // the WebSocket emit could happen in the gateway.
+    this.sendChatPushNotifications(msg, data).catch(err => 
+      console.error('Background push notification error:', err)
+    );
+
+    return msg;
+  }
+
+  /**
+   * Background push notification sender - extracted from createMessage so it doesn't
+   * block the WebSocket emit in the gateway. Runs fire-and-forget.
+   */
+  private async sendChatPushNotifications(msg: any, data: any): Promise<void> {
     if (msg.roomType === 'order' && data.orderId) {
-      try {
-        const order = await this.orderModel.findById(data.orderId)
-          .populate('customer')
-          .populate('vendor')
-          .populate('errander');
+      const order = await this.orderModel.findById(data.orderId)
+        .populate('customer')
+        .populate('vendor')
+        .populate('errander');
 
-        if (order) {
-          const senderStr = data.senderId.toString();
-          const customer: any = order.customer;
-          const vendor: any = order.vendor;
-          const errander: any = order.errander;
-          
-          const customerId = customer?._id?.toString() || customer?.toString();
-          const vendorOwnerId = vendor?.owner?.toString() || vendor?._id?.toString() || vendor?.toString();
-          const erranderId = errander?._id?.toString() || errander?.toString();
-          
-          const senderObj = await this.chatModel.findById(msg._id).populate('sender', 'firstName lastName');
-          const senderName = senderObj?.sender ? `${(senderObj.sender as any).firstName || ''} ${(senderObj.sender as any).lastName || ''}`.trim() : 'User';
+      if (order) {
+        const senderStr = data.senderId.toString();
+        const customer: any = order.customer;
+        const vendor: any = order.vendor;
+        const errander: any = order.errander;
+        
+        const customerId = customer?._id?.toString() || customer?.toString();
+        const vendorOwnerId = vendor?.owner?.toString() || vendor?._id?.toString() || vendor?.toString();
+        const erranderId = errander?._id?.toString() || errander?.toString();
+        
+        const senderObj = await this.chatModel.findById(msg._id).populate('sender', 'firstName lastName');
+        const senderName = senderObj?.sender ? `${(senderObj.sender as any).firstName || ''} ${(senderObj.sender as any).lastName || ''}`.trim() : 'User';
 
-          const recipients = [customerId, vendorOwnerId, erranderId].filter(id => id && id !== senderStr);
-
-          // Get unique recipients
-          const uniqueRecipients = [...new Set(recipients)];
-
-          for (const r of uniqueRecipients) {
-            await this.notificationsService.sendNotification(r, {
-              title: `New message from ${senderName}`,
-              body: data.messageType === 'image' ? '📸 Sent an image' : (data.messageType === 'voice' ? '🎤 Sent a voice message' : (data.message.length > 50 ? data.message.substring(0, 50) + '...' : data.message)),
-              type: 'NEW_CHAT_MESSAGE',
-              data: {
-                orderId: data.orderId,
-                orderNumber: order.orderNumber,
-                messageId: msg._id,
-              }
-            }).catch(err => console.error(`Failed to send chat notification to ${r}`, err));
-          }
+        let recipients: string[] = [];
+        if (data.receiverId) {
+          recipients = [data.receiverId.toString()];
+        } else {
+          recipients = [customerId, vendorOwnerId, erranderId].filter(id => id && id !== senderStr);
         }
-      } catch (err) {
-        console.error('Error sending chat notifications:', err);
+        const uniqueRecipients = [...new Set(recipients)];
+
+        for (const r of uniqueRecipients) {
+          await this.notificationsService.sendNotification(r, {
+            title: `New message from ${senderName}`,
+            body: data.messageType === 'image' ? '📸 Sent an image' : (data.messageType === 'voice' ? '🎤 Sent a voice message' : (data.message.length > 50 ? data.message.substring(0, 50) + '...' : data.message)),
+            type: 'NEW_CHAT_MESSAGE',
+            data: { orderId: data.orderId, orderNumber: order.orderNumber, messageId: msg._id }
+          }).catch(err => console.error(`Failed to send chat notification to ${r}`, err));
+        }
       }
     } else if (msg.roomType === 'direct' && data.appointmentId) {
-      try {
-        const appointment = await this.appointmentModel.findById(data.appointmentId)
-          .populate('user')
-          .populate('vendor');
+      const appointment = await this.appointmentModel.findById(data.appointmentId)
+        .populate('user')
+        .populate('vendor');
 
-        if (appointment) {
-          const senderStr = data.senderId.toString();
-          const customer: any = appointment.user;
-          const vendor: any = appointment.vendor;
-          
-          const customerId = customer?._id?.toString() || customer?.toString();
-          const vendorOwnerId = vendor?.owner?.toString();
-          
-          const senderObj = await this.chatModel.findById(msg._id).populate('sender', 'firstName lastName');
-          const senderName = senderObj?.sender ? `${(senderObj.sender as any).firstName || ''} ${(senderObj.sender as any).lastName || ''}`.trim() : 'User';
+      if (appointment) {
+        const senderStr = data.senderId.toString();
+        const customer: any = appointment.user;
+        const vendor: any = appointment.vendor;
+        
+        const customerId = customer?._id?.toString() || customer?.toString();
+        const vendorOwnerId = vendor?.owner?.toString();
+        
+        const senderObj = await this.chatModel.findById(msg._id).populate('sender', 'firstName lastName');
+        const senderName = senderObj?.sender ? `${(senderObj.sender as any).firstName || ''} ${(senderObj.sender as any).lastName || ''}`.trim() : 'User';
 
-          const recipients = [customerId, vendorOwnerId].filter(id => id && id !== senderStr);
-          const uniqueRecipients = [...new Set(recipients)];
+        const recipients = [customerId, vendorOwnerId].filter(id => id && id !== senderStr);
+        const uniqueRecipients = [...new Set(recipients)];
 
-          for (const r of uniqueRecipients) {
-            await this.notificationsService.sendNotification(r, {
-              title: `New message from ${senderName}`,
-              body: data.messageType === 'image' ? '📸 Sent an image' : (data.messageType === 'voice' ? '🎤 Sent a voice message' : (data.message.length > 50 ? data.message.substring(0, 50) + '...' : data.message)),
-              type: 'NEW_CHAT_MESSAGE',
-              data: {
-                appointmentId: data.appointmentId,
-                messageId: msg._id,
-              }
-            }).catch(err => console.error(`Failed to send chat notification to ${r}`, err));
-          }
+        for (const r of uniqueRecipients) {
+          await this.notificationsService.sendNotification(r, {
+            title: `New message from ${senderName}`,
+            body: data.messageType === 'image' ? '📸 Sent an image' : (data.messageType === 'voice' ? '🎤 Sent a voice message' : (data.message.length > 50 ? data.message.substring(0, 50) + '...' : data.message)),
+            type: 'NEW_CHAT_MESSAGE',
+            data: { appointmentId: data.appointmentId, messageId: msg._id }
+          }).catch(err => console.error(`Failed to send chat notification to ${r}`, err));
         }
-      } catch (err) {
-        console.error('Error sending chat notifications for appointment:', err);
       }
     }
-
-    await msg.populate('sender', 'firstName lastName avatar');
-    await msg.populate('receiver', 'firstName lastName avatar');
-    return msg;
   }
 
   async getBotResponse(message: string): Promise<string | null> {

@@ -5,6 +5,7 @@ import { Vendor } from '../vendors/schemas/vendor.schema';
 import { Product } from '../products/schemas/product.schema';
 import { Service } from '../services/schemas/service.schema';
 import { MenuItem } from '../menu/schemas/menu-item.schema';
+import { augmentVendor } from '../../utils/vendor-helpers';
 
 @Injectable()
 export class SearchService {
@@ -119,10 +120,10 @@ export class SearchService {
     return {
       success: true,
       data: {
-        products,
-        services,
-        menuItems,
-        vendors,
+        products: products.map((p: any) => ({ ...p, vendor: augmentVendor(p.vendor) })),
+        services: services.map((s: any) => ({ ...s, vendor: augmentVendor(s.vendor) })),
+        menuItems: menuItems.map((m: any) => ({ ...m, vendor: augmentVendor(m.vendor) })),
+        vendors: vendors.map((v: any) => augmentVendor(v)),
       }
     };
   }

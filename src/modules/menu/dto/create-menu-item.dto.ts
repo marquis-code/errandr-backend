@@ -1,28 +1,29 @@
 import {
   IsString, IsOptional, IsBoolean, IsNumber, IsArray,
-  IsMongoId, ValidateNested, ArrayMinSize, Min, IsUrl, IsIn,
+  IsMongoId, ValidateNested, Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
-export class VariationDto {
+export class ModifierOptionDto {
   @IsString()
   name: string;
 
   @IsNumber()
   @Min(0)
-  costPrice: number;
+  priceDelta: number;
+}
 
-  @IsNumber()
-  @Min(0)
-  price: number;
-
-  @IsOptional()
+export class ModifierDto {
   @IsString()
-  sku?: string;
+  name: string;
 
-  @IsNumber()
-  @Min(0)
-  stock: number;
+  @IsBoolean()
+  isRequired: boolean;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ModifierOptionDto)
+  options: ModifierOptionDto[];
 }
 
 export class CreateMenuItemDto {
@@ -34,50 +35,34 @@ export class CreateMenuItemDto {
   description?: string;
 
   @IsOptional()
+  @IsString()
+  category?: string;
+
+  @IsOptional()
   @IsMongoId()
   categoryId?: string;
 
-  @IsOptional()
-  @IsBoolean()
-  trackStock?: boolean;
-
-  @IsOptional()
   @IsNumber()
   @Min(0)
-  inStock?: number;
-
-  @IsNumber()
-  @Min(0)
-  costPrice: number;
-
-  @IsNumber()
-  @Min(0)
-  price: number;
+  pricePerPortion: number;
 
   @IsOptional()
   @IsString()
-  sku?: string;
+  portionUnit?: string;
+
+  @IsOptional()
+  @IsString()
+  image?: string;
 
   @IsOptional()
   @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => VariationDto)
-  variations?: VariationDto[];
+  @IsString({ each: true })
+  images?: string[];
 
   @IsOptional()
   @IsArray()
-  @IsMongoId({ each: true })
-  modifierIds?: string[];
-
-  @IsOptional()
-  @IsArray()
-  @IsMongoId({ each: true })
-  addOnIds?: string[];
-
-  @IsOptional()
-  @IsArray()
-  @IsMongoId({ each: true })
-  packIds?: string[];
+  @IsString({ each: true })
+  videos?: string[];
 
   @IsOptional()
   @IsArray()
@@ -87,27 +72,33 @@ export class CreateMenuItemDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
-  maxQuantity?: number;
+  prepTimeMinutes?: number;
 
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  maxQuantityAsSide?: number;
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ModifierDto)
+  modifiers?: ModifierDto[];
 
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  volumePerPortion?: number;
-
-  @IsOptional()
-  @IsIn(['kg', 'g', 'l', 'ml'])
-  volumeUnit?: string;
-
-  @IsOptional()
-  @IsString()
-  imageUrl?: string;
+  @IsArray()
+  @IsMongoId({ each: true })
+  addOnGroupIds?: string[];
 
   @IsOptional()
   @IsBoolean()
-  publishItem?: boolean;
+  isAvailable?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  maxPortionsPerOrder?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  trackStock?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  stockQuantity?: number;
 }

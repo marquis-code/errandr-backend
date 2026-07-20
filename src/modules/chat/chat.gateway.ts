@@ -95,6 +95,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       messageType?: string;
       roomType?: string;
       attachment?: string;
+      replyTo?: string;
     },
   ) {
     const messageContent = data.content || data.message || '';
@@ -107,6 +108,57 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const roomType = data.roomType || (orderId ? 'order' : (appointmentId ? 'direct' : 'support'));
     
     try {
+      // Generate a temporary ID for immediate emit
+      const tempId = new Date().getTime().toString() + Math.random().toString(36).substr(2, 9);
+      
+      // Determine target room FIRST (no DB needed)
+      let targetRoom = `support:${data.senderId}`;
+      if (roomType === 'order') targetRoom = `order:${orderId}`;
+      if (roomType === 'direct') {
+        targetRoom = appointmentId ? `appointment:${appointmentId}` : `direct:${data.roomId || `${Math.min(data.senderId as any, data.receiverId as any)}_${Math.max(data.senderId as any, data.receiverId as any)}`}`;
+      }
+
+      // Build optimistic message for IMMEDIATE emit (no DB round-trip)
+      const optimisticMessage = {
+        _id: tempId,
+        orderId: orderId || '',
+        appointmentId: appointmentId || '',
+        senderId: data.senderId,
+        receiverId: data.receiverId || '',
+        message: messageContent,
+        content: messageContent,
+        messageType: data.messageType || 'text',
+        roomType,
+        attachment: data.attachment,
+        sender: { _id: data.senderId }, // minimal sender info
+        receiver: data.receiverId ? { _id: data.receiverId } : undefined,
+        order: orderId,
+        appointment: appointmentId,
+        createdAt: new Date().toISOString(),
+        senderType: 'customer',
+      };
+
+      // *** EMIT IMMEDIATELY - zero-latency broadcast ***
+      if (roomType === 'support') {
+        this.server.to('admin:support').emit('chat:new-message', optimisticMessage);
+        this.server.to(`support:${data.senderId}`).emit('chat:new-message', optimisticMessage);
+      } else {
+        this.server.to(targetRoom).emit('chat:new-message', optimisticMessage);
+        this.server.to(targetRoom).emit('newMessage', optimisticMessage);
+      }
+
+      // Also emit directly to receiverId's socket if connected
+      if (data.receiverId) {
+        const receiverSocketId = this.connectedUsers.get(data.receiverId);
+        if (receiverSocketId) {
+          this.server.to(receiverSocketId).emit('newMessage', optimisticMessage);
+          this.server.to(receiverSocketId).emit('newMessageNotification', optimisticMessage);
+        }
+      }
+
+      console.log(`[ChatGateway] INSTANT broadcast tempId=${tempId} from ${data.senderId} to room ${targetRoom}`);
+
+      // NOW save to DB (this can take time with remote MongoDB, but the UI already updated)
       const savedMessage = await this.chatService.createMessage({ 
         ...data, 
         message: messageContent,
@@ -119,11 +171,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         { path: 'sender', select: 'firstName lastName avatar role' },
       ]);
 
-      // Format for frontend (which expects 'content')
       const msgObj = populated.toObject();
-      const formattedMessage = {
+      const confirmedMessage = {
         ...msgObj,
-        // Explicitly include flat IDs for frontend compatibility
+        _id: savedMessage._id,
+        tempId, // so frontend can replace the optimistic message
         orderId: orderId || String(msgObj.order || ''),
         appointmentId: appointmentId || String(msgObj.appointment || ''),
         senderId: data.senderId || String(msgObj.sender?._id || msgObj.sender || ''),
@@ -133,101 +185,88 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         senderType: populated.sender?.['role'] === 'admin' ? 'support' : 'customer'
       };
 
-    // Determine target room
-    let targetRoom = `support:${data.senderId}`;
-    if (roomType === 'order') targetRoom = `order:${orderId}`;
-    if (roomType === 'direct') {
-      targetRoom = appointmentId ? `appointment:${appointmentId}` : `direct:${data.roomId || `${Math.min(data.senderId as any, data.receiverId as any)}_${Math.max(data.senderId as any, data.receiverId as any)}`}`;
-    }
-
-    // Emit to rooms
-    if (roomType === 'support') {
-      this.server.to('admin:support').emit('chat:new-message', formattedMessage);
-      this.server.to(`support:${data.senderId}`).emit('chat:new-message', formattedMessage);
-      
-      // TRIGGER BOT logic
-      const botResponse = await this.chatService.getBotResponse(messageContent);
-      if (botResponse && (!data.receiverId || data.receiverId === 'SYSTEM')) {
-        setTimeout(async () => {
-          const botMsg = await this.chatService.createMessage({
-            senderId: 'SYSTEM_BOT',
-            receiverId: data.senderId,
-            message: botResponse,
-            roomType: 'support'
-          });
-          const botPopulated = await botMsg.populate([
-            { path: 'sender', select: 'firstName lastName avatar role' },
-          ]);
-          const formattedBot = {
-            ...botPopulated.toObject(),
-            content: botResponse,
-            senderType: 'bot',
-            senderName: 'Erranders Bot'
-          };
-          this.server.to(`support:${data.senderId}`).emit('chat:new-message', formattedBot);
-        }, 1000);
+      // Emit the confirmed message with real _id so frontends can upgrade the temp message
+      if (roomType !== 'support') {
+        this.server.to(targetRoom).emit('messageConfirmed', confirmedMessage);
       }
-    } else {
-      this.server.to(targetRoom).emit('chat:new-message', formattedMessage);
-      this.server.to(targetRoom).emit('newMessage', formattedMessage); // compatibility
-    }
 
-    // Emit newMessageNotification to all connected order participants (not just receiverId)
-    // This ensures the vendor, customer, and errander all get real-time notifications
-    const notifyTargets: string[] = [];
-    if (data.receiverId) notifyTargets.push(data.receiverId);
-    
-    // Also look up all order participants to notify
-    if (orderId) {
+      // Bot logic for support (fire-and-forget)
+      if (roomType === 'support') {
+        this.chatService.getBotResponse(messageContent).then(async (botResponse) => {
+          if (botResponse && (!data.receiverId || data.receiverId === 'SYSTEM')) {
+            setTimeout(async () => {
+              const botMsg = await this.chatService.createMessage({
+                senderId: 'SYSTEM_BOT',
+                receiverId: data.senderId,
+                message: botResponse,
+                roomType: 'support'
+              });
+              const botPopulated = await botMsg.populate([
+                { path: 'sender', select: 'firstName lastName avatar role' },
+              ]);
+              const formattedBot = {
+                ...botPopulated.toObject(),
+                content: botResponse,
+                senderType: 'bot',
+                senderName: 'Erranders Bot'
+              };
+              this.server.to(`support:${data.senderId}`).emit('chat:new-message', formattedBot);
+            }, 1000);
+          }
+        }).catch(err => console.error('Bot response error:', err));
+      }
+
+    // Fire-and-forget: look up all order/appointment participants for notifications
+    // This runs in background and does NOT block the return
+    (async () => {
       try {
-        const order = await this.chatService.getOrderParticipants(orderId);
-        if (order) {
-          const participants = [
-            order.customer?._id?.toString() || order.customer?.toString(),
-            order.vendor?.owner?.toString() || order.vendor?._id?.toString() || order.vendor?.toString(),
-            order.errander?._id?.toString() || order.errander?.toString(),
-          ].filter(Boolean);
-          for (const p of participants) {
-            if (p && p !== data.senderId && !notifyTargets.includes(p)) {
-              notifyTargets.push(p);
+        const notifyTargets: string[] = [];
+        if (data.receiverId) notifyTargets.push(data.receiverId);
+        
+        if (orderId) {
+          const order = await this.chatService.getOrderParticipants(orderId);
+          if (order) {
+            const participants = [
+              order.customer?._id?.toString() || order.customer?.toString(),
+              order.vendor?.owner?.toString() || order.vendor?._id?.toString() || order.vendor?.toString(),
+              order.errander?._id?.toString() || order.errander?.toString(),
+            ].filter(Boolean);
+            for (const p of participants) {
+              if (p && p !== data.senderId && !notifyTargets.includes(p)) {
+                notifyTargets.push(p);
+              }
             }
           }
         }
-      } catch (e) {
-        console.error('Failed to get order participants for notification', e);
-      }
-    }
-    
-    if (appointmentId) {
-      try {
-        const appointment = await this.chatService.getAppointmentParticipants(appointmentId);
-        if (appointment) {
-          const participants = [
-            appointment.user?._id?.toString() || appointment.user?.toString(),
-            appointment.vendor?.owner?.toString() || appointment.vendor?._id?.toString() || appointment.vendor?.toString(),
-          ].filter(Boolean);
-          for (const p of participants) {
-            if (p && p !== data.senderId && !notifyTargets.includes(p)) {
-              notifyTargets.push(p);
+        
+        if (appointmentId) {
+          const appointment = await this.chatService.getAppointmentParticipants(appointmentId);
+          if (appointment) {
+            const participants = [
+              appointment.user?._id?.toString() || appointment.user?.toString(),
+              appointment.vendor?.owner?.toString() || appointment.vendor?._id?.toString() || appointment.vendor?.toString(),
+            ].filter(Boolean);
+            for (const p of participants) {
+              if (p && p !== data.senderId && !notifyTargets.includes(p)) {
+                notifyTargets.push(p);
+              }
             }
           }
         }
+
+        // Emit notification to each connected participant
+        for (const targetId of notifyTargets) {
+          const socketId = this.connectedUsers.get(targetId);
+          if (socketId) {
+            this.server.to(socketId).emit('newMessageNotification', confirmedMessage);
+          }
+        }
       } catch (e) {
-        console.error('Failed to get appointment participants for notification', e);
+        console.error('Background participant notification error:', e);
       }
-    }
+    })();
 
-    // Also emit a global notification to the specific receiver if they are connected
-    for (const targetId of notifyTargets) {
-      const socketId = this.connectedUsers.get(targetId);
-      if (socketId) {
-        this.server.to(socketId).emit('newMessageNotification', formattedMessage);
-      }
-    }
-
-    console.log(`[ChatGateway] Broadcasted message ${formattedMessage._id} from ${data.senderId} to room ${targetRoom}. notifyTargets:`, notifyTargets);
-
-    return { success: true, message: formattedMessage };
+    return { success: true, message: confirmedMessage };
     } catch (error) {
       console.error('Failed to handle chat message:', error);
       return { success: false, error: error.message || 'Internal server error' };

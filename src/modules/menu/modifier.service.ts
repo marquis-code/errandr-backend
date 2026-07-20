@@ -16,7 +16,7 @@ export class ModifierService {
   private async resolveVendor(ownerId: string): Promise<Vendor> {
     const vendor = await this.vendorModel.findOne({ owner: new Types.ObjectId(ownerId) });
     if (!vendor) throw new NotFoundException('Vendor not found');
-    if (!isFoodVendor(vendor.category)) {
+    if (!isFoodVendor(vendor)) {
       throw new ForbiddenException('Menu features are only available for food vendors');
     }
     return vendor;

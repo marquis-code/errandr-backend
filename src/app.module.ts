@@ -36,6 +36,7 @@ import { SearchModule } from './modules/search/search.module';
 import { ReviewsModule } from './modules/reviews/reviews.module';
 import { MapboxModule } from './modules/mapbox/mapbox.module';
 import { GlobalProductsModule } from './modules/global-products/global-products.module';
+import { PushCampaignsModule } from './modules/push-campaigns/push-campaigns.module';
 
 @Module({
   imports: [
@@ -103,6 +104,7 @@ import { GlobalProductsModule } from './modules/global-products/global-products.
     SearchModule,
     ReviewsModule,
     GlobalProductsModule,
+    PushCampaignsModule,
   ],
 })
 export class AppModule {}

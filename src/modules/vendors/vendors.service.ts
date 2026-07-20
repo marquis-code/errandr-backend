@@ -11,6 +11,7 @@ import { Product } from '../products/schemas/product.schema';
 import { Service } from '../services/schemas/service.schema';
 import { WebPushService } from './web-push.service';
 import { MenuItem } from '../menu/schemas/menu-item.schema';
+import { augmentVendor, checkIsOpen } from '../../utils/vendor-helpers';
 
 @Injectable()
 export class VendorsService {
@@ -28,46 +29,15 @@ export class VendorsService {
     private webPushService: WebPushService,
   ) {}
 
-  private checkIsOpen(vendor: Vendor): { isOpen: boolean; message: string } {
-    if (!vendor.isOnline) return { isOpen: false, message: 'Closed (Manual)' };
-
-    const now = new Date();
-    // Use West Africa Time (WAT) or whatever the local time is. For simplicity, let's use the current server time for now.
-    // In a real app, you'd handle timezone offsets.
-    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-    const currentDay = dayNames[now.getDay()];
-    const currentTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
-
-    const dayConfig = (vendor as any).businessHours?.find((bh: any) => bh.day === currentDay);
-    
-    if (!dayConfig || dayConfig.isClosed) {
-      return { isOpen: false, message: 'Closed for the day' };
-    }
-
-    if (currentTime < dayConfig.open || currentTime > dayConfig.close) {
-      return { isOpen: false, message: `Closed (Opens at ${dayConfig.open})` };
-    }
-
-    // Check Break Period
-    if (vendor.breakPeriod?.enabled) {
-      if (currentTime >= vendor.breakPeriod.start && currentTime <= vendor.breakPeriod.end) {
-        return { isOpen: false, message: `Currently on break (Until ${vendor.breakPeriod.end})` };
-      }
-    }
-
-    return { isOpen: true, message: 'Open Now' };
+  public augmentVendor(vendor: any) {
+    return augmentVendor(vendor);
   }
 
-  private augmentVendor(vendor: any) {
-    if (!vendor) return null;
-    const { isOpen, message } = this.checkIsOpen(vendor);
-    const vendorObj = vendor.toObject ? vendor.toObject() : vendor;
-    return {
-      ...vendorObj,
-      isOpen,
-      statusMessage: message,
-    };
+  public checkIsOpen(vendor: any) {
+    return checkIsOpen(vendor);
   }
+
+
 
   async create(ownerId: string, data: Partial<Vendor>): Promise<Vendor> {
     const vendor = await this.vendorModel.create({
@@ -128,12 +98,12 @@ export class VendorsService {
           { name: { $regex: search, $options: 'i' } },
           { description: { $regex: search, $options: 'i' } },
         ]
-      }).select('vendor').lean();
+      }).select('vendorId').lean();
 
       const vendorIdsFromItems = [
         ...matchingProducts.map(p => p.vendor),
         ...matchingServices.map(s => s.vendor),
-        ...matchingMenuItems.map(m => m.vendor)
+        ...matchingMenuItems.map(m => m.vendorId)
       ];
 
       filter.$or = [

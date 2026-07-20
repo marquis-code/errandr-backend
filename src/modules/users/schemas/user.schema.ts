@@ -65,6 +65,15 @@ export class User extends Document {
   @Prop()
   deliveryAddress: string;
 
+  @Prop()
+  homeAddress: string;
+
+  @Prop()
+  workAddress: string;
+
+  @Prop()
+  gender: string;
+
   @Prop({ default: true })
   isActive: boolean;
 
@@ -141,6 +150,28 @@ export class User extends Document {
     default: [],
   })
   recentlyViewed: { vendor: Types.ObjectId | any; viewedAt: Date }[];
+
+  @Prop()
+  deletionReason: string;
+
+  @Prop()
+  deletedAt: Date;
+
+  @Prop({
+    type: Object,
+    default: {
+      emailNotifications: true,
+      pushNotifications: true,
+      smsNotifications: false,
+      marketingPromos: false,
+    },
+  })
+  preferences: {
+    emailNotifications: boolean;
+    pushNotifications: boolean;
+    smsNotifications: boolean;
+    marketingPromos: boolean;
+  };
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

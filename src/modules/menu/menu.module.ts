@@ -4,7 +4,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 // Schemas
 import { MenuCategory, MenuCategorySchema } from './schemas/menu-category.schema';
 import { Modifier, ModifierSchema } from './schemas/modifier.schema';
-import { AddOn, AddOnSchema } from './schemas/add-on.schema';
+import { AddOnGroup, AddOnGroupSchema } from './schemas/add-on.schema';
 import { MenuPack, MenuPackSchema } from './schemas/menu-pack.schema';
 import { MenuItem, MenuItemSchema } from './schemas/menu-item.schema';
 import { ItemRestockRequest, ItemRestockRequestSchema } from './schemas/item-restock-request.schema';
@@ -15,6 +15,7 @@ import { ModifierService } from './modifier.service';
 import { AddOnService } from './add-on.service';
 import { MenuPackService } from './menu-pack.service';
 import { MenuItemService } from './menu-item.service';
+import { CartCalculationService } from './cart-calculation.service';
 
 // Controllers
 import { MenuCategoryController } from './menu-category.controller';
@@ -32,7 +33,7 @@ import { GlobalProductsModule } from '../global-products/global-products.module'
     MongooseModule.forFeature([
       { name: MenuCategory.name, schema: MenuCategorySchema },
       { name: Modifier.name, schema: ModifierSchema },
-      { name: AddOn.name, schema: AddOnSchema },
+      { name: AddOnGroup.name, schema: AddOnGroupSchema },
       { name: MenuPack.name, schema: MenuPackSchema },
       { name: MenuItem.name, schema: MenuItemSchema },
       { name: ItemRestockRequest.name, schema: ItemRestockRequestSchema },
@@ -53,6 +54,7 @@ import { GlobalProductsModule } from '../global-products/global-products.module'
     AddOnService,
     MenuPackService,
     MenuItemService,
+    CartCalculationService,
   ],
   exports: [
     MenuItemService,
@@ -60,6 +62,7 @@ import { GlobalProductsModule } from '../global-products/global-products.module'
     ModifierService,
     AddOnService,
     MenuPackService,
+    CartCalculationService,
   ],
 })
 export class MenuModule {}

@@ -9,6 +9,10 @@ export class CreateMenuCategoryDto {
   image?: string;
 
   @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
   @IsNumber()
   @Min(0)
   sortOrder?: number;

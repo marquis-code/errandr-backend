@@ -1,39 +1,32 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
 
-@Schema({ _id: false })
+/**
+ * A single choice inside a Modifier group.
+ * e.g. "Extra Hot" -> +₦0, or "Large" -> +₦300
+ */
+@Schema({ _id: true })
 export class ModifierOption {
-  @Prop({ required: true })
+  @Prop({ required: true, trim: true })
   name: string;
 
-  @Prop({ required: true, min: 0 })
-  price: number;
+  @Prop({ default: 0, min: 0 })
+  priceDelta: number; // usually 0, but supports upcharges e.g. Large swallow size
 }
 export const ModifierOptionSchema = SchemaFactory.createForClass(ModifierOption);
 
-@Schema({ timestamps: true })
-export class Modifier extends Document {
-  @Prop({ type: Types.ObjectId, ref: 'Vendor', required: true })
-  vendor: Types.ObjectId;
+/**
+ * Item-level variant selector. Usually REQUIRED and single-select
+ * (spice level, swallow size) — distinct from AddOnGroup which is optional extras.
+ */
+@Schema({ _id: true })
+export class Modifier {
+  @Prop({ required: true, trim: true })
+  name: string; // e.g. "Spice Level", "Swallow Size"
 
   @Prop({ required: true })
-  name: string;
+  isRequired: boolean;
 
-  @Prop()
-  optionGroup: string;
-
-  @Prop({ type: [ModifierOptionSchema], required: true })
-  items: ModifierOption[];
-
-  @Prop({ min: 0, default: 0 })
-  minSelection: number;
-
-  @Prop({ required: true, min: 1, default: 1 })
-  maxSelection: number;
-
-  @Prop({ default: false })
-  publishNow: boolean;
+  @Prop({ type: [ModifierOptionSchema], default: [] })
+  options: ModifierOption[];
 }
-
 export const ModifierSchema = SchemaFactory.createForClass(Modifier);
-ModifierSchema.index({ vendor: 1 });

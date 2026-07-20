@@ -170,8 +170,8 @@ export class Vendor extends Document {
     type: [
       {
         day: { type: String }, // 'monday', 'tuesday', etc.
-        open: { type: String, default: '08:00' },
-        close: { type: String, default: '21:00' },
+        open: { type: String, default: '00:00' },
+        close: { type: String, default: '23:59' },
         isClosed: { type: Boolean, default: false },
       },
     ],

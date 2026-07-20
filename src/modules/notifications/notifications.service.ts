@@ -5,7 +5,8 @@ import * as admin from 'firebase-admin';
 import { ConfigService } from '@nestjs/config';
 import { RedisService } from '../redis/redis.service';
 import { Order, OrderStatus } from '../orders/schemas/order.schema';
-
+import { User } from '../users/schemas/user.schema';
+import { Vendor } from '../vendors/schemas/vendor.schema';
 export interface NotificationPayload {
   title: string;
   body: string;
@@ -21,6 +22,8 @@ export class NotificationsService {
     private redisService: RedisService,
     private configService: ConfigService,
     @InjectModel(Order.name) private orderModel: Model<Order>,
+    @InjectModel(User.name) private userModel: Model<User>,
+    @InjectModel(Vendor.name) private vendorModel: Model<Vendor>,
   ) {}
 
   /**
@@ -47,6 +50,21 @@ export class NotificationsService {
     // Publish for real-time delivery
     await this.redisService.publish(`notification:${userId}`, enriched);
     this.logger.log(`Notification sent to ${userId}: ${notification.type}`);
+
+    // Try to resolve FCM token to send push notification
+    try {
+      const user = await this.userModel.findById(userId).select('fcmToken');
+      if (user && user.fcmToken) {
+        await this.sendPushNotification(user.fcmToken, enriched);
+        return;
+      }
+      const vendor = await this.vendorModel.findById(userId).select('fcmToken');
+      if (vendor && vendor.fcmToken) {
+        await this.sendPushNotification(vendor.fcmToken, enriched);
+      }
+    } catch (err) {
+      this.logger.warn(`Failed to resolve FCM token for push notification to ${userId}: ${err.message}`);
+    }
   }
 
   /**
@@ -73,13 +91,27 @@ export class NotificationsService {
   async sendPushNotification(fcmToken: string, payload: any) {
     if (!fcmToken) return;
     try {
+      // FCM requires all data values to be strings
+      const stringifiedData: Record<string, string> = {};
+      if (payload.data) {
+        for (const [key, value] of Object.entries(payload.data)) {
+          if (value !== undefined && value !== null) {
+            stringifiedData[key] = typeof value === 'string' ? value : String(value);
+          }
+        }
+      }
+      // Ensure 'type' is passed to data payload so SW can intercept it
+      if (payload.type && !stringifiedData.type) {
+        stringifiedData.type = payload.type;
+      }
+
       await admin.messaging().send({
         token: fcmToken,
         notification: {
           title: payload.title,
           body: payload.body,
         },
-        data: payload.data || {},
+        data: stringifiedData,
         android: {
           priority: 'high',
           notification: {

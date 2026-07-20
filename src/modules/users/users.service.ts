@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { User } from './schemas/user.schema';
+import { augmentVendor } from '../../utils/vendor-helpers';
 
 @Injectable()
 export class UsersService {
@@ -72,7 +73,7 @@ export class UsersService {
   async getRecentlyViewedVendors(userId: string): Promise<any[]> {
     const user = await this.userModel.findById(userId).populate({
       path: 'recentlyViewed.vendor',
-      select: 'storeName image banner logo rating category businessType isOnline preOrderOnly deliveryFee preparationTime'
+      select: 'storeName image banner logo rating category businessType isOnline preOrderOnly deliveryFee preparationTime businessHours breakPeriod'
     });
     if (!user) return [];
 
@@ -101,6 +102,24 @@ export class UsersService {
       this.userModel.findByIdAndUpdate(userId, { recentlyViewed: validRecentlyViewed }).exec().catch(console.error);
     }
 
-    return vendorsToReturn;
+    return vendorsToReturn.map(v => augmentVendor(v));
+  }
+
+  async deleteAccount(userId: string, reason?: string): Promise<{ success: boolean; message: string }> {
+    const user = await this.userModel.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+
+    user.isActive = false;
+    user.deletedAt = new Date();
+    if (reason) {
+      user.deletionReason = reason;
+    }
+
+    await user.save();
+
+    return {
+      success: true,
+      message: 'Account successfully deleted.'
+    };
   }
 }

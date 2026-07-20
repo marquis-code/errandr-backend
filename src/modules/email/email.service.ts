@@ -15,7 +15,7 @@ export class EmailService {
   private resend: Resend | null;
   private fromEmail = 'Erranders <notifications@erranders.org>';
   private primaryColor = '#FF5C1A';
-  private logoUrl = 'https://res.cloudinary.com/marquis/image/upload/v1780940566/logo-light_pyjwmn.png';
+  private logoUrl = 'https://res.cloudinary.com/marquis/image/upload/v1784062203/logo-light_pyjwmn-removebg-preview_y3jvvg.png';
 
   constructor(private configService: ConfigService) {
     let apiKey = this.configService.get<string>('RESEND_API_KEY');
@@ -34,6 +34,12 @@ export class EmailService {
     console.log(`\x1b[35m[EMAIL_AGENT]\x1b[0m 🚀 Triggering email to: \x1b[36m${to}\x1b[0m`);
     console.log(`\x1b[35m[EMAIL_AGENT]\x1b[0m 📎 Subject: \x1b[33m${subject}\x1b[0m`);
 
+    const enableEmails = this.configService.get<string>('ENABLE_EMAILS');
+    if (enableEmails === 'false') {
+      console.warn(`\x1b[33m[EMAIL_AGENT] 🛑 ENABLE_EMAILS is set to false. Skipping real delivery.\x1b[0m`);
+      return { message: 'Emails disabled via .env' };
+    }
+
     if (!this.resend) {
       console.warn(`\x1b[31m[EMAIL_AGENT] ❌ RESEND_API_KEY is missing! Skipping real delivery, but trigger was SUCCESSFUL.\x1b[0m`);
       return { message: 'Development mode: Email logged to console' };
@@ -42,7 +48,7 @@ export class EmailService {
     try {
       if (!to || !to.includes('@')) {
         console.error(`\x1b[31m[EMAIL_AGENT] ❌ Invalid recipient address: ${to}\x1b[0m`);
-        return;
+        return { error: 'Invalid recipient address' };
       }
 
       const { data, error } = await this.resend.emails.send({
@@ -54,14 +60,16 @@ export class EmailService {
 
       if (error) {
         console.error(`\x1b[31m[EMAIL_AGENT] ❌ Delivery Error: ${error.message}\x1b[0m`);
-        throw new InternalServerErrorException(error.message);
+        // Gracefully handle quota errors without crashing the server
+        return { success: false, error: error.message };
       }
 
       console.log(`\x1b[32m[EMAIL_AGENT] ✅ Email delivered successfully! ID: ${data?.id}\x1b[0m`);
       return data;
     } catch (err: any) {
       console.error(`\x1b[31m[EMAIL_AGENT] ❌ Fatal Error: ${err.message}\x1b[0m`);
-      throw new InternalServerErrorException(err.message || 'Email delivery failed');
+      // Return gracefully instead of throwing InternalServerErrorException
+      return { success: false, error: err.message };
     }
   }
 
@@ -73,7 +81,7 @@ export class EmailService {
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
         body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f4f4f5; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
         .wrapper { width: 100%; padding: 40px 0; background-color: #f4f4f5; }
-        .header-logo { text-align: center; margin-bottom: 24px; }
+        .header-logo { text-align: center; margin-bottom: 24px; margin-top: 24px; }
         .header-logo img { height: 40px; }
         .container { max-width: 520px; width: 100%; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
         
@@ -417,7 +425,7 @@ export class EmailService {
     const html = this.wrap({
       preheader: `Order #${order.orderNumber} confirmed!`,
       badge: { text: 'ORDER CONFIRMED', color: 'orange' },
-      title: 'Your order is being prepped!',
+      title: 'Your order is being prepared!',
       subtitle: `Order <b>#${order.orderNumber}</b> is confirmed and the vendor is preparing it now.`,
       content: `
         <div class="card" style="text-align: left;">
