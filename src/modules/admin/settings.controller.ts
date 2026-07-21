@@ -85,4 +85,65 @@ export class SettingsController {
     await setting.save();
     return setting.value;
   }
+
+  @Get('advert/public')
+  @ApiOperation({ summary: 'Get global advert settings for frontend' })
+  async getAdvertSettingsPublic() {
+    let setting = await this.settingModel.findOne({ key: 'advert' }).exec();
+    if (!setting) {
+      setting = await this.settingModel.create({
+        key: 'advert',
+        value: {
+          enabled: true,
+          intervalMinutes: 15,
+          autoCloseSeconds: 0,
+          contentType: 'dynamic',
+          customAd: {
+            title: '',
+            description: '',
+            imageUrl: '',
+            ctaText: '',
+            ctaLink: '',
+          }
+        },
+      });
+    }
+    return setting.value;
+  }
+
+  @Get('advert')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get global advert settings' })
+  async getAdvertSettings() {
+    return this.getAdvertSettingsPublic();
+  }
+
+  @Put('advert')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update global advert settings (admin only)' })
+  async updateAdvertSettings(@Body() body: any) {
+    let setting = await this.settingModel.findOne({ key: 'advert' }).exec();
+    if (!setting) {
+      setting = new this.settingModel({ key: 'advert' });
+    }
+    setting.value = {
+      enabled: body.enabled ?? true,
+      intervalMinutes: Number(body.intervalMinutes ?? 15),
+      autoCloseSeconds: Number(body.autoCloseSeconds ?? 0),
+      contentType: body.contentType || 'dynamic',
+      customAd: body.customAd || {
+        title: '',
+        description: '',
+        imageUrl: '',
+        ctaText: '',
+        ctaLink: '',
+      }
+    };
+    setting.markModified('value');
+    await setting.save();
+    return setting.value;
+  }
 }
