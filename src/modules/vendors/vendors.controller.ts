@@ -130,6 +130,15 @@ export class VendorsController {
     }
   }
 
+  @Post('batch')
+  @ApiOperation({ summary: 'Get multiple vendors by IDs' })
+  findByIds(@Body() body: { ids: string[] }) {
+    if (!body.ids || !Array.isArray(body.ids)) {
+      throw new BadRequestException('ids must be an array of strings');
+    }
+    return this.vendorsService.findByIds(body.ids);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get vendor by ID' })
   findById(@Param('id') id: string) {

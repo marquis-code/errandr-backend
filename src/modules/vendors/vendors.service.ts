@@ -159,6 +159,17 @@ export class VendorsService {
     return this.augmentVendor(vendor) as any;
   }
 
+  async findByIds(ids: string[]): Promise<Vendor[]> {
+    const validIds = ids.filter(id => Types.ObjectId.isValid(id));
+    if (validIds.length === 0) return [];
+    
+    const vendors = await this.vendorModel
+      .find({ _id: { $in: validIds.map(id => new Types.ObjectId(id)) } })
+      .populate('owner', 'firstName lastName avatar phone');
+      
+    return vendors.map(v => this.augmentVendor(v)) as any;
+  }
+
   async toggleVendorOnlineStatus(vendorId: string, isOnline: boolean) {
     const vendor = await this.vendorModel.findByIdAndUpdate(vendorId, { isOnline }, { new: true });
     // Clear cache
