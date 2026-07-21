@@ -249,6 +249,13 @@ export class Vendor extends Document {
   @Prop({ default: false })
   isStudentBusiness: boolean;
 
+  // UI Capability Flags (Chowdeck Model vs Retail)
+  @Prop({ default: false })
+  requiresPrepTime: boolean;
+
+  @Prop({ default: false })
+  requiresTakeawayPack: boolean;
+
   @Prop()
   matricNumber: string;
 

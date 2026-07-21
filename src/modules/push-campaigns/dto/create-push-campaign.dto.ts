@@ -28,4 +28,12 @@ export class CreatePushCampaignDto {
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  sendPush?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  sendEmail?: boolean;
 }

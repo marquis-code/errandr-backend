@@ -26,6 +26,12 @@ export class PushCampaign {
   @Prop({ required: true, default: true })
   isActive: boolean;
 
+  @Prop({ required: true, default: true })
+  sendPush: boolean;
+
+  @Prop({ required: true, default: false })
+  sendEmail: boolean;
+
   @Prop({ required: false })
   lastSentAt?: Date;
 }

@@ -26,28 +26,28 @@ export class MenuCategoryService {
     const vendor = await this.resolveVendor(ownerId);
     return this.categoryModel.create({
       ...dto,
-      vendor: vendor._id,
+      vendorId: vendor._id,
     });
   }
 
   async findByOwner(ownerId: string): Promise<MenuCategory[]> {
     const vendor = await this.resolveVendor(ownerId);
     return this.categoryModel
-      .find({ vendor: vendor._id })
+      .find({ vendorId: vendor._id })
       .sort({ sortOrder: 1, name: 1 });
   }
 
   async findByVendor(vendorId: string): Promise<MenuCategory[]> {
     if (!Types.ObjectId.isValid(vendorId)) return [];
     return this.categoryModel
-      .find({ vendor: new Types.ObjectId(vendorId), isActive: true })
+      .find({ vendorId: new Types.ObjectId(vendorId), isActive: true })
       .sort({ sortOrder: 1, name: 1 });
   }
 
   async update(id: string, ownerId: string, dto: Partial<CreateMenuCategoryDto>): Promise<MenuCategory> {
     const vendor = await this.resolveVendor(ownerId);
     const category = await this.categoryModel.findOneAndUpdate(
-      { _id: id, vendor: vendor._id },
+      { _id: id, vendorId: vendor._id },
       dto,
       { new: true },
     );
@@ -57,7 +57,7 @@ export class MenuCategoryService {
 
   async delete(id: string, ownerId: string): Promise<void> {
     const vendor = await this.resolveVendor(ownerId);
-    const result = await this.categoryModel.findOneAndDelete({ _id: id, vendor: vendor._id });
+    const result = await this.categoryModel.findOneAndDelete({ _id: id, vendorId: vendor._id });
     if (!result) throw new NotFoundException('Category not found');
   }
 }

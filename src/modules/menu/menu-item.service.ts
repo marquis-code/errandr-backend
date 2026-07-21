@@ -31,7 +31,7 @@ export class MenuItemService {
     const vendor = await this.resolveVendor(ownerId);
     const data: any = {
       ...dto,
-      vendor: vendor._id,
+      vendorId: vendor._id,
     };
     // Safely extract ObjectId from populated objects or raw strings
     const toObjectId = (val: any): Types.ObjectId | null => {

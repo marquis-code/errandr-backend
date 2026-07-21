@@ -5,12 +5,14 @@ import { PushCampaignsController } from './push-campaigns.controller';
 import { PushCampaign, PushCampaignSchema } from './schemas/push-campaign.schema';
 import { UsersModule } from '../users/users.module';
 import { VendorsModule } from '../vendors/vendors.module';
+import { EmailModule } from '../email/email.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: PushCampaign.name, schema: PushCampaignSchema }]),
     UsersModule,
     VendorsModule,
+    EmailModule,
   ],
   controllers: [PushCampaignsController],
   providers: [PushCampaignsService],

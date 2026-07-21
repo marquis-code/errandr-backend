@@ -6,6 +6,7 @@ import { CreatePushCampaignDto } from './dto/create-push-campaign.dto';
 import { UpdatePushCampaignDto } from './dto/update-push-campaign.dto';
 import { PushCampaign, PushCampaignDocument } from './schemas/push-campaign.schema';
 import { NotificationsService } from '../notifications/notifications.service';
+import { EmailService } from '../email/email.service';
 
 @Injectable()
 export class PushCampaignsService implements OnModuleInit {
@@ -16,6 +17,7 @@ export class PushCampaignsService implements OnModuleInit {
     @InjectModel('User') private userModel: Model<any>,
     @InjectModel('Vendor') private vendorModel: Model<any>,
     private notificationsService: NotificationsService,
+    private emailService: EmailService,
   ) {}
 
   async onModuleInit() {
@@ -34,6 +36,8 @@ export class PushCampaignsService implements OnModuleInit {
           intervalValue: 6,
           intervalUnit: 'hours',
           isActive: true,
+          sendPush: true,
+          sendEmail: true,
         },
         {
           title: 'Unending Workload? 📚',
@@ -42,6 +46,8 @@ export class PushCampaignsService implements OnModuleInit {
           intervalValue: 8,
           intervalUnit: 'hours',
           isActive: true,
+          sendPush: true,
+          sendEmail: true,
         }
       ]);
     }
@@ -110,16 +116,26 @@ export class PushCampaignsService implements OnModuleInit {
       };
 
       if (campaign.targetAudience === 'student' || campaign.targetAudience === 'all') {
-        const users = await this.userModel.find({ fcmToken: { $exists: true, $ne: null } }).select('fcmToken');
+        const users = await this.userModel.find({ $or: [{ fcmToken: { $ne: null } }, { email: { $ne: null } }] }).select('fcmToken email');
         for (const u of users) {
-          if (u.fcmToken) await this.notificationsService.sendPushNotification(u.fcmToken, payload).catch(() => {});
+          if (campaign.sendPush && u.fcmToken) {
+            await this.notificationsService.sendPushNotification(u.fcmToken, payload).catch(() => {});
+          }
+          if (campaign.sendEmail && u.email) {
+            await this.emailService.sendEmail(u.email, campaign.title, campaign.body).catch(() => {});
+          }
         }
       }
 
       if (campaign.targetAudience === 'vendor' || campaign.targetAudience === 'all') {
-        const vendors = await this.vendorModel.find({ fcmToken: { $exists: true, $ne: null } }).select('fcmToken');
+        const vendors = await this.vendorModel.find({ $or: [{ fcmToken: { $ne: null } }, { email: { $ne: null } }] }).select('fcmToken email');
         for (const v of vendors) {
-          if (v.fcmToken) await this.notificationsService.sendPushNotification(v.fcmToken, payload).catch(() => {});
+          if (campaign.sendPush && v.fcmToken) {
+            await this.notificationsService.sendPushNotification(v.fcmToken, payload).catch(() => {});
+          }
+          if (campaign.sendEmail && v.email) {
+            await this.emailService.sendEmail(v.email, campaign.title, campaign.body).catch(() => {});
+          }
         }
       }
 
