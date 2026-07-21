@@ -7,6 +7,7 @@ import { RedisService } from '../redis/redis.service';
 import { Order, OrderStatus } from '../orders/schemas/order.schema';
 import { User } from '../users/schemas/user.schema';
 import { Vendor } from '../vendors/schemas/vendor.schema';
+import { SystemSetting } from '../admin/schemas/system-setting.schema';
 export interface NotificationPayload {
   title: string;
   body: string;
@@ -24,6 +25,7 @@ export class NotificationsService {
     @InjectModel(Order.name) private orderModel: Model<Order>,
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(Vendor.name) private vendorModel: Model<Vendor>,
+    @InjectModel(SystemSetting.name) private readonly settingModel: Model<SystemSetting>,
   ) {}
 
   /**
@@ -90,7 +92,16 @@ export class NotificationsService {
   // ─── FCM Push ────────────────
   async sendPushNotification(fcmToken: string, payload: any) {
     if (!fcmToken) return;
+
     try {
+      const communicationsSetting = await this.settingModel.findOne({ key: 'communications' }).exec();
+      const pushNotificationsEnabled = communicationsSetting?.value?.pushNotificationsEnabled ?? true;
+
+      if (!pushNotificationsEnabled) {
+        this.logger.warn(`Push notifications are globally disabled via admin settings. Skipping push to: ${fcmToken}`);
+        return;
+      }
+
       // FCM requires all data values to be strings
       const stringifiedData: Record<string, string> = {};
       if (payload.data) {

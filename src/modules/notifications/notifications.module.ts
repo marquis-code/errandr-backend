@@ -7,6 +7,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { Order, OrderSchema } from '../orders/schemas/order.schema';
 import { Vendor, VendorSchema } from '../vendors/schemas/vendor.schema';
 import { User, UserSchema } from '../users/schemas/user.schema';
+import { SystemSetting, SystemSettingSchema } from '../admin/schemas/system-setting.schema';
 import { AfricasTalkingModule } from '../africastalking/africastalking.module';
 
 @Global()
@@ -16,6 +17,7 @@ import { AfricasTalkingModule } from '../africastalking/africastalking.module';
       { name: Order.name, schema: OrderSchema },
       { name: Vendor.name, schema: VendorSchema },
       { name: User.name, schema: UserSchema },
+      { name: SystemSetting.name, schema: SystemSettingSchema },
     ]),
     AfricasTalkingModule,
   ],

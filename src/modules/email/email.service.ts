@@ -1,6 +1,9 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
 import { Resend } from 'resend';
+import { SystemSetting } from '../admin/schemas/system-setting.schema';
 
 export interface EmailTemplateOptions {
   preheader?: string;
@@ -17,7 +20,10 @@ export class EmailService {
   private primaryColor = '#FF5C1A';
   private logoUrl = 'https://res.cloudinary.com/marquis/image/upload/v1784062203/logo-light_pyjwmn-removebg-preview_y3jvvg.png';
 
-  constructor(private configService: ConfigService) {
+  constructor(
+    private configService: ConfigService,
+    @InjectModel(SystemSetting.name) private readonly settingModel: Model<SystemSetting>,
+  ) {
     let apiKey = this.configService.get<string>('RESEND_API_KEY');
     if (apiKey) {
       apiKey = apiKey.replace(/['"]+/g, '');
@@ -33,6 +39,14 @@ export class EmailService {
   async sendEmail(to: string, subject: string, html: string) {
     console.log(`\x1b[35m[EMAIL_AGENT]\x1b[0m 🚀 Triggering email to: \x1b[36m${to}\x1b[0m`);
     console.log(`\x1b[35m[EMAIL_AGENT]\x1b[0m 📎 Subject: \x1b[33m${subject}\x1b[0m`);
+
+    const communicationsSetting = await this.settingModel.findOne({ key: 'communications' }).exec();
+    const emailsEnabled = communicationsSetting?.value?.emailsEnabled ?? true;
+
+    if (!emailsEnabled) {
+      console.warn(`\x1b[33m[EMAIL_AGENT] 🛑 Emails are globally disabled via admin settings. Skipping delivery.\x1b[0m`);
+      return { message: 'Emails disabled via admin settings' };
+    }
 
     const enableEmails = this.configService.get<string>('ENABLE_EMAILS');
     if (enableEmails === 'false') {

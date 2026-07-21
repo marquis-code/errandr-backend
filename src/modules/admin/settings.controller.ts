@@ -50,4 +50,39 @@ export class SettingsController {
     await setting.save();
     return setting.value;
   }
+
+  @Get('communications')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get global communications settings' })
+  async getCommunicationsSettings() {
+    let setting = await this.settingModel.findOne({ key: 'communications' }).exec();
+    if (!setting) {
+      setting = await this.settingModel.create({
+        key: 'communications',
+        value: { emailsEnabled: true, pushNotificationsEnabled: true },
+      });
+    }
+    return setting.value;
+  }
+
+  @Put('communications')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update global communications settings (admin only)' })
+  async updateCommunicationsSettings(@Body() body: { emailsEnabled: boolean; pushNotificationsEnabled: boolean }) {
+    let setting = await this.settingModel.findOne({ key: 'communications' }).exec();
+    if (!setting) {
+      setting = new this.settingModel({ key: 'communications' });
+    }
+    setting.value = {
+      emailsEnabled: body.emailsEnabled ?? true,
+      pushNotificationsEnabled: body.pushNotificationsEnabled ?? true,
+    };
+    // Mark modified for mixed type objects in mongoose
+    setting.markModified('value');
+    await setting.save();
+    return setting.value;
+  }
 }
