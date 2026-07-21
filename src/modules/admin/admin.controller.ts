@@ -142,4 +142,22 @@ export class AdminController {
   activateDispatcher(@Param('id') id: string) {
     return this.adminService.activateDispatcher(id);
   }
+
+  @Put('users/:id')
+  @ApiOperation({ summary: 'Update user full details' })
+  updateUser(@Param('id') id: string, @Body() body: any) {
+    return this.adminService.updateUser(id, body);
+  }
+
+  @Put('vendors/:id')
+  @ApiOperation({ summary: 'Update vendor full details' })
+  updateVendor(@Param('id') id: string, @Body() body: any) {
+    return this.adminService.updateVendor(id, body);
+  }
+
+  @Put('dispatchers/:id')
+  @ApiOperation({ summary: 'Update dispatcher full details' })
+  updateDispatcher(@Param('id') id: string, @Body() body: any) {
+    return this.adminService.updateDispatcher(id, body);
+  }
 }

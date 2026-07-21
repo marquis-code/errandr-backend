@@ -244,4 +244,29 @@ export class AdminService {
       { new: true }
     );
   }
+
+  async updateUser(id: string, payload: any) {
+    // If updating role or sensitive fields, maybe we should handle it carefully, but admin has full rights
+    return this.userModel.findByIdAndUpdate(
+      id,
+      { $set: payload },
+      { new: true }
+    );
+  }
+
+  async updateVendor(id: string, payload: any) {
+    return this.vendorModel.findByIdAndUpdate(
+      id,
+      { $set: payload },
+      { new: true }
+    ).populate('owner');
+  }
+
+  async updateDispatcher(id: string, payload: any) {
+    return this.erranderModel.findByIdAndUpdate(
+      id,
+      { $set: payload },
+      { new: true }
+    ).populate('user');
+  }
 }
