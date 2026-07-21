@@ -34,6 +34,12 @@ export class AddOnController {
     }
   }
 
+  @Get('vendor/:vendorId')
+  @ApiOperation({ summary: 'Get add-ons by vendor ID' })
+  getByVendor(@Param('vendorId') vendorId: string) {
+    return this.service.findByVendor(vendorId);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get add-on by ID' })
   findById(@Param('id') id: string) {

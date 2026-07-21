@@ -35,6 +35,11 @@ export class AddOnService {
     return this.addOnModel.find({ vendorId: vendor._id }).sort({ name: 1 });
   }
 
+  async findByVendor(vendorId: string): Promise<AddOn[]> {
+    if (!Types.ObjectId.isValid(vendorId)) return [];
+    return this.addOnModel.find({ vendorId: new Types.ObjectId(vendorId) }).sort({ name: 1 });
+  }
+
   async findById(id: string): Promise<AddOn> {
     const addOn = await this.addOnModel.findById(id);
     if (!addOn) throw new NotFoundException('Add-on not found');
