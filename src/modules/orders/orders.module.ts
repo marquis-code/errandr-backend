@@ -21,6 +21,7 @@ import { BatchDeliveryService } from './batch-delivery.service';
 import { RewardsModule } from '../rewards/rewards.module';
 import { SimulationController } from './simulation.controller';
 import { AfricasTalkingModule } from '../africastalking/africastalking.module';
+import { PromoCodesModule } from '../promo-codes/promo-codes.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { AfricasTalkingModule } from '../africastalking/africastalking.module';
     forwardRef(() => PaymentsModule),
     RewardsModule,
     forwardRef(() => AfricasTalkingModule),
+    PromoCodesModule,
   ],
   controllers: [OrdersController, SimulationController],
   providers: [OrdersService, BatchDeliveryService],

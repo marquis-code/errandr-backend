@@ -16,6 +16,7 @@ import { ChatModule } from './modules/chat/chat.module';
 import { TrackingModule } from './modules/tracking/tracking.module';
 import { UploadModule } from './modules/upload/upload.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { PromoCodesModule } from './modules/promo-codes/promo-codes.module';
 import { RedisModule } from './modules/redis/redis.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { FavoritesModule } from './modules/favorites/favorites.module';
@@ -105,6 +106,7 @@ import { PushCampaignsModule } from './modules/push-campaigns/push-campaigns.mod
     ReviewsModule,
     GlobalProductsModule,
     PushCampaignsModule,
+    PromoCodesModule,
   ],
 })
 export class AppModule {}

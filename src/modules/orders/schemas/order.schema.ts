@@ -200,6 +200,9 @@ export class Order extends Document {
   @Prop({ default: 0 })
   serviceFee: number;
 
+  @Prop({ default: 0 })
+  platformProcessingFee: number;
+
   @Prop({ default: 300 })
   packagingFee: number;
 
@@ -216,6 +219,12 @@ export class Order extends Document {
 
   @Prop({ default: 0 })
   discount: number;
+
+  @Prop()
+  promoCode: string;
+
+  @Prop({ default: 0 })
+  promoDiscount: number;
 
   @Prop({ default: false })
   isBirthdayDiscount: boolean;

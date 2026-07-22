@@ -161,10 +161,27 @@ export class PaymentsController {
             
             const idsToProcess = orderIds || (orderId ? [orderId] : []);
 
+            // Strict Amount Verification
+            let expectedTotal = 0;
+            const ordersToProcess: any[] = [];
             for (const id of idsToProcess) {
+              const order = await this.ordersService.findById(id);
+              if (order) {
+                expectedTotal += order.total;
+                ordersToProcess.push(order);
+              }
+            }
+
+            const amountPaid = data.amount / 100; // Paystack sends in kobo
+            if (Math.round(amountPaid) < Math.round(expectedTotal)) {
+              this.logger.error(`Webhook amount mismatch for Ref: ${reference}. Paid: ${amountPaid}, Expected: ${expectedTotal}. Attempted hack!`);
+              return { status: 'error', message: 'Amount mismatch' };
+            }
+
+            for (const order of ordersToProcess) {
+              const id = order._id.toString();
               try {
                 // Idempotency: Check if order is already confirmed
-                const order = await this.ordersService.findById(id);
                 if (order.status === OrderStatus.CONFIRMED) {
                   this.logger.log(`Order ${id} already confirmed, skipping webhook logic.`);
                   continue;

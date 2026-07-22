@@ -24,6 +24,7 @@ import { BatchDeliveryService } from './batch-delivery.service';
 import { RewardsService } from '../rewards/rewards.service';
 import { AfricasTalkingService } from '../africastalking/africastalking.service';
 import { MapboxService } from '../mapbox/mapbox.service';
+import { PromoCodesService } from '../promo-codes/promo-codes.service';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
@@ -50,6 +51,7 @@ export class OrdersService {
     @Inject(forwardRef(() => AfricasTalkingService))
     private africasTalkingService: AfricasTalkingService,
     private mapboxService: MapboxService,
+    private promoCodesService: PromoCodesService,
   ) {}
 
   async getBatchStatus() {
@@ -280,12 +282,15 @@ export class OrdersService {
     }
 
     let groupDiscount = 0;
-    if (data.groupId) {
+    if (data.groupId || data.isGroupOrder) {
       const groupOrdersCount = await this.orderModel.countDocuments({ groupId: data.groupId });
       if (groupOrdersCount > 0) {
         groupDiscount = Math.round(deliveryFee * 0.3);
         deliveryFee -= groupDiscount;
       }
+      // Brethren Split: 10% off subtotal for group orders
+      const splitDiscount = Math.round(subtotal * 0.10);
+      discount += splitDiscount;
     }
 
     // Dorm Delivery (Social Savings) logic
@@ -321,7 +326,8 @@ export class OrdersService {
       }
     }
 
-    const serviceFee = Math.round(subtotal * 0.05); // 5% service fee
+    const serviceFee = typeof data.serviceFee === 'number' ? data.serviceFee : Math.round(subtotal * 0.05); // Use frontend passed fee or default to 5%
+    const platformProcessingFee = data.platformProcessingFee || 0;
     
     // Batch Delivery logic for delivery fee or grouping
     const isBatchActive = await this.batchDeliveryService.isWindowActive();
@@ -338,8 +344,20 @@ export class OrdersService {
     // Save original delivery fee as errander payout before discounts
     const erranderPayout = deliveryFee;
 
-    // Birthday Discount Logic
     let discount = 0;
+    let promoDiscount = 0;
+    let appliedPromoCode = null;
+
+    // Exam Night Owl Free Delivery (10 PM - 2 AM)
+    const currentHour = new Date().getHours();
+    if (currentHour >= 22 || currentHour < 2) {
+      if (deliveryFee > 0) {
+        discount += deliveryFee;
+        deliveryFee = 0;
+      }
+    }
+
+    // Birthday Discount Logic
     let isBirthdayDiscount = false;
     const user = await this.userModel.findById(customerId);
     
@@ -355,7 +373,7 @@ export class OrdersService {
         // 10% off subtotal
         const subtotalDiscount = Math.round(subtotal * 0.10);
         discount += subtotalDiscount;
-        subtotal -= subtotalDiscount;
+        // Fix: Do not subtract from subtotal here since discount is subtracted from total later
       }
     }
 
@@ -367,7 +385,33 @@ export class OrdersService {
       await user.save();
     }
 
-    const total = subtotal + deliveryFee + serviceFee + packagingFee;
+    // Promo Code Logic
+    if (data.promoCode) {
+      try {
+        const promo = await this.promoCodesService.validateCode(data.promoCode, subtotal);
+        let pDiscount = 0;
+        if (promo.discountType === 'percentage') {
+          pDiscount = Math.round(subtotal * (promo.value / 100));
+          if (promo.maxDiscountAmount && pDiscount > promo.maxDiscountAmount) {
+            pDiscount = promo.maxDiscountAmount;
+          }
+        } else {
+          pDiscount = promo.value;
+        }
+        
+        discount += pDiscount;
+        promoDiscount = pDiscount;
+        appliedPromoCode = promo.code;
+        
+        // Increment usage
+        await this.promoCodesService.incrementUsage(promo.code);
+      } catch (e) {
+        // Ignore invalid promo codes or handle error
+        this.logger.warn(`Invalid promo code applied: ${data.promoCode} - ${e.message}`);
+      }
+    }
+
+    const total = subtotal + deliveryFee + serviceFee + packagingFee + platformProcessingFee - discount;
 
     // PAYSTACK VERIFICATION
     if (data.paymentReference) {
@@ -416,8 +460,20 @@ export class OrdersService {
       deliveryFee,
       erranderPayout,
       serviceFee,
+      platformProcessingFee,
       packagingFee,
+      status: OrderStatus.PENDING,
+      paymentStatus: PaymentStatus.PENDING,
+      paymentMethod: data.paymentMethod,
+      orderType: data.orderType || OrderType.STANDARD,
+      isGroupOrder: data.isGroupOrder || false,
+      isDormDelivery: data.isDormDelivery || false,
+      groupId: data.groupId,
+      isMysteryBox: data.isMysteryBox || false,
+      mysteryProduct,
       discount,
+      promoCode: appliedPromoCode,
+      promoDiscount,
       isBirthdayDiscount,
       total,
       weight: data.weight || 1,
