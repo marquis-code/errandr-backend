@@ -201,19 +201,31 @@ export class NotificationsService {
   // ─── Cascade Orchestrator ────────────────
   async notifyVendor(vendor: any, order: any) {
     const title = '🚨 New Order on Erranders!';
-    const body = `Order #${order.orderNumber} for ${order.total} NGN has arrived. Please confirm now.`;
+    const body = `Order #${order.orderNumber} for ₦${(order.total || 0).toLocaleString()} has arrived. Please confirm now.`;
     
-    // 1. Send in-app Redis notification (Instant)
-    await this.sendNotification(vendor.owner.toString(), {
+    // Safely extract owner userId — handles both populated (object) and unpopulated (ObjectId) cases
+    const ownerId = (vendor.owner?._id || vendor.owner)?.toString();
+    this.logger.log(`notifyVendor() ownerId=${ownerId}, vendorId=${vendor._id}, orderNumber=${order.orderNumber}`);
+    
+    if (!ownerId) {
+      this.logger.error(`notifyVendor() FAILED: Could not extract owner ID from vendor ${vendor._id}`);
+      return;
+    }
+    
+    // 1. Send in-app Redis notification (Instant — routes to socket room user:<ownerId>)
+    await this.sendNotification(ownerId, {
       title,
       body,
       type: 'NEW_ORDER',
       data: { orderId: order._id.toString() },
     });
     
-    // 2. Send FCM Push (Instant)
-    if (vendor.fcmToken) {
-      await this.sendPushNotification(vendor.fcmToken, { title, body, data: { orderId: order._id.toString() } });
+    // 2. Send FCM Push (Instant) — try vendor FCM token first, then owner's user FCM token
+    const fcmToken = vendor.fcmToken || vendor.owner?.fcmToken;
+    if (fcmToken) {
+      await this.sendPushNotification(fcmToken, { title, body, data: { orderId: order._id.toString() } });
+    } else {
+      this.logger.warn(`notifyVendor() No FCM token for vendor ${vendor._id} or owner ${ownerId}`);
     }
 
     // 3. Wait 60s, check if confirmed. If not -> WhatsApp

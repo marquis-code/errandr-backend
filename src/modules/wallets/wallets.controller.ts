@@ -25,6 +25,13 @@ export class WalletsController {
     return this.walletsService.getTransactions((user._id as unknown) as string);
   }
 
+  @Post('subscribe-prime')
+  @ApiOperation({ summary: 'Subscribe to Campus Prime via Wallet Deduction' })
+  async subscribePrime(@CurrentUser() user: User) {
+    await this.walletsService.subscribeToPrime((user._id as unknown) as string);
+    return { success: true, message: 'Campus Prime subscription successful.' };
+  }
+
   @Put('preferences')
   @ApiOperation({ summary: 'Update payout preferences and bank details' })
   updatePreferences(
@@ -38,14 +45,15 @@ export class WalletsController {
   @ApiOperation({ summary: 'Request a withdrawal via Paystack' })
   async requestWithdrawal(
     @CurrentUser() user: User,
-    @Body() body: { amount: number; bankAccount?: { accountNumber: string, bankCode: string } },
+    @Body() body: { amount: number; bankAccount?: { accountNumber: string, bankCode: string }; isInstant?: boolean },
   ) {
     await this.walletsService.withdrawFunds(
       (user._id as unknown) as string,
       body.amount,
       user.email,
       `${user.firstName} ${user.lastName}`,
-      body.bankAccount
+      body.bankAccount,
+      body.isInstant
     );
     return { success: true, message: 'Withdrawal initiated via Paystack' };
   }

@@ -1,9 +1,7 @@
 import { Controller, Get, Post, Body, Param, Put, UseGuards, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PromoCodesService } from './promo-codes.service';
-import { JwtAuthGuard } from '../../common/decorators';
-import { RolesGuard } from '../../common/guards/roles.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { JwtAuthGuard, Roles, RolesGuard } from '../../common/decorators';
 import { UserRole } from '../users/schemas/user.schema';
 
 @ApiTags('Promo Codes')

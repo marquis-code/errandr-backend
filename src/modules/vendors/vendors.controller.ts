@@ -174,4 +174,14 @@ export class VendorsController {
   toggleOnline(@Param('id') id: string, @CurrentUser() user: User) {
     return this.vendorsService.toggleOnline(id, (user._id as unknown) as string);
   }
+
+  @Get(':id/reviews')
+  @ApiOperation({ summary: 'Get reviews for a vendor' })
+  getReviews(
+    @Param('id') id: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number
+  ) {
+    return this.vendorsService.getVendorReviews(id, page, limit);
+  }
 }

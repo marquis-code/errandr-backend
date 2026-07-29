@@ -8,6 +8,7 @@ import { AddOnGroup, AddOnGroupSchema } from './schemas/add-on.schema';
 import { MenuPack, MenuPackSchema } from './schemas/menu-pack.schema';
 import { MenuItem, MenuItemSchema } from './schemas/menu-item.schema';
 import { ItemRestockRequest, ItemRestockRequestSchema } from './schemas/item-restock-request.schema';
+import { SystemSetting, SystemSettingSchema } from '../admin/schemas/system-setting.schema';
 
 // Services
 import { MenuCategoryService } from './menu-category.service';
@@ -37,6 +38,7 @@ import { GlobalProductsModule } from '../global-products/global-products.module'
       { name: MenuPack.name, schema: MenuPackSchema },
       { name: MenuItem.name, schema: MenuItemSchema },
       { name: ItemRestockRequest.name, schema: ItemRestockRequestSchema },
+      { name: SystemSetting.name, schema: SystemSettingSchema },
     ]),
     VendorsModule,
     GlobalProductsModule,

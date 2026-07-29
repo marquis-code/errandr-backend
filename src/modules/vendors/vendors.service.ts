@@ -365,4 +365,42 @@ export class VendorsService {
     if (!vendor) throw new NotFoundException('Vendor not found');
     return vendor;
   }
+
+  async getVendorReviews(vendorId: string, page: number = 1, limit: number = 10) {
+    const skip = (page - 1) * limit;
+    
+    // Find all orders for this vendor that have a vendorReview
+    const filter = {
+      vendor: new Types.ObjectId(vendorId),
+      vendorReview: { $exists: true, $ne: '' }
+    };
+
+    const rawReviews = await this.orderModel
+      .find(filter)
+      .select('vendorRating vendorReview customer createdAt')
+      .populate('customer', 'firstName lastName')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    const reviews = rawReviews.map(r => ({
+      _id: r._id,
+      rating: r.vendorRating,
+      comment: r.vendorReview,
+      createdAt: r.createdAt,
+      user: {
+        name: r.customer ? `${(r.customer as any).firstName || ''} ${(r.customer as any).lastName || ''}`.trim() : 'Anonymous'
+      }
+    }));
+
+    const total = await this.orderModel.countDocuments(filter);
+
+    return {
+      reviews,
+      total,
+      page,
+      pages: Math.ceil(total / limit)
+    };
+  }
 }

@@ -11,6 +11,7 @@ import { Errander, ErranderStatus } from '../erranders/schemas/errander.schema';
 import { User } from '../users/schemas/user.schema';
 import { Product } from '../products/schemas/product.schema';
 import { MenuItem } from '../menu/schemas/menu-item.schema';
+import { SystemSetting } from '../admin/schemas/system-setting.schema';
 import { RedisService } from '../redis/redis.service';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
@@ -38,6 +39,7 @@ export class OrdersService {
     @InjectModel(Product.name) private productModel: Model<Product>,
     @InjectModel(MenuItem.name) private menuItemModel: Model<MenuItem>,
     @InjectModel(User.name) private userModel: Model<User>,
+    @InjectModel(SystemSetting.name) private settingModel: Model<SystemSetting>,
     private redisService: RedisService,
     @InjectQueue('orders') private orderQueue: Queue,
     @Inject(forwardRef(() => WalletsService)) private walletsService: WalletsService,
@@ -276,10 +278,25 @@ export class OrdersService {
       deliveryFee = await this.calculateDynamicFee(
         data.vendorId, 
         customerId, 
-        data.deliveryAddress || data.specificAddress, 
-        data.weight || 1
+        data.deliveryAddress || data.specificAddress
       );
+    } else if (deliveryOption === 'batch_run') {
+      deliveryFee = 150;
     }
+
+    // Apply Campus Prime logic
+    const userForPrime = await this.userModel.findById(customerId);
+    if (userForPrime?.campusPrimeActive && userForPrime.campusPrimeExpiry && userForPrime.campusPrimeExpiry > new Date()) {
+      deliveryFee = 0;
+    }
+
+    // Move discount, promoDiscount, appliedPromoCode declarations here so they are available early
+    let discount = 0;
+    let promoDiscount = 0;
+    let appliedPromoCode: string | null = null;
+
+    const campaignSetting = await this.settingModel.findOne({ key: 'exam_brethren_campaign' }).exec();
+    const isExamBrethrenActive = campaignSetting?.value?.isActive || false;
 
     let groupDiscount = 0;
     if (data.groupId || data.isGroupOrder) {
@@ -288,9 +305,12 @@ export class OrdersService {
         groupDiscount = Math.round(deliveryFee * 0.3);
         deliveryFee -= groupDiscount;
       }
-      // Brethren Split: 10% off subtotal for group orders
-      const splitDiscount = Math.round(subtotal * 0.10);
-      discount += splitDiscount;
+      
+      if (isExamBrethrenActive) {
+        // Brethren Split: 10% off subtotal for group orders
+        const splitDiscount = Math.round(subtotal * 0.10);
+        discount += splitDiscount;
+      }
     }
 
     // Dorm Delivery (Social Savings) logic
@@ -333,27 +353,58 @@ export class OrdersService {
     const isBatchActive = await this.batchDeliveryService.isWindowActive();
     
     // New Packaging Packs logic
-    let packagingFee = vendor.packagingFee ?? 300;
+    let packagingFee = 0;
     let selectedPackData = null;
-    
-    if (data.selectedPack && data.selectedPack.name) {
-      packagingFee = data.selectedPack.price ?? vendor.packagingFee ?? 300;
-      selectedPackData = data.selectedPack;
+
+    if (data.packs && data.packs.length > 0) {
+      // Sum packaging fee from each individual pack if they have a packType selected
+      data.packs.forEach((pack: any) => {
+        if (pack.packType && pack.packType.price !== undefined) {
+          packagingFee += pack.packType.price;
+        } else if (data.selectedPack && data.selectedPack.name) {
+          packagingFee += data.selectedPack.price ?? vendor.packagingFee ?? 300;
+        } else {
+          packagingFee += vendor.packagingFee ?? 300;
+        }
+      });
+      // Legacy fallback
+      if (data.selectedPack && data.selectedPack.name && packagingFee === 0) {
+        selectedPackData = data.selectedPack;
+      }
+    } else {
+      packagingFee = vendor.packagingFee ?? 300;
+      if (data.selectedPack && data.selectedPack.name) {
+        packagingFee = data.selectedPack.price ?? vendor.packagingFee ?? 300;
+        selectedPackData = data.selectedPack;
+      }
     }
 
-    // Save original delivery fee as errander payout before discounts
-    const erranderPayout = deliveryFee;
-
-    let discount = 0;
-    let promoDiscount = 0;
-    let appliedPromoCode = null;
+    // Fetch custom errand settings to get commission percentage for delivery fee
+    const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
+    const commissionPercent = errandSetting?.value?.commissionPercentage ?? 10;
+    const deliveryCommission = Math.round(deliveryFee * (commissionPercent / 100));
+    
+    // Save errander payout (delivery fee minus platform commission)
+    const erranderPayout = deliveryFee - deliveryCommission;
+    
+    // Calculate platform share (service fee + delivery commission + food markup)
+    const markupPct = errandSetting?.value?.foodMarkupPercentage ?? 5;
+    const MARKUP_FACTOR = 1 + (markupPct / 100);
+    const foodMarkup = subtotal - Math.round(subtotal / MARKUP_FACTOR);
+    const platformShare = serviceFee + deliveryCommission + foodMarkup;
+    
+    // Calculate vendor share (vendor subtotal + packaging fee)
+    const vendorSubtotal = Math.round(subtotal / MARKUP_FACTOR);
+    const vendorShare = vendorSubtotal + packagingFee;
 
     // Exam Night Owl Free Delivery (10 PM - 2 AM)
-    const currentHour = new Date().getHours();
-    if (currentHour >= 22 || currentHour < 2) {
-      if (deliveryFee > 0) {
-        discount += deliveryFee;
-        deliveryFee = 0;
+    if (isExamBrethrenActive) {
+      const currentHour = new Date().getHours();
+      if (currentHour >= 22 || currentHour < 2) {
+        if (deliveryFee > 0) {
+          discount += deliveryFee;
+          deliveryFee = 0;
+        }
       }
     }
 
@@ -459,13 +510,15 @@ export class OrdersService {
       subtotal,
       deliveryFee,
       erranderPayout,
+      platformShare,
+      vendorShare,
+      foodMarkupPercentage: markupPct,
       serviceFee,
       platformProcessingFee,
       packagingFee,
-      status: OrderStatus.PENDING,
-      paymentStatus: PaymentStatus.PENDING,
+
       paymentMethod: data.paymentMethod,
-      orderType: data.orderType || OrderType.STANDARD,
+      orderType: data.orderType || OrderType.MARKETPLACE,
       isGroupOrder: data.isGroupOrder || false,
       isDormDelivery: data.isDormDelivery || false,
       groupId: data.groupId,
@@ -481,10 +534,6 @@ export class OrdersService {
       recipientName: data.recipientName || '',
       recipientPhone: data.recipientPhone || '',
       specificAddress: data.specificAddress || '',
-      groupId: data.groupId,
-      isGroupOrder: !!data.groupId,
-      isMysteryBox: !!data.isMysteryBox,
-      isDormDelivery: !!data.isDormDelivery,
       groupDiscount,
       deliveryAddress: data.deliveryAddress || data.specificAddress || '',
       deliveryLocation: data.deliveryLocation,
@@ -706,7 +755,7 @@ export class OrdersService {
 
     if (status === OrderStatus.DELIVERED) {
       order.actualDeliveryTime = new Date();
-      await this.processPayout(order);
+      await this.processErranderPayout(order);
 
       // Trigger engagement updates
       if (order.customer) {
@@ -1045,8 +1094,15 @@ export class OrdersService {
 
     // REAL-TIME VENDOR PAYOUT (only for marketplace orders with a vendor)
     if (order.vendor) {
-      const platformCommissionRate = 0.05;
-      const vendorEarnings = Math.round(order.subtotal * (1 - platformCommissionRate));
+      let vendorEarnings = (order as any).vendorShare;
+      if (!vendorEarnings) {
+        const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
+        const markupPct = errandSetting?.value?.foodMarkupPercentage ?? 5;
+        const MARKUP_FACTOR = 1 + (markupPct / 100);
+        const vendorSubtotal = Math.round(order.subtotal / MARKUP_FACTOR);
+        const vendorPackaging = order.packagingFee || 0; // Vendor gets 100% of packaging fee
+        vendorEarnings = vendorSubtotal + vendorPackaging;
+      }
       
       const populatedVendor = await this.vendorModel.findById(order.vendor);
       if (populatedVendor && populatedVendor.owner) {
@@ -1296,35 +1352,69 @@ export class OrdersService {
     return order;
   }
 
-  private async processPayout(order: Order): Promise<void> {
-    // Populate correctly if not already
+  private async processVendorPayout(order: Order): Promise<void> {
     const fullOrder = await this.orderModel.findById(order._id)
-      .populate('vendor', 'user')
-      .populate('errander', 'user');
+      .populate({
+        path: 'vendor',
+        populate: {
+          path: 'owner',
+          select: 'email firstName lastName'
+        }
+      });
 
-    if (!fullOrder) return;
+    if (!fullOrder || !fullOrder.vendor) return;
 
-    // Financial Split:
-    // 1. Vendor gets Subtotal - Platform Commission (e.g. 5%)
-    // 2. Errander gets 100% of Delivery Fee + Tips
-    // 3. Platform gets Commission + Service Fee
-
-    const platformCommissionRate = 0.05;
-    const vendorEarnings = Math.round(fullOrder.subtotal * (1 - platformCommissionRate));
-    const erranderEarnings = (fullOrder.erranderPayout || fullOrder.deliveryFee) + ((fullOrder as any).tips || 0);
+    let vendorEarnings = (fullOrder as any).vendorShare;
+    if (!vendorEarnings) {
+      const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
+      const markupPct = errandSetting?.value?.foodMarkupPercentage ?? 5;
+      const MARKUP_FACTOR = 1 + (markupPct / 100);
+      const vendorSubtotal = Math.round(fullOrder.subtotal / MARKUP_FACTOR);
+      const vendorPackaging = fullOrder.packagingFee || 0; // Vendor gets 100% of packaging fee
+      vendorEarnings = vendorSubtotal + vendorPackaging;
+    }
     
-    // Credit Vendor
-    if (fullOrder.vendor && (fullOrder.vendor as any).user) {
+    const vendorDoc = fullOrder.vendor as any;
+    // Note: the user reference on vendor might be 'owner' or 'user'. Let's check which one it is.
+    // In many places, vendor has 'owner'. 
+    const vendorUser = vendorDoc.owner || vendorDoc.user;
+
+    if (vendorUser && vendorUser._id) {
+      const userId = vendorUser._id.toString();
+      
+      // 1. Credit wallet for record keeping
       await this.walletsService.creditWallet(
-        (fullOrder.vendor as any).user.toString(),
+        userId,
         vendorEarnings,
         `Earnings from order ${fullOrder.orderNumber}`,
         fullOrder._id.toString(),
       );
-    }
 
-    // Credit Errander
-    if (fullOrder.errander && (fullOrder.errander as any).user) {
+      // 2. Trigger instant withdrawal to bank account
+      try {
+        await this.walletsService.withdrawFunds(
+          userId,
+          vendorEarnings,
+          vendorUser.email || 'vendor@erranders.com',
+          `${vendorUser.firstName || 'Vendor'} ${vendorUser.lastName || ''}`.trim(),
+          undefined,
+          true // isInstant
+        );
+        this.logger.log(`Auto-payout initiated for vendor on order ${fullOrder.orderNumber}`);
+      } catch (err: any) {
+        // If payout fails (e.g. no bank account set), leave the funds in wallet
+        this.logger.warn(`Failed to auto-payout vendor for order ${fullOrder.orderNumber}: ${err.message}. Funds remain in wallet.`);
+      }
+    }
+  }
+
+  private async processErranderPayout(order: Order): Promise<void> {
+    const fullOrder = await this.orderModel.findById(order._id).populate('errander', 'user');
+    if (!fullOrder || !fullOrder.errander) return;
+
+    const erranderEarnings = (fullOrder.erranderPayout || fullOrder.deliveryFee) + ((fullOrder as any).tips || 0);
+    
+    if ((fullOrder.errander as any).user) {
       await this.walletsService.creditWallet(
         (fullOrder.errander as any).user.toString(),
         erranderEarnings,
@@ -1332,8 +1422,6 @@ export class OrdersService {
         fullOrder._id.toString(),
       );
     }
-
-    // Log for business (can be extended to a business wallet)
   }
 
   async rateOrder(
@@ -1352,6 +1440,20 @@ export class OrdersService {
       order.vendorRating = data.vendorRating;
       order.vendorReview = data.vendorReview || '';
       order.hasRatedVendor = true;
+
+      // Update Vendor Average Rating
+      if (order.vendor) {
+        const vendor = await this.vendorModel.findById(order.vendor);
+        if (vendor) {
+          const currentRating = vendor.rating || 5.0; // Default to 5.0 if not set
+          const totalRatings = vendor.totalRatings || 0;
+          const newTotalRatings = totalRatings + 1;
+          
+          vendor.rating = ((currentRating * totalRatings) + data.vendorRating) / newTotalRatings;
+          vendor.totalRatings = newTotalRatings;
+          await vendor.save();
+        }
+      }
     }
 
     if (data.erranderRating) {
@@ -1536,6 +1638,9 @@ export class OrdersService {
     });
     
     await order.save();
+    
+    // Auto-payout vendor since payment is confirmed
+    await this.processVendorPayout(order);
     
     // Broadcast
     await this.broadcastNewOrderToErranders(order);
@@ -1784,6 +1889,9 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     });
 
     await order.save();
+    
+    // Auto-payout vendor since payment is confirmed
+    await this.processVendorPayout(order);
 
     // Auto-create initial chat message for the order
     try {
@@ -1975,17 +2083,17 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     return populatedOrder as Order;
   }
 
-  async calculateDynamicFee(vendorId: string, customerId: string, deliveryAddress: string, weight: number = 1): Promise<number> {
+  async calculateDynamicFee(vendorId: string, customerId: string, deliveryAddress: string): Promise<number> {
     const vendor = await this.vendorModel.findById(vendorId);
     let user: any = null;
     if (customerId) {
       user = await this.userModel.findById(customerId);
     }
     
-    let fallbackFee = vendor?.deliveryFee || 150;
-    if (weight > 2) {
-      fallbackFee += (weight - 2) * 50;
-    }
+    // Fetch base delivery fee from admin system settings
+    const baseFeeSetting = await this.settingModel.findOne({ key: 'base_delivery_fee' }).exec();
+    const baseFare = baseFeeSetting?.value?.amount || 300;
+    let fallbackFee = baseFare;
 
     if (!vendor) return fallbackFee;
 
@@ -2027,13 +2135,13 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
        );
 
        if (distanceKm !== null) {
-          const baseFare = 200;
+          // Cap delivery fee at ₦1,500 max. If distance is unreasonably high (>30km), fallback to base fare.
+          if (distanceKm > 30) {
+            return baseFare;
+          }
           const extraDist = Math.max(0, distanceKm - 1);
           let fee = baseFare + (extraDist * 100);
-          if (weight > 2) {
-             fee += (weight - 2) * 50;
-          }
-          return Math.round(fee);
+          return Math.min(1500, Math.round(fee));
        }
     }
 

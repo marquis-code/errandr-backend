@@ -29,6 +29,7 @@ export enum OrderType {
 export enum DeliveryOption {
   PICKUP = 'pickup',
   USE_AN_ERRANDER = 'use_an_errander',
+  BATCH_RUN = 'batch_run',
 }
 
 @Schema({ timestamps: true })
@@ -392,6 +393,9 @@ export class Order extends Document {
 
   @Prop({ default: 0 })
   platformShare: number;
+
+  @Prop({ default: 5 })
+  foodMarkupPercentage: number;
 
   // Group Buying
   @Prop({ default: false })

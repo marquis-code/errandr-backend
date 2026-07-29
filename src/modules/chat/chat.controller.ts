@@ -1,4 +1,4 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, UseGuards, Query } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { ChatService } from './chat.service';
 import { JwtAuthGuard, CurrentUser } from '../../common/decorators';
@@ -13,9 +13,13 @@ export class ChatController {
   @Get('order/:orderId')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get chat messages for an order' })
-  getOrderMessages(@Param('orderId') orderId: string) {
-    return this.chatService.getOrderMessages(orderId);
+  @ApiOperation({ summary: 'Get chat messages for an order (optionally filtered by participant pair)' })
+  getOrderMessages(
+    @Param('orderId') orderId: string,
+    @Query('userA') userA?: string,
+    @Query('userB') userB?: string,
+  ) {
+    return this.chatService.getOrderMessages(orderId, userA, userB);
   }
 
   @Get('appointment/:appointmentId')

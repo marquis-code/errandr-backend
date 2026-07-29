@@ -6,6 +6,7 @@ import { ProductCategory } from './schemas/product-category.schema';
 import { Pack } from './schemas/pack.schema';
 import { VendorsService } from '../vendors/vendors.service';
 import { GlobalProductsService } from '../global-products/global-products.service';
+import { SystemSetting } from '../admin/schemas/system-setting.schema';
 
 @Injectable()
 export class ProductsService {
@@ -13,6 +14,7 @@ export class ProductsService {
     @InjectModel(Product.name) private productModel: Model<Product>,
     @InjectModel(ProductCategory.name) private categoryModel: Model<ProductCategory>,
     @InjectModel(Pack.name) private packModel: Model<Pack>,
+    @InjectModel(SystemSetting.name) private settingModel: Model<SystemSetting>,
     private vendorsService: VendorsService,
     private globalProductsService: GlobalProductsService,
   ) {}
@@ -53,22 +55,66 @@ export class ProductsService {
     });
   }
 
+  async getMarkupFactor(): Promise<number> {
+    const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
+    const markupPct = errandSetting?.value?.foodMarkupPercentage ?? 5;
+    return 1 + (markupPct / 100);
+  }
+
+  async applyMarkupToProduct(product: any, factor: number): Promise<any> {
+    if (!product) return product;
+    const pObj = typeof product.toObject === 'function' ? product.toObject() : product;
+    if (pObj.price) pObj.price = Math.ceil(pObj.price * factor);
+    if (pObj.bundlePrice) pObj.bundlePrice = Math.ceil(pObj.bundlePrice * factor);
+    if (pObj.customizations) {
+      pObj.customizations.forEach((c: any) => {
+        if (c.options) {
+          c.options.forEach((o: any) => {
+            if (o.price) o.price = Math.ceil(o.price * factor);
+          });
+        }
+      });
+    }
+    return pObj;
+  }
+
+  async applyMarkupToProducts(products: Product[]): Promise<any[]> {
+    const factor = await this.getMarkupFactor();
+    return Promise.all(products.map(p => this.applyMarkupToProduct(p, factor)));
+  }
+
+  async applyMarkupToPacks(packs: Pack[]): Promise<any[]> {
+    const factor = await this.getMarkupFactor();
+    return Promise.all(packs.map(async (pack) => {
+      const pObj = typeof pack.toObject === 'function' ? pack.toObject() : pack;
+      if (pObj.items) {
+        for (const item of pObj.items) {
+          if (item.itemId) {
+            item.itemId = await this.applyMarkupToProduct(item.itemId, factor);
+          }
+        }
+      }
+      return pObj;
+    }));
+  }
+
   async findByVendor(vendorId: string): Promise<Product[]> {
     if (!Types.ObjectId.isValid(vendorId)) {
       return [];
     }
-    return this.productModel
+    const products = await this.productModel
       .find({ vendor: new Types.ObjectId(vendorId) })
       .sort({ category: 1, name: 1 });
+    return this.applyMarkupToProducts(products);
   }
-
 
   async getPacks(vendorId: string): Promise<Pack[]> {
     if (!Types.ObjectId.isValid(vendorId)) return [];
-    return this.packModel
+    const packs = await this.packModel
       .find({ vendorId: new Types.ObjectId(vendorId), isActive: true })
       .populate('items.itemId')
       .sort({ orderCount: -1 });
+    return this.applyMarkupToPacks(packs);
   }
 
   async findByOwner(ownerId: string): Promise<Product[]> {
@@ -121,7 +167,8 @@ export class ProductsService {
   async findById(id: string): Promise<Product> {
     const product = await this.productModel.findById(id).populate('vendor');
     if (!product) throw new NotFoundException('Product not found');
-    return product;
+    const factor = await this.getMarkupFactor();
+    return this.applyMarkupToProduct(product, factor);
   }
 
   async update(id: string, data: Partial<Product>): Promise<Product> {
@@ -161,22 +208,25 @@ export class ProductsService {
         .limit(limit),
       this.productModel.countDocuments(filter),
     ]);
-    return { products, total };
+    const markedProducts = await this.applyMarkupToProducts(products);
+    return { products: markedProducts, total };
   }
 
   async getByCategory(category: string): Promise<Product[]> {
-    return this.productModel
+    const products = await this.productModel
       .find({ category, isAvailable: true })
       .populate('vendor', 'storeName logo isOnline')
       .sort({ rating: -1 });
+    return this.applyMarkupToProducts(products);
   }
 
   async getPopular(limit = 10): Promise<Product[]> {
-    return this.productModel
+    const products = await this.productModel
       .find({ isAvailable: true })
       .populate('vendor', 'storeName logo isOnline')
       .sort({ totalOrders: -1, orderCount: -1 })
       .limit(limit);
+    return this.applyMarkupToProducts(products);
   }
 
   async getTopPicks(vendorId: string): Promise<Product[]> {
@@ -187,16 +237,18 @@ export class ProductsService {
     
     const hasEnoughData = (vendor.totalOrders || 0) >= 20;
     
+    let products;
     if (hasEnoughData) {
-      return this.productModel
+      products = await this.productModel
         .find({ vendor: new Types.ObjectId(vendorId), isAvailable: true })
         .sort({ orderCount: -1 })
         .limit(6);
     } else {
-      return this.productModel
+      products = await this.productModel
         .find({ vendor: new Types.ObjectId(vendorId), isAvailable: true, isPinned: true })
         .limit(6);
     }
+    return this.applyMarkupToProducts(products);
   }
 
   // ── Product Categories (per Vendor) ──

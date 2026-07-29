@@ -7,6 +7,7 @@ import { ProductCategory, ProductCategorySchema } from './schemas/product-catego
 import { Pack, PackSchema } from './schemas/pack.schema';
 import { VendorsModule } from '../vendors/vendors.module';
 import { GlobalProductsModule } from '../global-products/global-products.module';
+import { SystemSetting, SystemSettingSchema } from '../admin/schemas/system-setting.schema';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { GlobalProductsModule } from '../global-products/global-products.module'
       { name: Product.name, schema: ProductSchema },
       { name: ProductCategory.name, schema: ProductCategorySchema },
       { name: Pack.name, schema: PackSchema },
+      { name: SystemSetting.name, schema: SystemSettingSchema },
     ]),
     VendorsModule,
     GlobalProductsModule,

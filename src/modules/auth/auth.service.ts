@@ -27,9 +27,9 @@ export class AuthService {
   ) {}
 
   async register(registerDto: RegisterDto) {
-    const existing = await this.userModel.findOne({ email: registerDto.email });
+    const existing = await this.userModel.findOne({ email: registerDto.email, role: registerDto.role });
     if (existing) {
-      throw new ConflictException('Email already registered');
+      throw new ConflictException(`Email already registered as ${registerDto.role}`);
     }
 
     const isVendor = registerDto.role === UserRole.VENDOR;
@@ -72,10 +72,18 @@ export class AuthService {
   }
 
   async login(loginDto: LoginDto) {
-    const user = await this.userModel.findOne({ email: loginDto.email });
-    if (!user) {
+    const query: any = { email: loginDto.email };
+    if (loginDto.role) {
+      query.role = loginDto.role;
+    }
+    const users = await this.userModel.find(query);
+    
+    if (users.length === 0) {
       throw new UnauthorizedException('Invalid credentials');
     }
+    
+    // If multiple users match (should only happen if role isn't provided, which we must fix on the frontend), use the first one.
+    const user = users[0];
 
     if (!user.isActive) {
       throw new UnauthorizedException('Account has been deactivated or deleted');
@@ -251,24 +259,30 @@ export class AuthService {
   }
 
   async forgotPassword(email: string) {
-    const user = await this.userModel.findOne({ email });
-    if (!user) {
+    const users = await this.userModel.find({ email });
+    if (users.length === 0) {
       // Return success even if not found to prevent email enumeration
       return { success: true, message: 'If an account exists, a reset code has been sent 📬' };
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    user.resetPasswordOtp = otp;
-    user.resetPasswordOtpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 min
-    await user.save();
+    
+    for (const user of users) {
+      user.resetPasswordOtp = otp;
+      user.resetPasswordOtpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+      await user.save();
+    }
 
     await this.emailService.sendPasswordResetOTP(email, otp);
     return { success: true, message: 'Reset code sent! Check your inbox 💌' };
   }
 
   async verifyResetOTP(email: string, otp: string) {
-    const user = await this.userModel.findOne({ email });
-    if (!user) throw new NotFoundException('User not found');
+    const users = await this.userModel.find({ email });
+    if (users.length === 0) throw new NotFoundException('User not found');
+    
+    // We only need to check the first user since they share the same OTP
+    const user = users[0];
 
     if (!user.resetPasswordOtp || !user.resetPasswordOtpExpiry) {
       throw new BadRequestException('No reset code was requested. Start the flow again ✨');
@@ -290,10 +304,12 @@ export class AuthService {
 
   async resetPassword(resetDto: any) {
     const { email, otp, newPassword } = resetDto;
-    const user = await this.userModel.findOne({ email });
-    if (!user) {
+    const users = await this.userModel.find({ email });
+    if (users.length === 0) {
       throw new BadRequestException('Invalid request');
     }
+    
+    const user = users[0];
 
     if (!user.resetPasswordOtp || !user.resetPasswordOtpExpiry) {
       throw new BadRequestException('No reset code was requested. Start the flow again ✨');
@@ -303,20 +319,22 @@ export class AuthService {
       throw new BadRequestException('That code expired! Request a new one ⏰');
     }
 
-    if (user.resetPasswordOtp !== otp) {
-      throw new BadRequestException('Hmm, that code doesn\'t match. Double-check and try again 🔢');
+    const matchUser = users.find(u => u.resetPasswordOtp === otp && u.resetPasswordOtpExpiry && new Date() <= u.resetPasswordOtpExpiry);
+    
+    if (!matchUser) {
+      throw new BadRequestException('Invalid or expired reset code. Request a new one 🔢');
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 12);
-    user.password = hashedPassword;
-    user.resetPasswordOtp = null as any;
-    user.resetPasswordOtpExpiry = null as any;
-    await user.save();
+    
+    for (const u of users) {
+      u.password = hashedPassword;
+      u.resetPasswordOtp = undefined as any;
+      u.resetPasswordOtpExpiry = undefined as any;
+      await u.save();
+    }
 
-    return {
-      success: true,
-      message: 'Password securely changed! You can now log in 🎉'
-    };
+    return { success: true, message: 'Password reset successful! 🎉' };
   }
 
   async changePassword(userId: string, changePasswordDto: any) {

@@ -53,11 +53,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('chat:join-room')
   handleJoinOrder(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { orderId?: string; appointmentId?: string; roomId?: string; userId?: string; roomType?: string },
+    @MessageBody() data: { orderId?: string; appointmentId?: string; roomId?: string; userId?: string; roomType?: string; pairKey?: string },
   ) {
     const id = data.roomId || data.appointmentId || data.orderId || data.userId;
     if (data.orderId || (data.roomId && data.roomType === 'order')) {
-      client.join(`order:${id}`);
+      // Join the pair-specific room if pairKey is provided, otherwise the general order room
+      const orderRoom = data.pairKey ? `order:${id}:${data.pairKey}` : `order:${id}`;
+      client.join(orderRoom);
+      console.log(`[ChatGateway] Client joined room: ${orderRoom}`);
     } else if (data.appointmentId || (data.roomId && data.roomType === 'direct' && !data.roomId.includes('_'))) {
       client.join(`appointment:${id}`);
     } else if (data.roomType === 'direct') {
@@ -113,7 +116,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       
       // Determine target room FIRST (no DB needed)
       let targetRoom = `support:${data.senderId}`;
-      if (roomType === 'order') targetRoom = `order:${orderId}`;
+      if (roomType === 'order' && data.receiverId) {
+        // Build a deterministic pairKey so both users are in the same room
+        const ids = [data.senderId, data.receiverId].sort();
+        const pairKey = `${ids[0]}_${ids[1]}`;
+        targetRoom = `order:${orderId}:${pairKey}`;
+      } else if (roomType === 'order') {
+        targetRoom = `order:${orderId}`;
+      }
       if (roomType === 'direct') {
         targetRoom = appointmentId ? `appointment:${appointmentId}` : `direct:${data.roomId || `${Math.min(data.senderId as any, data.receiverId as any)}_${Math.max(data.senderId as any, data.receiverId as any)}`}`;
       }

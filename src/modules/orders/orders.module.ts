@@ -12,6 +12,7 @@ import { Product, ProductSchema } from '../products/schemas/product.schema';
 import { Errander, ErranderSchema } from '../erranders/schemas/errander.schema';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { MenuItem, MenuItemSchema } from '../menu/schemas/menu-item.schema';
+import { SystemSetting, SystemSettingSchema } from '../admin/schemas/system-setting.schema';
 
 import { PaymentsModule } from '../payments/payments.module';
 import { ChatModule } from '../chat/chat.module';
@@ -32,6 +33,7 @@ import { PromoCodesModule } from '../promo-codes/promo-codes.module';
       { name: Errander.name, schema: ErranderSchema },
       { name: User.name, schema: UserSchema },
       { name: MenuItem.name, schema: MenuItemSchema },
+      { name: SystemSetting.name, schema: SystemSettingSchema },
     ]),
     NotificationsModule,
     ChatModule,

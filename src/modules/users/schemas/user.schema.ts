@@ -16,7 +16,7 @@ export class User extends Document {
   @Prop({ required: true })
   lastName: string;
 
-  @Prop({ required: true, unique: true })
+  @Prop({ required: true })
   email: string;
 
   @Prop()
@@ -140,6 +140,12 @@ export class User extends Document {
   @Prop({ type: Object, default: null })
   vendorOnboardingSession: Record<string, any>;
 
+  @Prop({ type: Boolean, default: false })
+  campusPrimeActive: boolean;
+
+  @Prop({ type: Date, default: null })
+  campusPrimeExpiry: Date;
+
   @Prop({
     type: [
       {
@@ -176,4 +182,4 @@ export class User extends Document {
 
 export const UserSchema = SchemaFactory.createForClass(User);
 UserSchema.index({ location: '2dsphere' });
-UserSchema.index({ email: 1 });
+UserSchema.index({ email: 1, role: 1 }, { unique: true });

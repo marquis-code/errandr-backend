@@ -217,12 +217,6 @@ export class Vendor extends Document {
   @Prop({ default: 0 })
   preparationTime: number; // average in minutes
 
-  @Prop({ default: 0 })
-  deliveryFee: number;
-
-  @Prop({ default: 600 })
-  baseDeliveryFee: number;
-
   @Prop({
     type: [
       {

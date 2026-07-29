@@ -8,6 +8,7 @@ import { ItemRestockRequest } from './schemas/item-restock-request.schema';
 import { isFoodVendor } from './helpers/food-vendor.helper';
 import { CreateMenuItemDto } from './dto/create-menu-item.dto';
 import { GlobalProductsService } from '../global-products/global-products.service';
+import { SystemSetting } from '../admin/schemas/system-setting.schema';
 
 @Injectable()
 export class MenuItemService {
@@ -15,6 +16,7 @@ export class MenuItemService {
     @InjectModel(MenuItem.name) private menuItemModel: Model<MenuItem>,
     @InjectModel(Vendor.name) private vendorModel: Model<Vendor>,
     @InjectModel(ItemRestockRequest.name) private restockRequestModel: Model<ItemRestockRequest>,
+    @InjectModel(SystemSetting.name) private settingModel: Model<SystemSetting>,
     private globalProductsService: GlobalProductsService,
   ) {}
 
@@ -101,6 +103,37 @@ export class MenuItemService {
       .sort({ name: 1 });
   }
 
+  async getMarkupFactor(): Promise<number> {
+    const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
+    const markupPct = errandSetting?.value?.foodMarkupPercentage ?? 5;
+    return 1 + (markupPct / 100);
+  }
+
+  async applyMarkupToItem(item: any, factor: number): Promise<any> {
+    if (!item) return item;
+    const iObj = typeof item.toObject === 'function' ? item.toObject() : item;
+    if (iObj.pricePerPortion) {
+      iObj.pricePerPortion = Math.ceil(iObj.pricePerPortion * factor);
+    }
+    if (iObj.addOnGroupIds && Array.isArray(iObj.addOnGroupIds)) {
+      iObj.addOnGroupIds.forEach((group: any) => {
+        if (group && group.options && Array.isArray(group.options)) {
+          group.options.forEach((opt: any) => {
+            if (opt.price) {
+              opt.price = Math.ceil(opt.price * factor);
+            }
+          });
+        }
+      });
+    }
+    return iObj;
+  }
+
+  async applyMarkupToItems(items: MenuItem[]): Promise<any[]> {
+    const factor = await this.getMarkupFactor();
+    return Promise.all(items.map(item => this.applyMarkupToItem(item, factor)));
+  }
+
   async findByVendor(vendorId: string, query?: { category?: string; tag?: string }): Promise<MenuItem[]> {
     if (!Types.ObjectId.isValid(vendorId)) return [];
     const filter: any = {
@@ -113,11 +146,12 @@ export class MenuItemService {
     if (query?.tag) {
       filter.tags = query.tag;
     }
-    return this.menuItemModel
+    const items = await this.menuItemModel
       .find(filter)
       .populate('categoryId')
       .populate('addOnGroupIds')
       .sort({ name: 1 });
+    return this.applyMarkupToItems(items);
   }
 
   async findById(id: string): Promise<MenuItem> {
@@ -127,7 +161,8 @@ export class MenuItemService {
       .populate('categoryId')
       .populate('addOnGroupIds');
     if (!item) throw new NotFoundException('Menu item not found');
-    return item;
+    const factor = await this.getMarkupFactor();
+    return this.applyMarkupToItem(item, factor);
   }
 
   async getTopPicks(vendorId: string): Promise<MenuItem[]> {
@@ -138,16 +173,18 @@ export class MenuItemService {
     
     const hasEnoughData = (vendor.totalOrders || 0) >= 20;
     
+    let items;
     if (hasEnoughData) {
-      return this.menuItemModel
+      items = await this.menuItemModel
         .find({ vendorId: new Types.ObjectId(vendorId), isAvailable: true })
         .sort({ orderCount: -1 })
         .limit(6);
     } else {
-      return this.menuItemModel
+      items = await this.menuItemModel
         .find({ vendorId: new Types.ObjectId(vendorId), isAvailable: true, isPinned: true })
         .limit(6);
     }
+    return this.applyMarkupToItems(items);
   }
 
   async notifyRestock(id: string, userId: string): Promise<{ success: boolean; message: string }> {

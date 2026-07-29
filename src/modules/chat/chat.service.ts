@@ -150,11 +150,24 @@ export class ChatService {
       .populate('vendor', '_id owner');
   }
 
-  async getOrderMessages(orderId: string): Promise<ChatMessage[]> {
+  async getOrderMessages(orderId: string, userA?: string, userB?: string): Promise<ChatMessage[]> {
+    const query: any = { order: new Types.ObjectId(orderId) };
+
+    // If both participants are specified, filter to only messages between them
+    if (userA && userB) {
+      const idA = new Types.ObjectId(userA);
+      const idB = new Types.ObjectId(userB);
+      query.$or = [
+        { sender: idA, receiver: idB },
+        { sender: idB, receiver: idA },
+      ];
+    }
+
     return this.chatModel
-      .find({ order: new Types.ObjectId(orderId) })
+      .find(query)
       .populate('sender', 'firstName lastName avatar')
       .populate('receiver', 'firstName lastName avatar')
+      .populate({ path: 'replyTo', populate: { path: 'sender', select: 'firstName lastName avatar' } })
       .sort({ createdAt: 1 });
   }
 

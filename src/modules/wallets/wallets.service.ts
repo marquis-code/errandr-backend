@@ -40,6 +40,18 @@ export class WalletsService {
     return wallet;
   }
 
+  async subscribeToPrime(userId: string): Promise<void> {
+    const fee = 1500;
+    await this.debitWallet(userId, fee, 'Campus Prime Subscription - 30 Days');
+    
+    const expiry = new Date();
+    expiry.setDate(expiry.getDate() + 30);
+    await this.userModel.findByIdAndUpdate(userId, {
+      campusPrimeActive: true,
+      campusPrimeExpiry: expiry,
+    });
+  }
+
   async getTransactions(userId: string): Promise<TransactionDocument[]> {
     const wallet = await this.getOrCreateWallet(userId);
     return this.transactionModel
@@ -62,6 +74,18 @@ export class WalletsService {
     }
 
     const wallet = await this.getOrCreateWallet(userId);
+    
+    // Check if we already processed this order payout to prevent double-crediting
+    if (orderId) {
+      const existing = await this.transactionModel.findOne({
+        wallet: wallet._id,
+        order: orderId,
+        type: TransactionType.CREDIT,
+      });
+      if (existing) {
+        return; 
+      }
+    }
     
     wallet.balance += amount;
     wallet.totalEarned += amount;
@@ -129,7 +153,7 @@ export class WalletsService {
     return wallet.save();
   }
 
-  async withdrawFunds(userId: string, amount: number, userEmail: string, userName: string, selectedBankAccount?: { accountNumber: string, bankCode: string }): Promise<void> {
+  async withdrawFunds(userId: string, amount: number, userEmail: string, userName: string, selectedBankAccount?: { accountNumber: string, bankCode: string }, isInstant?: boolean): Promise<void> {
     const wallet = await this.getWallet(userId);
 
     if (wallet.balance < amount) {
@@ -151,7 +175,7 @@ export class WalletsService {
     await wallet.save();
 
     // Log Transaction as PENDING (Queued for admin approval)
-    await this.transactionModel.create({
+    const transaction = await this.transactionModel.create({
       wallet: wallet._id,
       amount,
       type: TransactionType.DEBIT,
@@ -160,12 +184,24 @@ export class WalletsService {
       reference,
       metadata: { 
         isPayoutRequest: true,
+        isInstant: isInstant || false,
         userName,
         userEmail,
         bankCode: targetBankCode, 
         accountNumber: targetAccountNumber 
       },
     });
+
+    if (isInstant) {
+      const user = await this.userModel.findById(userId);
+      const isVendor = user?.role === 'vendor';
+
+      if (amount > 5000 && !isVendor) {
+        throw new Error('Instant withdrawals are limited to a maximum of ₦5,000. For larger amounts, please submit a standard withdrawal request.');
+      }
+      // Process immediately
+      await this.approvePayoutRequest(transaction._id.toString());
+    }
   }
 
   async approvePayoutRequest(transactionId: string): Promise<void> {
@@ -200,9 +236,12 @@ export class WalletsService {
       bank_code: transaction.metadata.bankCode,
     });
 
+    const isInstant = transaction.metadata.isInstant === true;
+    const payoutAmount = isInstant ? Math.round(transaction.amount * 0.99) : transaction.amount;
+
     // Initiate Paystack Transfer
     const transfer = await this.paystackService.initiateTransfer({
-      amount: transaction.amount,
+      amount: payoutAmount,
       reference: transaction.reference as string,
       recipient: recipient.recipient_code,
       reason: `Withdrawal from Erranders Wallet - ${transaction.reference}`,
