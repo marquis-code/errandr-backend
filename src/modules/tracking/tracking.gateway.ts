@@ -11,7 +11,10 @@ import { Server, Socket } from 'socket.io';
 import { TrackingService } from './tracking.service';
 
 @WebSocketGateway({
-  cors: { origin: '*' },
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST'],
+  },
   namespace: '/tracking',
 })
 export class TrackingGateway
