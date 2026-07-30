@@ -310,4 +310,61 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       userId: data.userId,
     });
   }
+
+  // WebRTC Signaling Events
+  @SubscribeMessage('call:initiate')
+  handleCallInitiate(@MessageBody() data: any) {
+    const receiverSocketId = this.connectedUsers.get(data.receiverId);
+    if (receiverSocketId) {
+      this.server.to(receiverSocketId).emit('call:incoming', data);
+    }
+  }
+
+  @SubscribeMessage('call:accept')
+  handleCallAccept(@MessageBody() data: any) {
+    const callerSocketId = this.connectedUsers.get(data.callerId);
+    if (callerSocketId) {
+      this.server.to(callerSocketId).emit('call:accepted', data);
+    }
+  }
+
+  @SubscribeMessage('call:reject')
+  handleCallReject(@MessageBody() data: any) {
+    const callerSocketId = this.connectedUsers.get(data.callerId);
+    if (callerSocketId) {
+      this.server.to(callerSocketId).emit('call:rejected', data);
+    }
+  }
+
+  @SubscribeMessage('call:end')
+  handleCallEnd(@MessageBody() data: any) {
+    const targetSocketId = this.connectedUsers.get(data.targetId);
+    if (targetSocketId) {
+      this.server.to(targetSocketId).emit('call:ended', data);
+    }
+  }
+
+  @SubscribeMessage('webrtc:offer')
+  handleWebrtcOffer(@MessageBody() data: any) {
+    const targetSocketId = this.connectedUsers.get(data.targetId);
+    if (targetSocketId) {
+      this.server.to(targetSocketId).emit('webrtc:offer', data);
+    }
+  }
+
+  @SubscribeMessage('webrtc:answer')
+  handleWebrtcAnswer(@MessageBody() data: any) {
+    const targetSocketId = this.connectedUsers.get(data.targetId);
+    if (targetSocketId) {
+      this.server.to(targetSocketId).emit('webrtc:answer', data);
+    }
+  }
+
+  @SubscribeMessage('webrtc:ice-candidate')
+  handleWebrtcIceCandidate(@MessageBody() data: any) {
+    const targetSocketId = this.connectedUsers.get(data.targetId);
+    if (targetSocketId) {
+      this.server.to(targetSocketId).emit('webrtc:ice-candidate', data);
+    }
+  }
 }

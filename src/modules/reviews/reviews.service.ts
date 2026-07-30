@@ -63,6 +63,7 @@ export class ReviewsService {
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
+        .select('-comment')
         .populate('user', 'firstName lastName avatar')
         .lean(),
       this.reviewModel.countDocuments({ vendor: vendorId, isActive: true }),

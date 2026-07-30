@@ -91,6 +91,9 @@ export class AuthService {
 
     const isPasswordValid = await bcrypt.compare(loginDto.password, user.password);
     if (!isPasswordValid) {
+      console.error('Password mismatch for user:', user.email);
+      console.error('Provided password:', loginDto.password);
+      console.error('Hash in DB:', user.password);
       throw new UnauthorizedException('Invalid credentials');
     }
 
