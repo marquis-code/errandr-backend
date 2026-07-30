@@ -37,9 +37,10 @@ export class OrdersController {
     @Query('vendorId') vendorId: string,
     @Query('deliveryAddress') deliveryAddress: string,
     @Query('customerId') customerId?: string,
+    @Query('deliveryLocation') deliveryLocation?: string,
   ) {
     this.logger.log(`calculateFee() vendorId=${vendorId} deliveryAddress=${deliveryAddress}`);
-    const fee = await this.ordersService.calculateDynamicFee(vendorId, customerId || '', deliveryAddress);
+    const fee = await this.ordersService.calculateDynamicFee(vendorId, customerId || '', deliveryAddress, deliveryLocation);
     return { success: true, deliveryFee: fee };
   }
 

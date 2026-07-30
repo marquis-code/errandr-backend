@@ -2083,7 +2083,7 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     return populatedOrder as Order;
   }
 
-  async calculateDynamicFee(vendorId: string, customerId: string, deliveryAddress: string): Promise<number> {
+  async calculateDynamicFee(vendorId: string, customerId: string, deliveryAddress: string, deliveryLocationStr?: string): Promise<number> {
     const vendor = await this.vendorModel.findById(vendorId);
     let user: any = null;
     if (customerId) {
@@ -2099,6 +2099,17 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
 
     const vendorLocation = vendor.location?.coordinates;
     let customerLocation = user?.location?.coordinates;
+
+    if (deliveryLocationStr) {
+      try {
+        const parsed = JSON.parse(deliveryLocationStr);
+        if (parsed && parsed.coordinates) {
+          customerLocation = parsed.coordinates;
+        }
+      } catch (e) {
+        this.logger.warn(`Failed to parse deliveryLocationStr: ${deliveryLocationStr}`);
+      }
+    }
 
     // Check if vendor location is missing or default [0,0]
     if (!vendorLocation || (vendorLocation[0] === 0 && vendorLocation[1] === 0)) {
@@ -2128,6 +2139,40 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     }
 
     const vCoords = vendor.location?.coordinates;
+
+    // Check if customer is within CMUL/LUTH Idi-Araba Campus (Flat Rate ₦300)
+    let isCMUL = false;
+    if (customerLocation && customerLocation[0] !== 0 && customerLocation[1] !== 0) {
+      const [lng, lat] = customerLocation;
+      // Widen bounding box significantly to account for mapbox inaccuracies in Nigeria
+      const isWithinLat = lat >= 6.440000 && lat <= 6.530000;
+      const isWithinLng = lng >= 3.340000 && lng <= 3.400000;
+      if (isWithinLat && isWithinLng) {
+        // If it falls in the broad area, we MUST still verify with string because the box is large
+        // So we won't auto-set isCMUL based purely on this widened box.
+        // We'll rely more on the string matching.
+      }
+    }
+    
+    // String fallback because Mapbox coordinates for Nigerian institutions can be wildly inaccurate
+    const addrLower = (deliveryAddress || '').toLowerCase();
+    if (
+      addrLower.includes('college of medicine') || 
+      addrLower.includes('luth') || 
+      addrLower.includes('lagos university teaching hospital') ||
+      addrLower.includes('idi araba') || 
+      addrLower.includes('idi-araba') ||
+      addrLower.includes('cmul') ||
+      addrLower.includes('medilag') ||
+      addrLower.includes('unilag') // In case they write "Unilag Idi araba"
+    ) {
+      isCMUL = true;
+    }
+
+    if (isCMUL) {
+      return 300;
+    }
+
     if (vCoords && vCoords[0] !== 0 && customerLocation && customerLocation[0] !== 0) {
        const distanceKm = await this.mapboxService.getDrivingDistance(
          vCoords as [number, number],

@@ -280,6 +280,9 @@ export class Vendor extends Document {
     accountName: string;
   };
 
+  @Prop({ type: [String], default: ['Default / General'] })
+  accountPurposes: string[];
+
   // Social media
   @Prop({
     type: {
