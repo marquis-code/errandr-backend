@@ -75,7 +75,25 @@ export class AdminService {
   }
 
   async getReports() {
-    return this.reportModel.find().populate('reporter', 'firstName lastName email').sort({ createdAt: -1 });
+    const [reports, total, pending, investigating, resolved, dismissed] = await Promise.all([
+      this.reportModel
+        .find()
+        .populate('reporter', 'firstName lastName email avatar')
+        .populate('vendor', 'storeName logo')
+        .populate('reportedUser', 'firstName lastName email')
+        .populate('order', 'orderNumber total')
+        .sort({ createdAt: -1 }),
+      this.reportModel.countDocuments(),
+      this.reportModel.countDocuments({ status: 'pending' }),
+      this.reportModel.countDocuments({ status: 'investigating' }),
+      this.reportModel.countDocuments({ status: 'resolved' }),
+      this.reportModel.countDocuments({ status: 'dismissed' }),
+    ]);
+    return {
+      reports,
+      total,
+      stats: { pending, investigating, resolved, dismissed },
+    };
   }
 
   async getPendingVendors(page = 1, limit = 20) {
