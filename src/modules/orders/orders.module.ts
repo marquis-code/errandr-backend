@@ -25,6 +25,7 @@ import { AfricasTalkingModule } from '../africastalking/africastalking.module';
 import { PromoCodesModule } from '../promo-codes/promo-codes.module';
 
 import { ErrandPool, ErrandPoolSchema } from './schemas/errand-pool.schema';
+import { ExamModeModule } from '../exam-mode/exam-mode.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { ErrandPool, ErrandPoolSchema } from './schemas/errand-pool.schema';
     RewardsModule,
     forwardRef(() => AfricasTalkingModule),
     PromoCodesModule,
+    forwardRef(() => ExamModeModule),
   ],
   controllers: [OrdersController, SimulationController],
   providers: [OrdersService, BatchDeliveryService],
