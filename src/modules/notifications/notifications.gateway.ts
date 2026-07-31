@@ -55,8 +55,13 @@ export class NotificationsGateway
 
           if (target === 'broadcast:erranders') {
             // Broadcast to all connected users (erranders)
-            this.server.emit('notification:new-order', notification);
-            this.logger.log(`[Redis Broadcast] notification:new-order sent to all clients`);
+            if (notification.type === 'ORDER_ACCEPTED') {
+              this.server.emit('notification:order-accepted', notification);
+              this.logger.log(`[Redis Broadcast] notification:order-accepted sent to all clients`);
+            } else {
+              this.server.emit('notification:new-order', notification);
+              this.logger.log(`[Redis Broadcast] notification:new-order sent to all clients`);
+            }
           } else {
             // Send to specific user
             this.server.to(`user:${target}`).emit('notification:new', notification);

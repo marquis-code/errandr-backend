@@ -382,6 +382,18 @@ export class Order extends Document {
     timestamp: Date;
   }[];
 
+  @Prop({
+    type: [{
+      errander: { type: Types.ObjectId, ref: 'User' },
+      timestamp: { type: Date, default: Date.now }
+    }],
+    default: []
+  })
+  viewers: {
+    errander: Types.ObjectId | any;
+    timestamp: Date;
+  }[];
+
   @Prop({ default: Date.now })
   createdAt: Date;
 

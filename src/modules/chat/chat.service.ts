@@ -5,7 +5,8 @@ import { ChatMessage } from './schemas/chat-message.schema';
 import { Order } from '../orders/schemas/order.schema';
 import { Appointment } from '../appointments/schemas/appointment.schema';
 import { NotificationsService } from '../notifications/notifications.service';
-
+import { ModuleRef } from '@nestjs/core';
+import type { ExamModeService } from '../exam-mode/exam-mode.service';
 @Injectable()
 export class ChatService {
   constructor(
@@ -13,7 +14,12 @@ export class ChatService {
     @InjectModel(Order.name) private orderModel: Model<Order>,
     @InjectModel(Appointment.name) private appointmentModel: Model<Appointment>,
     @Inject(forwardRef(() => NotificationsService)) private notificationsService: NotificationsService,
+    private moduleRef: ModuleRef,
   ) {}
+
+  private get examModeService(): ExamModeService {
+    return this.moduleRef.get('ExamModeService', { strict: false });
+  }
 
   private readonly botAnswers = [
     { keywords: ['track', 'where', 'location'], answer: "You can track your order in real-time from the 'My Orders' section on your dashboard. You'll see the errander's live location once they pick up your items!" },
@@ -54,7 +60,73 @@ export class ChatService {
       console.error('Background push notification error:', err)
     );
 
+    // EXAM MODE AUTO-REPLY
+    this.handleExamModeAutoReply(msg, data).catch(err => 
+      console.error('Exam mode auto-reply error:', err)
+    );
+
     return msg;
+  }
+
+  private async handleExamModeAutoReply(msg: ChatMessage, data: any): Promise<void> {
+    let vendorOwnerId = null;
+    let vendorId = null;
+
+    if (msg.roomType === 'order' && data.orderId) {
+      const order = await this.orderModel.findById(data.orderId).populate('vendor');
+      if (order && order.vendor) {
+        vendorOwnerId = (order.vendor as any).owner?.toString();
+        vendorId = (order.vendor as any)._id?.toString();
+      }
+    } else if (msg.roomType === 'direct' && data.appointmentId) {
+      const appt = await this.appointmentModel.findById(data.appointmentId).populate('vendor');
+      if (appt && appt.vendor) {
+        vendorOwnerId = (appt.vendor as any).owner?.toString();
+        vendorId = (appt.vendor as any)._id?.toString();
+      }
+    }
+
+    // If a customer is messaging the vendor
+    if (vendorId && vendorOwnerId && data.senderId.toString() !== vendorOwnerId) {
+      const availability = await this.examModeService.getAvailability(vendorId);
+      if (availability && availability.isExamModeActive && availability.autoReplyMessage) {
+        const now = new Date();
+        const currentHour = now.getHours();
+        const currentDay = now.getDay();
+        
+        let isWithinReplyHours = false;
+        if (availability.replyWindows && availability.replyWindows.length > 0) {
+          for (const window of availability.replyWindows) {
+            if (window.dayOfWeek !== undefined && window.dayOfWeek !== currentDay) continue;
+            
+            const [startH] = window.startTime.split(':').map(Number);
+            const [endH] = window.endTime.split(':').map(Number);
+            if (currentHour >= startH && currentHour < endH) {
+              isWithinReplyHours = true;
+              break;
+            }
+          }
+        }
+
+        if (!isWithinReplyHours) {
+          // Send auto-reply
+          const autoReplyMsg = availability.autoReplyMessage || 'I am currently away in Exam Mode and will reply during my next active window.';
+          
+          await this.chatModel.create({
+            order: data.orderId ? new Types.ObjectId(data.orderId) : undefined,
+            appointment: data.appointmentId ? new Types.ObjectId(data.appointmentId) : undefined,
+            sender: new Types.ObjectId(vendorOwnerId),
+            receiver: new Types.ObjectId(data.senderId),
+            message: `[Automated Reply] ${autoReplyMsg}`,
+            messageType: 'text',
+            roomType: msg.roomType,
+            replyTo: (msg as any)._id,
+          });
+
+          // In a real app we'd also emit this to the websocket so the customer sees it instantly
+        }
+      }
+    }
   }
 
   /**

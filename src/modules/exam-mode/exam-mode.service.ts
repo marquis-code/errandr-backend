@@ -7,8 +7,8 @@ import { ContentPlan, ContentPlanStatus } from './schemas/content-plan.schema';
 import { RescheduleRequest, RescheduleStatus } from './schemas/reschedule-request.schema';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { NotificationsService } from '../notifications/notifications.service';
-import { OrdersService } from '../orders/orders.service';
-
+import { ModuleRef } from '@nestjs/core';
+import type { OrdersService } from '../orders/orders.service';
 @Injectable()
 export class ExamModeService {
   private readonly logger = new Logger(ExamModeService.name);
@@ -19,8 +19,12 @@ export class ExamModeService {
     @InjectModel(RescheduleRequest.name) private rescheduleRequestModel: Model<RescheduleRequest>,
     private notificationsGateway: NotificationsGateway,
     private notificationsService: NotificationsService,
-    @Inject(forwardRef(() => OrdersService)) private ordersService: OrdersService,
+    private moduleRef: ModuleRef,
   ) {}
+
+  private get ordersService(): OrdersService {
+    return this.moduleRef.get('OrdersService', { strict: false });
+  }
 
   // --- VENDOR AVAILABILITY ---
 

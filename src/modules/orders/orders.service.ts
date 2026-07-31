@@ -28,8 +28,8 @@ import { MapboxService } from '../mapbox/mapbox.service';
 import { PromoCodesService } from '../promo-codes/promo-codes.service';
 import * as bcrypt from 'bcryptjs';
 
-import { ExamModeService } from '../exam-mode/exam-mode.service';
-
+import { ModuleRef } from '@nestjs/core';
+import type { ExamModeService } from '../exam-mode/exam-mode.service';
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
@@ -57,8 +57,12 @@ export class OrdersService {
     private africasTalkingService: AfricasTalkingService,
     private mapboxService: MapboxService,
     private promoCodesService: PromoCodesService,
-    @Inject(forwardRef(() => ExamModeService)) private examModeService: ExamModeService,
+    private moduleRef: ModuleRef,
   ) {}
+
+  private get examModeService(): ExamModeService {
+    return this.moduleRef.get('ExamModeService', { strict: false });
+  }
 
   async getBatchStatus() {
     return this.batchDeliveryService.getBatchStatus();
@@ -1075,6 +1079,12 @@ export class OrdersService {
     // Notify all parties via stored notifications + real-time
     await this.notifyOrderStatusUpdate(order, OrderStatus.CONFIRMED, 'Order accepted by errander');
 
+    // Broadcast order accepted so it is removed from the dispatch pool for all other riders
+    await this.redisService.publish('notification:broadcast:erranders', JSON.stringify({
+      type: 'ORDER_ACCEPTED',
+      data: { orderId: order._id.toString() }
+    }));
+
     // Reward for Fast Acceptance (Compliance)
     const orderCreatedAt = (order as any).createdAt || new Date();
     const acceptanceDelay = (Date.now() - new Date(orderCreatedAt).getTime()) / 60000; // in minutes
@@ -1153,11 +1163,14 @@ export class OrdersService {
     if (!order) throw new NotFoundException('Order not found');
     
     // Security check: only assigned errander can complete
-    const orderErranderId = (order.errander as any)?._id?.toString() || order.errander?.toString();
-    this.logger.log(`completeOrder check: order.errander=${orderErranderId} vs erranderId=${erranderId.toString()}`);
+    const errander = await this.erranderModel.findOne({ user: erranderId });
+    if (!errander) throw new BadRequestException('Errander profile not found');
     
-    if (orderErranderId !== erranderId.toString()) {
-      this.logger.error(`Assignment mismatch: ${orderErranderId} !== ${erranderId.toString()}`);
+    const orderErranderId = (order.errander as any)?._id?.toString() || order.errander?.toString();
+    this.logger.log(`completeOrder check: order.errander=${orderErranderId} vs erranderId=${errander._id.toString()}`);
+    
+    if (orderErranderId !== errander._id.toString()) {
+      this.logger.error(`Assignment mismatch: ${orderErranderId} !== ${errander._id.toString()}`);
       throw new BadRequestException('You are not assigned to this order');
     }
 
@@ -1252,8 +1265,11 @@ export class OrdersService {
     if (!order) throw new NotFoundException('Order not found');
     
     // Security check: only assigned errander can complete
+    const errander = await this.erranderModel.findOne({ user: erranderId });
+    if (!errander) throw new BadRequestException('Errander profile not found');
+
     const orderErranderId = (order.errander as any)?._id?.toString() || order.errander?.toString();
-    if (orderErranderId !== erranderId.toString()) {
+    if (orderErranderId !== errander._id.toString()) {
       throw new BadRequestException('You are not assigned to this order');
     }
 
@@ -1429,6 +1445,7 @@ export class OrdersService {
       .populate('vendor', 'storeName logo phone address location user')
       .populate('errander', 'firstName lastName phone user')
       .populate('bids.errander', 'firstName lastName avatar phone')
+      .populate('viewers.errander', 'firstName lastName avatar phone')
       .lean();
     if (!order) throw new NotFoundException('Order not found');
 
@@ -2146,7 +2163,10 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     // Broadcast order accepted so it is removed from the dispatch pool
     await this.redisService.publish('notification:broadcast:erranders', JSON.stringify({
       type: 'ORDER_ACCEPTED',
-      data: { orderId: order._id.toString() }
+      data: { 
+        orderId: order._id.toString(),
+        winningUserId: bid.errander._id.toString()
+      }
     }));
     
     const populatedOrder = await this.orderModel.findById(order._id)
@@ -2419,10 +2439,61 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
 
   // --- ERRAND POOLING (CUSTOM ERRANDS) ---
 
+  async recordOrderView(orderId: string, erranderId: string): Promise<any> {
+    const order = await this.orderModel.findById(orderId).populate('viewers.errander', 'firstName lastName avatar phone rating');
+    if (!order) throw new NotFoundException('Order not found');
+
+    const hasViewed = order.viewers.some((v: any) => v.errander?._id?.toString() === erranderId.toString());
+    
+    if (!hasViewed) {
+      const errander = await this.userModel.findById(erranderId);
+      if (errander) {
+        order.viewers.push({
+          errander: errander._id,
+          timestamp: new Date()
+        });
+        await order.save();
+
+        const populatedOrder = await this.orderModel.findById(orderId).populate('viewers.errander', 'firstName lastName avatar phone rating').lean();
+
+        // Notify customer via push notification
+        const customerId = (order.customer as any)?._id?.toString() || order.customer?.toString();
+        
+        try {
+          await this.notificationsService.sendNotification(customerId, {
+            type: 'ORDER_UPDATE',
+            title: 'Rider is viewing your request',
+            body: `${errander.firstName} ${errander.lastName} is currently viewing your custom errand request!`,
+            data: { orderId: order._id, orderNumber: order.orderNumber },
+          });
+
+          this.notificationsGateway.sendToUser(customerId, {
+            title: 'Rider Viewing Request',
+            body: `${errander.firstName} ${errander.lastName} is currently viewing your custom errand request!`,
+            type: 'ERRAND_VIEWER_ADDED',
+            data: {
+              orderId: order._id,
+              viewers: populatedOrder?.viewers || []
+            }
+          });
+        } catch (e) {
+          this.logger.warn(`Failed to notify customer about order view: ${e}`);
+        }
+
+        return populatedOrder;
+      }
+    }
+    
+    return order;
+  }
+
   async createErrandPool(orderId: string, customerId: string, title: string, maxParticipants = 4): Promise<any> {
     const order = await this.orderModel.findById(orderId);
     if (!order) throw new NotFoundException('Order not found');
-    if (order.customer.toString() !== customerId) throw new BadRequestException('Not authorized');
+    
+    const orderCustomerId = (order.customer as any)?._id?.toString() || order.customer?.toString();
+    if (orderCustomerId !== customerId.toString()) throw new BadRequestException('Not authorized');
+    
     if (order.type !== 'custom_errand') throw new BadRequestException('Only custom errands can be pooled');
     if (order.isPooledErrand) throw new BadRequestException('Order is already in a pool');
 

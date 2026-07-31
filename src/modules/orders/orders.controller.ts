@@ -264,6 +264,19 @@ async getMyVendorOrders(
     return this.ordersService.acceptBid(id, bidId, (user._id as unknown) as string);
   }
 
+  @Put(':id/custom/bid/:bidId/reject')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Reject a counter-offer bid for a custom errand' })
+  rejectBid(
+    @Param('id') id: string,
+    @Param('bidId') bidId: string,
+    @CurrentUser() user: User,
+  ) {
+    this.logger.log(`rejectBid() id=${id} bidId=${bidId} user=${user._id}`);
+    return this.ordersService.rejectBid(id, bidId, (user._id as unknown) as string);
+  }
+
   @Put(':id/rate')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
@@ -372,6 +385,17 @@ async getMyVendorOrders(
   @ApiOperation({ summary: 'Get all open pooled errands' })
   getOpenPools() {
     return this.ordersService.getOpenPools();
+  }
+
+  @Post(':id/view')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Record that a rider has viewed a custom errand' })
+  recordOrderView(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.ordersService.recordOrderView(id, (user._id as unknown) as string);
   }
 
   @Post(':id/pool/create')
