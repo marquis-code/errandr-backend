@@ -28,6 +28,8 @@ import { MapboxService } from '../mapbox/mapbox.service';
 import { PromoCodesService } from '../promo-codes/promo-codes.service';
 import * as bcrypt from 'bcryptjs';
 
+import { ExamModeService } from '../exam-mode/exam-mode.service';
+
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
@@ -55,6 +57,7 @@ export class OrdersService {
     private africasTalkingService: AfricasTalkingService,
     private mapboxService: MapboxService,
     private promoCodesService: PromoCodesService,
+    @Inject(forwardRef(() => ExamModeService)) private examModeService: ExamModeService,
   ) {}
 
   async getBatchStatus() {
@@ -247,6 +250,10 @@ export class OrdersService {
     if (vendor.status !== VendorStatus.APPROVED) {
       throw new BadRequestException('Vendor is not approved');
     }
+
+    // Exam Mode Conflict Check
+    const requestedDate = data.scheduledTime ? new Date(data.scheduledTime) : new Date();
+    const conflictDate = await this.examModeService.checkVendorAvailabilityConflict(data.vendorId, requestedDate);
 
     // Calculate totals from packs or items
     let subtotal = 0;
@@ -580,19 +587,35 @@ export class OrdersService {
     // Schedule timeout check (e.g. 5 mins)
     await this.orderQueue.add('orderTimeout', { orderId: order._id }, { delay: 300000 });
 
-    // Broadcast to available erranders only if paid
-    if (data.paymentReference) {
-      await this.broadcastNewOrderToErranders(order);
-    }
-
-
-    // Trigger Vendor Notification Cascade
+    // Trigger Vendor Notification Cascade & Fetch for later use
     const populatedVendor = await this.vendorModel.findById(data.vendorId).populate('owner');
-    if (populatedVendor) {
-      // Fire-and-forget cascade
-      this.notificationsService.notifyVendor(populatedVendor, order).catch(e => {
-        this.logger.error(`Vendor notification cascade failed: ${e.message}`);
-      });
+
+    // Exam Mode: Handle conflict or proceed normally
+    if (conflictDate) {
+      // Order placed during an unavailable window
+      order.status = OrderStatus.PENDING; // Keep it pending until resolved
+      await order.save();
+      
+      this.logger.log(`Order ${order.orderNumber} intercepted for Exam Mode. Auto-suggesting reschedule to ${conflictDate}.`);
+      await this.examModeService.createRescheduleRequest(
+        order._id.toString(),
+        data.vendorId,
+        customerId,
+        requestedDate,
+        conflictDate
+      );
+    } else {
+      // Broadcast to available erranders only if paid
+      if (data.paymentReference) {
+        await this.broadcastNewOrderToErranders(order);
+      }
+
+      if (populatedVendor) {
+        // Fire-and-forget cascade
+        this.notificationsService.notifyVendor(populatedVendor, order).catch(e => {
+          this.logger.error(`Vendor notification cascade failed: ${e.message}`);
+        });
+      }
     }
 
     if (order.customer && (order.customer as any).email) {
@@ -2497,5 +2520,18 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     await pool.save();
 
     return pool;
+  }
+
+  async updateOrderDeliveryDate(orderId: string, newDate: Date) {
+    const order = await this.orderModel.findById(orderId);
+    if (!order) throw new NotFoundException('Order not found');
+
+    order.scheduledTime = newDate;
+    order.status = OrderStatus.CONFIRMED;
+    await order.save();
+
+    if (order.paymentStatus === PaymentStatus.PAID) {
+      await this.broadcastNewOrderToErranders(order);
+    }
   }
 }

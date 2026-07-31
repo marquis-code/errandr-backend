@@ -38,6 +38,7 @@ import { ReviewsModule } from './modules/reviews/reviews.module';
 import { MapboxModule } from './modules/mapbox/mapbox.module';
 import { GlobalProductsModule } from './modules/global-products/global-products.module';
 import { PushCampaignsModule } from './modules/push-campaigns/push-campaigns.module';
+import { ExamModeModule } from './modules/exam-mode/exam-mode.module';
 
 @Module({
   imports: [
@@ -107,6 +108,7 @@ import { PushCampaignsModule } from './modules/push-campaigns/push-campaigns.mod
     GlobalProductsModule,
     PushCampaignsModule,
     PromoCodesModule,
+    ExamModeModule,
   ],
 })
 export class AppModule {}
