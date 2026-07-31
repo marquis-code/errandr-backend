@@ -202,6 +202,7 @@ export class OrdersService {
       const order = await this.orderModel.create({
         orderNumber: `EXT-${uuidv4().slice(0, 8).toUpperCase()}`,
         uniqueCode: Math.floor(100000 + Math.random() * 900000).toString(),
+        deliveryPin: Math.floor(1000 + Math.random() * 9000).toString(),
         customer: new Types.ObjectId(customerId),
         type: OrderType.CUSTOM_ERRAND,
         customDetails: {
@@ -502,6 +503,7 @@ export class OrdersService {
     const order = await this.orderModel.create({
       orderNumber: `ERR-${uuidv4().slice(0, 8).toUpperCase()}`,
       uniqueCode: Math.floor(100000 + Math.random() * 900000).toString(),
+      deliveryPin: Math.floor(1000 + Math.random() * 9000).toString(),
       customer: new Types.ObjectId(customerId),
       vendor: new Types.ObjectId(data.vendorId),
       items: flatItems,
@@ -1135,17 +1137,18 @@ export class OrdersService {
       throw new BadRequestException('You are not assigned to this order');
     }
 
-    // Verify code
-    if (order.uniqueCode !== verificationCode.toUpperCase()) {
-      throw new BadRequestException('Invalid unique code provided by student');
+    // Verify Delivery PIN
+    if (order.deliveryPin !== verificationCode) {
+      throw new BadRequestException('Invalid Delivery PIN provided by student');
     }
 
+    order.deliveryPinStatus = 'verified';
     order.status = OrderStatus.DELIVERED;
     order.actualDeliveryTime = new Date();
     order.statusHistory.push({
       status: OrderStatus.DELIVERED,
       timestamp: new Date(),
-      note: 'Order completed via verification code',
+      note: 'Order completed via Delivery PIN',
     });
 
     // ERRANDER PAYOUT
@@ -1218,6 +1221,68 @@ export class OrdersService {
       { path: 'vendor', select: 'storeName logo phone' },
       { path: 'errander', select: 'firstName lastName phone avatar' },
     ]);
+  }
+
+  async bypassDeliveryPinWithPhoto(orderId: string, erranderId: string, imageUrl: string): Promise<Order> {
+    const order = await this.orderModel.findById(orderId);
+    if (!order) throw new NotFoundException('Order not found');
+    
+    // Security check: only assigned errander can complete
+    const orderErranderId = (order.errander as any)?._id?.toString() || order.errander?.toString();
+    if (orderErranderId !== erranderId.toString()) {
+      throw new BadRequestException('You are not assigned to this order');
+    }
+
+    if (!imageUrl) {
+      throw new BadRequestException('Photo proof is required for contactless drop-off');
+    }
+
+    order.deliveryPinStatus = 'bypassed_contactless';
+    order.contactlessDropoffImage = imageUrl;
+    order.status = OrderStatus.DELIVERED;
+    order.actualDeliveryTime = new Date();
+    order.statusHistory.push({
+      status: OrderStatus.DELIVERED,
+      timestamp: new Date(),
+      note: 'Order completed via Contactless Drop-off (Photo Proof)',
+    });
+
+    // ERRANDER PAYOUT
+    const erranderEarnings = order.erranderPayout || order.deliveryFee;
+    await this.walletsService.creditWallet(
+      erranderId,
+      erranderEarnings,
+      `Delivery earnings for order ${order.orderNumber}`,
+      order._id.toString(),
+    );
+
+    // Free up errander or update batch
+    const errander = await this.erranderModel.findOne({ user: new Types.ObjectId(erranderId) });
+    if (errander) {
+      if (errander.currentOrder?.toString() === orderId) {
+        (errander as any).currentOrder = null;
+      }
+      errander.batchOrders = errander.batchOrders?.filter(id => id.toString() !== orderId) || [];
+      
+      if (!errander.currentOrder && (!errander.batchOrders || errander.batchOrders.length === 0)) {
+        errander.status = ErranderStatus.AVAILABLE;
+      }
+
+      errander.totalDeliveries = (errander.totalDeliveries || 0) + 1;
+      errander.totalEarnings = (errander.totalEarnings || 0) + erranderEarnings;
+
+      await errander.save();
+    }
+
+    // Award Points for Order Completion
+    await this.rewardsService.addPoints(order.customer.toString(), 25, `Completed order #${order.orderNumber}`);
+
+    // Reward for Erranders Consistency
+    await this.rewardsService.addPoints(erranderId, 20, `Successful delivery of order #${order.orderNumber}`);
+
+    await order.save();
+    await this.notifyOrderStatusUpdate(order, OrderStatus.DELIVERED, 'Order delivered via Contactless Drop-off');
+    return this.findById(orderId);
   }
 
   async getCustomerOrders(customerId: string, page: any = 1, limit: any = 20) {
@@ -1338,7 +1403,7 @@ export class OrdersService {
       .findById(id)
       .populate('customer', 'firstName lastName phone avatar deliveryAddress location')
       .populate('vendor', 'storeName logo phone address location user')
-      .populate('errander', 'firstName lastName phone avatar user')
+      .populate('errander', 'firstName lastName phone user')
       .populate('bids.errander', 'firstName lastName avatar phone')
       .lean();
     if (!order) throw new NotFoundException('Order not found');
@@ -1777,7 +1842,7 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     const order = await this.orderModel.findOne({ orderNumber })
       .populate('vendor', 'storeName businessType businessName address logo')
       .populate('customer', 'firstName lastName email phone')
-      .populate('errander', 'firstName lastName phone avatar vehicleType')
+      .populate('errander', 'firstName lastName phone vehicleType')
       .populate('items.product', 'name images')
       .populate('packs.items.product', 'name images');
     

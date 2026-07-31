@@ -306,7 +306,7 @@ async getMyVendorOrders(
   @Post(':id/complete')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Complete order via unique code' })
+  @ApiOperation({ summary: 'Complete order via Delivery PIN' })
   completeOrder(
     @Param('id') id: string,
     @CurrentUser() user: User,
@@ -314,6 +314,19 @@ async getMyVendorOrders(
   ) {
     this.logger.log(`completeOrder() id=${id} user=${user._id}`);
     return this.ordersService.completeOrder(id, (user._id as unknown) as string, body.verificationCode);
+  }
+
+  @Post(':id/complete-contactless')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Complete order via Contactless Drop-off (Photo)' })
+  completeOrderContactless(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+    @Body() body: { imageUrl: string },
+  ) {
+    this.logger.log(`completeOrderContactless() id=${id} user=${user._id}`);
+    return this.ordersService.bypassDeliveryPinWithPhoto(id, (user._id as unknown) as string, body.imageUrl);
   }
 
   @Get('track/guest')

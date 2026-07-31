@@ -428,6 +428,16 @@ export class Order extends Document {
   @Prop({ default: 0 })
   transferFee: number;
 
+  // Delivery Verification (Privacy)
+  @Prop()
+  deliveryPin: string;
+
+  @Prop({ type: String, enum: ['pending', 'verified', 'bypassed_contactless'], default: 'pending' })
+  deliveryPinStatus: 'pending' | 'verified' | 'bypassed_contactless';
+
+  @Prop()
+  contactlessDropoffImage: string;
+
   // Reconciliation fields
   @Prop()
   actualItemCost: number;
