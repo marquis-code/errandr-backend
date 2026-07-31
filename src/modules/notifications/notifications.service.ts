@@ -131,10 +131,18 @@ export class NotificationsService {
           },
         },
         apns: {
+          headers: {
+            'apns-priority': '10',
+          },
           payload: {
             aps: {
               sound: 'default',
             },
+          },
+        },
+        webpush: {
+          headers: {
+            Urgency: 'high',
           },
         },
       });
