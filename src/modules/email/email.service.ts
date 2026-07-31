@@ -4,7 +4,9 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Resend } from 'resend';
 import { SystemSetting } from '../admin/schemas/system-setting.schema';
-
+import { User } from '../users/schemas/user.schema';
+import { Vendor } from '../vendors/schemas/vendor.schema';
+import { NotificationsService } from '../notifications/notifications.service';
 export interface EmailTemplateOptions {
   preheader?: string;
   badge?: { text: string; color: 'orange' | 'blue' | 'green' | 'purple' };
@@ -16,13 +18,16 @@ export interface EmailTemplateOptions {
 @Injectable()
 export class EmailService {
   private resend: Resend | null;
-  private fromEmail = 'Erranders <notifications@erranders.org>';
+  private fromEmail = '"Erranders" <notifications@erranders.org>';
   private primaryColor = '#FF5C1A';
   private logoUrl = 'https://res.cloudinary.com/marquis/image/upload/v1784062203/logo-light_pyjwmn-removebg-preview_y3jvvg.png';
 
   constructor(
     private configService: ConfigService,
     @InjectModel(SystemSetting.name) private readonly settingModel: Model<SystemSetting>,
+    @InjectModel(User.name) private readonly userModel: Model<User>,
+    @InjectModel(Vendor.name) private readonly vendorModel: Model<Vendor>,
+    private notificationsService: NotificationsService,
   ) {
     let apiKey = this.configService.get<string>('RESEND_API_KEY');
     if (apiKey) {
@@ -67,9 +72,10 @@ export class EmailService {
 
       const { data, error } = await this.resend.emails.send({
         from: this.fromEmail,
-        to: [to],
+        to: Array.isArray(to) ? to : [to],
         subject,
-        html,
+        html: html,
+        replyTo: 'hello@erranders.org',
       });
 
       if (error) {
@@ -79,11 +85,46 @@ export class EmailService {
       }
 
       console.log(`\x1b[32m[EMAIL_AGENT] ✅ Email delivered successfully! ID: ${data?.id}\x1b[0m`);
+      
+      // Fire and forget companion push notification
+      this.sendCompanionPushNotification(to, subject, html).catch(err => {
+         console.error(`\x1b[33m[EMAIL_AGENT] ⚠️ Failed to send companion push to ${to}: ${err.message}\x1b[0m`);
+      });
+
       return data;
     } catch (err: any) {
       console.error(`\x1b[31m[EMAIL_AGENT] ❌ Fatal Error: ${err.message}\x1b[0m`);
       // Return gracefully instead of throwing InternalServerErrorException
       return { success: false, error: err.message };
+    }
+  }
+
+  private async sendCompanionPushNotification(email: string, title: string, html: string) {
+    try {
+      const user = await this.userModel.findOne({ email: email.toLowerCase() });
+      if (!user) return;
+
+      // Extract subtitle from HTML to use as the push notification body
+      let body = "Tap to view details.";
+      const subtitleMatch = html.match(/<p class="subtitle"[^>]*>(.*?)<\/p>/);
+      if (subtitleMatch && subtitleMatch[1]) {
+        body = subtitleMatch[1].replace(/<[^>]*>?/gm, ''); // strip HTML tags
+      }
+
+      const payload = { title, body };
+
+      // Send to User (Student/Dispatcher App)
+      if (user.fcmToken) {
+        await this.notificationsService.sendPushNotification(user.fcmToken, payload);
+      }
+
+      // Check if user is a Vendor (Vendor App)
+      const vendor = await this.vendorModel.findOne({ owner: user._id });
+      if (vendor && vendor.fcmToken && vendor.fcmToken !== user.fcmToken) {
+        await this.notificationsService.sendPushNotification(vendor.fcmToken, payload);
+      }
+    } catch (e) {
+      console.error(`[EMAIL_AGENT] Companion push error:`, e);
     }
   }
 

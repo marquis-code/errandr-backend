@@ -142,7 +142,15 @@ export class NotificationsService {
         },
         webpush: {
           headers: {
-            Urgency: 'high',
+            urgency: 'high',
+          },
+          notification: {
+            requireInteraction: true,
+            icon: 'https://erranders.org/favicon.ico',
+            badge: 'https://erranders.org/favicon.ico',
+          },
+          fcmOptions: {
+            link: 'https://erranders.org',
           },
         },
       });
