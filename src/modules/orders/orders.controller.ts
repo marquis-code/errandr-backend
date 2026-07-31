@@ -365,4 +365,47 @@ async getMyVendorOrders(
     this.logger.log(`approveReconciliation() id=${id} user=${user._id}`);
     return this.ordersService.approveReconciliation(id, (user._id as unknown) as string);
   }
+
+  // --- ERRAND POOLING (CUSTOM ERRANDS) ---
+
+  @Get('pool/open')
+  @ApiOperation({ summary: 'Get all open pooled errands' })
+  getOpenPools() {
+    return this.ordersService.getOpenPools();
+  }
+
+  @Post(':id/pool/create')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Turn a custom errand into an open pool' })
+  createErrandPool(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+    @Body() body: { title: string; maxParticipants?: number },
+  ) {
+    return this.ordersService.createErrandPool(id, (user._id as unknown) as string, body.title, body.maxParticipants);
+  }
+
+  @Post(':id/pool/:poolId/join')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Join an existing errand pool with a new custom errand' })
+  joinErrandPool(
+    @Param('id') id: string,
+    @Param('poolId') poolId: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.ordersService.joinPool(poolId, id, (user._id as unknown) as string);
+  }
+
+  @Put('pool/:poolId/lock')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Lock a pool early' })
+  lockErrandPool(
+    @Param('poolId') poolId: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.ordersService.lockPool(poolId, (user._id as unknown) as string);
+  }
 }

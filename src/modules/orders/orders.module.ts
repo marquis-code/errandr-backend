@@ -24,6 +24,8 @@ import { SimulationController } from './simulation.controller';
 import { AfricasTalkingModule } from '../africastalking/africastalking.module';
 import { PromoCodesModule } from '../promo-codes/promo-codes.module';
 
+import { ErrandPool, ErrandPoolSchema } from './schemas/errand-pool.schema';
+
 @Module({
   imports: [
     MongooseModule.forFeature([
@@ -34,6 +36,7 @@ import { PromoCodesModule } from '../promo-codes/promo-codes.module';
       { name: User.name, schema: UserSchema },
       { name: MenuItem.name, schema: MenuItemSchema },
       { name: SystemSetting.name, schema: SystemSettingSchema },
+      { name: ErrandPool.name, schema: ErrandPoolSchema },
     ]),
     NotificationsModule,
     ChatModule,

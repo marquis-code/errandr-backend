@@ -415,6 +415,13 @@ export class Order extends Document {
 
   @Prop({ default: false })
   isDormDelivery: boolean;
+
+  // Custom Errand Pooling
+  @Prop({ default: false })
+  isPooledErrand: boolean;
+
+  @Prop({ type: Types.ObjectId, ref: 'ErrandPool' })
+  errandPoolId: Types.ObjectId;
   
   @Prop()
   deliveryOtpHash: string;

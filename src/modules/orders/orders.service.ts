@@ -40,6 +40,7 @@ export class OrdersService {
     @InjectModel(MenuItem.name) private menuItemModel: Model<MenuItem>,
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(SystemSetting.name) private settingModel: Model<SystemSetting>,
+    @InjectModel('ErrandPool') private errandPoolModel: Model<any>,
     private redisService: RedisService,
     @InjectQueue('orders') private orderQueue: Queue,
     @Inject(forwardRef(() => WalletsService)) private walletsService: WalletsService,
@@ -2391,5 +2392,110 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     }
 
     return order;
+  }
+
+  // --- ERRAND POOLING (CUSTOM ERRANDS) ---
+
+  async createErrandPool(orderId: string, customerId: string, title: string, maxParticipants = 4): Promise<any> {
+    const order = await this.orderModel.findById(orderId);
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.customer.toString() !== customerId) throw new BadRequestException('Not authorized');
+    if (order.type !== 'custom_errand') throw new BadRequestException('Only custom errands can be pooled');
+    if (order.isPooledErrand) throw new BadRequestException('Order is already in a pool');
+
+    const poolCode = 'POOL-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+    
+    const pool = await this.errandPoolModel.create({
+      poolCode,
+      title,
+      creator: customerId,
+      orders: [order._id],
+      baseDeliveryFee: order.deliveryFee,
+      maxParticipants,
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000) // 1 hour expiry
+    });
+
+    order.isPooledErrand = true;
+    order.errandPoolId = pool._id;
+    await order.save();
+
+    return pool;
+  }
+
+  async getOpenPools(): Promise<any[]> {
+    return this.errandPoolModel.find({ status: 'open' })
+      .populate('creator', 'firstName lastName avatar')
+      .populate('orders')
+      .sort({ createdAt: -1 })
+      .lean();
+  }
+
+  async joinPool(poolId: string, orderId: string, customerId: string): Promise<any> {
+    const pool = await this.errandPoolModel.findById(poolId);
+    if (!pool) throw new NotFoundException('Pool not found');
+    if (pool.status !== 'open') throw new BadRequestException('Pool is no longer open');
+    if (pool.orders.length >= pool.maxParticipants) throw new BadRequestException('Pool is full');
+
+    const order = await this.orderModel.findById(orderId);
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.customer.toString() !== customerId) throw new BadRequestException('Not authorized');
+    if (order.type !== 'custom_errand') throw new BadRequestException('Only custom errands can be pooled');
+    if (order.isPooledErrand) throw new BadRequestException('Order is already in a pool');
+
+    // Add to pool
+    pool.orders.push(order._id);
+    await pool.save();
+
+    order.isPooledErrand = true;
+    order.errandPoolId = pool._id;
+    
+    // Calculate split fee
+    const currentParticipantCount = pool.orders.length;
+    const splitFee = Math.floor(pool.baseDeliveryFee / currentParticipantCount);
+    
+    order.deliveryFee = splitFee;
+    await order.save();
+
+    // Issue refunds to previous participants for the difference
+    for (const memberOrderId of pool.orders) {
+      if (memberOrderId.toString() === order._id.toString()) continue; // Skip new member
+
+      const memberOrder = await this.orderModel.findById(memberOrderId);
+      if (memberOrder && memberOrder.deliveryFee > splitFee) {
+        const refundDiff = memberOrder.deliveryFee - splitFee;
+        memberOrder.deliveryFee = splitFee;
+        await memberOrder.save();
+        
+        try {
+          await this.walletsService.creditWallet(
+            memberOrder.customer.toString(),
+            refundDiff,
+            `Delivery Fee Refund: Shared Pool (${pool.title}) adjusted fee`,
+            memberOrder._id.toString()
+          );
+        } catch (e) {
+          this.logger.error(`Failed to refund pool discount for order ${memberOrder.orderNumber}: ${e}`);
+        }
+      }
+    }
+
+    if (pool.orders.length >= pool.maxParticipants) {
+      pool.status = 'locked'; // Auto lock if full
+      await pool.save();
+    }
+
+    return pool;
+  }
+
+  async lockPool(poolId: string, customerId: string): Promise<any> {
+    const pool = await this.errandPoolModel.findById(poolId);
+    if (!pool) throw new NotFoundException('Pool not found');
+    if (pool.creator.toString() !== customerId) throw new BadRequestException('Only the creator can lock the pool');
+    if (pool.status !== 'open') throw new BadRequestException('Pool is already locked or completed');
+
+    pool.status = 'locked';
+    await pool.save();
+
+    return pool;
   }
 }
