@@ -14,8 +14,7 @@ import { RedisService } from '../redis/redis.service';
 
 @WebSocketGateway({
   cors: {
-    origin: true,
-    credentials: true,
+    origin: '*',
   },
   namespace: '/realtime',
 })

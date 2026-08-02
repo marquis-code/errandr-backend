@@ -12,8 +12,7 @@ import { TrackingService } from './tracking.service';
 
 @WebSocketGateway({
   cors: {
-    origin: true,
-    credentials: true,
+    origin: '*',
   },
   namespace: '/tracking',
 })

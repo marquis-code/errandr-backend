@@ -13,8 +13,7 @@ import { WsJwtAuthGuard } from '../../common/decorators';
 
 @WebSocketGateway({
   cors: {
-    origin: true,
-    credentials: true,
+    origin: '*',
   },
   namespace: '/realtime',
 })
