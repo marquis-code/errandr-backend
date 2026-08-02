@@ -59,10 +59,10 @@ export class AppointmentsController {
     try {
       const refStr = Array.isArray(reference) ? reference[0] : reference;
       await this.appointmentsService.verifyPayment(refStr);
-      const frontendUrl = process.env.STUDENT_FRONTEND_URL || process.env.FRONTEND_URL || 'http://localhost:3001';
+      const frontendUrl = process.env.STUDENT_FRONTEND_URL || process.env.FRONTEND_URL || 'https://www.erranders.org';
       return res.redirect(`${frontendUrl}/dashboard/activity?payment=success`);
     } catch (error) {
-      const frontendUrl = process.env.STUDENT_FRONTEND_URL || process.env.FRONTEND_URL || 'http://localhost:3001';
+      const frontendUrl = process.env.STUDENT_FRONTEND_URL || process.env.FRONTEND_URL || 'https://www.erranders.org';
       return res.redirect(`${frontendUrl}/dashboard/activity?payment=failed`);
     }
   }
