@@ -77,7 +77,6 @@ export class AppointmentsService {
         email: data.userEmail || data.guestInfo?.email || 'user@erranders.org', // Pass user email from controller or frontend
         amount: Math.round(commitmentFee * 100), // Paystack accepts kobo (Charge only commitment fee)
         reference: reference,
-        callback_url: `${this.configService.get<string>('BACKEND_BASE_URL')}/api/v1/appointments/verify-payment?reference=${reference}`,
         metadata: {
           appointmentId: appointment._id.toString(),
           vendorId: data.vendor,

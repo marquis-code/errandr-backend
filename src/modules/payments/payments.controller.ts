@@ -6,6 +6,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PaystackService } from './paystack.service';
 import { JwtAuthGuard } from '../../common/decorators';
 import { OrdersService } from '../orders/orders.service';
+import { AppointmentsService } from '../appointments/appointments.service';
 import { WalletsService } from '../wallets/wallets.service';
 import { TransactionStatus } from '../wallets/schemas/transaction.schema';
 import { OrderStatus } from '../orders/schemas/order.schema';
@@ -24,6 +25,7 @@ export class PaymentsController {
     private readonly configService: ConfigService,
     @Inject(forwardRef(() => OrdersService)) private readonly ordersService: OrdersService,
     @Inject(forwardRef(() => WalletsService)) private readonly walletsService: WalletsService,
+    @Inject(forwardRef(() => AppointmentsService)) private readonly appointmentsService: AppointmentsService,
     private readonly emailService: EmailService,
     @InjectModel(User.name) private readonly userModel: Model<User>,
   ) {}
@@ -155,6 +157,15 @@ export class PaymentsController {
               reference,
             );
             this.logger.log(`Wallet credited successfully for user: ${userId}`);
+          } else if (data.metadata?.appointmentId) {
+            const reference = data.reference;
+            const appointmentId = data.metadata.appointmentId;
+            this.logger.log(`Charge success for appointment: ${appointmentId} (Ref: ${reference})`);
+            try {
+               await this.appointmentsService.verifyPayment(reference);
+            } catch (err: any) {
+               this.logger.error(`Failed to verify appointment payment ${appointmentId} from webhook: ${err.message}`);
+            }
           } else {
             const orderId = data.metadata?.orderId;
             const orderIds = data.metadata?.orderIds; // New: support for multi-vendor checkout
