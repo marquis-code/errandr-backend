@@ -557,6 +557,69 @@ export class EmailService {
     });
     return this.sendEmail(to, `✅ Booking Confirmed: ₦${amount.toLocaleString()}`, html);
   }
+  async sendVendorNewBooking(to: string, appointment: any, studentName: string = 'A Student') {
+    const displayDate = new Date(appointment.scheduledDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    const html = this.wrap({
+      preheader: `New Booking!`,
+      badge: { text: 'NEW BOOKING', color: 'green' },
+      title: 'New Booking Alert 🎉',
+      subtitle: `You have a new booking from <b>${studentName}</b>.`,
+      content: `
+        <div class="card">
+          <p class="card-label">Date & Time</p>
+          <p class="card-value" style="font-size: 16px;">${displayDate}, ${appointment.startTime} – ${appointment.endTime}</p>
+          <table class="data-table">
+            <tr><td class="label">Total Fee</td><td class="value">₦${appointment.price?.toLocaleString() || 0}</td></tr>
+            <tr><td class="label">Commitment Fee (Paid)</td><td class="value">₦${appointment.commitmentFee?.toLocaleString() || 0}</td></tr>
+            <tr><td class="label">Balance (To Collect)</td><td class="value-highlight">₦${appointment.pendingBalance?.toLocaleString() || 0}</td></tr>
+          </table>
+        </div>
+        <p style="font-size: 14px; color: #71717a; margin: 0 0 16px; line-height: 1.5;">Please log in to your vendor dashboard to manage this appointment.</p>
+        <a href="https://vendor.erranders.org/dashboard/appointments" class="btn">View Calendar</a>
+      `
+    });
+    return this.sendEmail(to, `New Booking Alert from ${studentName}! 🎉`, html);
+  }
+
+  async sendVendorBookingCancelled(to: string, studentName: string = 'A Student') {
+    const html = this.wrap({
+      preheader: `Booking Cancelled`,
+      badge: { text: 'CANCELLED', color: 'orange' },
+      title: 'Booking Cancelled ❌',
+      subtitle: `<b>${studentName}</b> has cancelled their booking.`,
+      content: `
+        <div class="card" style="text-align: center; padding: 32px 16px;">
+          <p class="card-label">Status</p>
+          <p class="card-value" style="font-size: 24px; color: #DC2626;">CANCELLED</p>
+        </div>
+        <p style="font-size: 14px; color: #71717a; margin: 0 0 16px; line-height: 1.5;">Please log in to your vendor dashboard for more details.</p>
+        <a href="https://vendor.erranders.org/dashboard/appointments" class="btn">View Calendar</a>
+      `
+    });
+    return this.sendEmail(to, `Booking Cancelled by ${studentName}`, html);
+  }
+
+  async sendAppointmentStatusUpdate(to: string, status: string, serviceName: string, vendorName: string) {
+    let emoji = '📅';
+    if (status.toUpperCase() === 'CONFIRMED') emoji = '✅';
+    if (status.toUpperCase() === 'COMPLETED') emoji = '🎉';
+    if (status.toUpperCase() === 'CANCELLED') emoji = '❌';
+    
+    const html = this.wrap({
+      preheader: `Booking ${status}`,
+      badge: { text: 'UPDATE', color: 'blue' },
+      title: `Booking ${status.toUpperCase()} ${emoji}`,
+      subtitle: `Your booking for <b>${serviceName}</b> with <b>${vendorName}</b> was updated.`,
+      content: `
+        <div class="card" style="text-align: center; padding: 32px 16px;">
+          <p class="card-label">Current Status</p>
+          <p class="card-value" style="font-size: 24px; color: #171721;">${status.toUpperCase()}</p>
+        </div>
+        <a href="https://www.erranders.org/dashboard/activity" class="btn">View Bookings</a>
+      `
+    });
+    return this.sendEmail(to, `Booking Update: ${status.toUpperCase()} ${emoji}`, html);
+  }
 
   async sendStatusUpdate(to: string, orderNumber: string, status: string, emoji: string = '🚚') {
     const icon = status.includes('PREP') ? '🍳' : (status.includes('TRANSIT') ? '🚲' : (status.includes('DELIVER') ? '✅' : emoji));

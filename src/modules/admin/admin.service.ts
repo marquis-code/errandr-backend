@@ -7,6 +7,7 @@ import { Order, OrderStatus } from '../orders/schemas/order.schema';
 import { Errander } from '../erranders/schemas/errander.schema';
 import { Report } from '../reports/schemas/report.schema';
 import { EmailService } from '../email/email.service';
+import { SystemSetting } from './schemas/system-setting.schema';
 
 @Injectable()
 export class AdminService {
@@ -16,6 +17,7 @@ export class AdminService {
     @InjectModel(Order.name) private orderModel: Model<Order>,
     @InjectModel(Errander.name) private erranderModel: Model<Errander>,
     @InjectModel(Report.name) private reportModel: Model<Report>,
+    @InjectModel(SystemSetting.name) private systemSettingModel: Model<SystemSetting>,
     private emailService: EmailService,
   ) {}
 
@@ -286,5 +288,10 @@ export class AdminService {
       { $set: payload },
       { new: true }
     ).populate('user');
+  }
+
+  async getSetting(key: string) {
+    const setting = await this.systemSettingModel.findOne({ key });
+    return setting ? setting.value : null;
   }
 }

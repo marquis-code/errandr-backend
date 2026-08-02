@@ -5,6 +5,9 @@ import { Appointment, AppointmentStatus } from './schemas/appointment.schema';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { EmailService } from '../email/email.service';
+import { WalletsService } from '../wallets/wallets.service';
+import { AdminService } from '../admin/admin.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class AppointmentsService {
@@ -14,6 +17,9 @@ export class AppointmentsService {
     @InjectModel(Appointment.name) private readonly appointmentModel: Model<Appointment>,
     private readonly configService: ConfigService,
     private readonly emailService: EmailService,
+    private readonly walletsService: WalletsService,
+    private readonly adminService: AdminService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async create(userId: string | null, data: any) {
@@ -34,6 +40,11 @@ export class AppointmentsService {
       return acc + itemTotal;
     }, 0);
 
+    // Calculate commitment fee based on global setting
+    const commitmentFeePercentage = await this.adminService.getSetting('APPOINTMENT_COMMITMENT_FEE_PERCENTAGE') || 30;
+    const commitmentFee = Math.round(totalAmount * (commitmentFeePercentage / 100));
+    const pendingBalance = totalAmount - commitmentFee;
+
     const appointmentPayload: any = { 
       vendor: new Types.ObjectId(data.vendor),
       items: mappedItems,
@@ -41,6 +52,8 @@ export class AppointmentsService {
       startTime: data.startTime,
       endTime: data.endTime,
       price: totalAmount,
+      commitmentFee,
+      pendingBalance,
       notes: data.notes,
       status: AppointmentStatus.PENDING,
       paymentStatus: 'pending',
@@ -62,7 +75,7 @@ export class AppointmentsService {
       
       const payload = {
         email: data.userEmail || data.guestInfo?.email || 'user@erranders.org', // Pass user email from controller or frontend
-        amount: Math.round(totalAmount * 100), // Paystack accepts kobo
+        amount: Math.round(commitmentFee * 100), // Paystack accepts kobo (Charge only commitment fee)
         reference: reference,
         callback_url: `${this.configService.get<string>('BACKEND_BASE_URL')}/api/v1/appointments/verify-payment?reference=${reference}`,
         metadata: {
@@ -115,13 +128,14 @@ export class AppointmentsService {
         const appointment = await this.appointmentModel.findByIdAndUpdate(appointmentId, {
           paymentStatus: 'success',
           status: AppointmentStatus.CONFIRMED,
-        }).populate('user', 'firstName lastName email').populate('vendor', 'storeName');
+        }).populate('user', 'firstName lastName email').populate('vendor', 'storeName email owner');
 
         // Send payment receipt
         if (appointment) {
           const email = (appointment.user as any)?.email || appointment.guestInfo?.email;
           const firstName = (appointment.user as any)?.firstName || appointment.guestInfo?.firstName || 'Erranders User';
           const lastName = (appointment.user as any)?.lastName || appointment.guestInfo?.lastName || '';
+          const studentName = `${firstName} ${lastName}`.trim();
           
           if (email) {
             await this.emailService.sendBookingReceipt(
@@ -129,8 +143,39 @@ export class AppointmentsService {
               appointment.price,
               reference,
               appointment,
-              `${firstName} ${lastName}`.trim()
+              studentName
             );
+          }
+
+          // Trigger student notification (Push)
+          const userId = appointment.user?._id?.toString() || appointment.user?.toString();
+          if (userId) {
+            await this.notificationsService.sendNotification(userId, {
+              title: 'Booking Confirmed! 🎉',
+              body: `Your payment was successful and your booking with ${(appointment.vendor as any)?.storeName || 'the vendor'} is confirmed.`,
+              type: 'BOOKING_CONFIRMED',
+              data: { appointmentId: appointment._id }
+            });
+          }
+
+          // Trigger vendor notifications (Push + Email)
+          const vendorOwnerId = (appointment.vendor as any)?.owner?._id?.toString() || (appointment.vendor as any)?.owner?.toString();
+          if (vendorOwnerId) {
+            await this.notificationsService.sendNotification(vendorOwnerId, {
+              title: 'New Booking Alert! 🎉',
+              body: `You have a new booking from ${studentName}.`,
+              type: 'NEW_BOOKING',
+              data: { appointmentId: appointment._id }
+            });
+
+            const vendorEmail = (appointment.vendor as any)?.email; // Ensure vendor is populated properly if we want email.
+            if (vendorEmail) {
+              await this.emailService.sendVendorNewBooking(
+                vendorEmail,
+                appointment,
+                studentName
+              );
+            }
           }
         }
 
@@ -156,12 +201,19 @@ export class AppointmentsService {
     const filter: any = { vendor: new Types.ObjectId(vendorId) };
     if (query.status) filter.status = query.status;
     if (query.date) {
-      const startOfDay = new Date(query.date);
-      startOfDay.setHours(0, 0, 0, 0);
-      const endOfDay = new Date(query.date);
-      endOfDay.setHours(23, 59, 59, 999);
+      // Ensure we just take the YYYY-MM-DD part even if an ISO string is passed
+      const dateStr = typeof query.date === 'string' ? query.date.split('T')[0] : new Date(query.date).toISOString().split('T')[0];
+      const startOfDay = new Date(`${dateStr}T00:00:00.000Z`);
+      const endOfDay = new Date(`${dateStr}T23:59:59.999Z`);
       filter.scheduledDate = { $gte: startOfDay, $lte: endOfDay };
+    } else if (query.startDate && query.endDate) {
+      const startStr = typeof query.startDate === 'string' ? query.startDate.split('T')[0] : new Date(query.startDate).toISOString().split('T')[0];
+      const endStr = typeof query.endDate === 'string' ? query.endDate.split('T')[0] : new Date(query.endDate).toISOString().split('T')[0];
+      const rangeStart = new Date(`${startStr}T00:00:00.000Z`);
+      const rangeEnd = new Date(`${endStr}T23:59:59.999Z`);
+      filter.scheduledDate = { $gte: rangeStart, $lte: rangeEnd };
     }
+    console.log('[DEBUG] findAllForVendor filter:', JSON.stringify(filter));
     return this.appointmentModel.find(filter)
       .populate('user', 'firstName lastName email phoneNumber')
       .populate('items.service', 'name durationInMinutes')
@@ -180,12 +232,63 @@ export class AppointmentsService {
   }
 
   async updateStatus(id: string, vendorId: string, status: AppointmentStatus) {
-    const appointment = await this.appointmentModel.findOneAndUpdate(
-      { _id: new Types.ObjectId(id), vendor: new Types.ObjectId(vendorId) },
-      { $set: { status } },
-      { new: true }
-    );
+    const appointment = await this.appointmentModel.findOne({ _id: new Types.ObjectId(id), vendor: new Types.ObjectId(vendorId) }).populate('vendor', 'storeName owner').populate('user', 'email firstName lastName');
     if (!appointment) throw new NotFoundException('Appointment not found');
+
+    const previousStatus = appointment.status;
+    appointment.status = status;
+    await appointment.save();
+
+    // If status changed to COMPLETED or CANCELLED/NO_SHOW, credit the vendor's wallet with the commitment fee
+    if (previousStatus !== status && (status === AppointmentStatus.COMPLETED || status === AppointmentStatus.CANCELLED || status === AppointmentStatus.NO_SHOW)) {
+      if (appointment.commitmentFee > 0 && appointment.paymentStatus === 'success') {
+        const vendorObj: any = appointment.vendor;
+        if (vendorObj && vendorObj.owner) {
+          // Calculate platform commission if needed, for now credit full commitment fee
+          // Platform commission logic can be added here in the future
+          const creditAmount = appointment.commitmentFee;
+          
+          try {
+            await this.walletsService.creditWallet(
+              vendorObj.owner.toString(),
+              creditAmount,
+              `Commitment fee for appointment ${appointment._id}`,
+              undefined,
+              appointment.paymentReference
+            );
+          } catch (e) {
+            this.logger.error(`Failed to credit wallet for appointment ${appointment._id}: ${e.message}`);
+          }
+        }
+      }
+    }
+
+    // Notify Student
+    if (previousStatus !== status) {
+      const email = (appointment.user as any)?.email || appointment.guestInfo?.email;
+      const firstName = (appointment.user as any)?.firstName || appointment.guestInfo?.firstName || 'User';
+      const vendorName = (appointment.vendor as any)?.storeName || 'Vendor';
+      
+      if (email) {
+        await this.emailService.sendAppointmentStatusUpdate(
+          email,
+          status,
+          'Your Service',
+          vendorName
+        );
+      }
+      
+      const userId = appointment.user?._id?.toString() || appointment.user?.toString();
+      if (userId) {
+        await this.notificationsService.sendNotification(userId, {
+          title: status === AppointmentStatus.CANCELLED ? 'Booking Cancelled ❌' : `Booking ${status}`,
+          body: `Your booking with ${vendorName} was marked as ${status.toLowerCase()}.`,
+          type: status === AppointmentStatus.CANCELLED ? 'BOOKING_CANCELLED' : 'BOOKING_UPDATE',
+          data: { appointmentId: appointment._id }
+        });
+      }
+    }
+
     return appointment;
   }
 
@@ -218,11 +321,40 @@ export class AppointmentsService {
     appointment.status = AppointmentStatus.CANCELLED;
     await appointment.save();
 
+    // Notify Vendor
+    try {
+      const apptWithVendor = await this.appointmentModel.findById(appointment._id)
+        .populate({ path: 'vendor', select: 'owner', populate: { path: 'owner', select: 'email' } })
+        .populate('user', 'firstName lastName');
+        
+      const vendor: any = apptWithVendor?.vendor;
+      const user: any = apptWithVendor?.user;
+      const studentName = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : (appointment.guestInfo?.firstName || 'A Student');
+      
+      if (vendor?.owner?._id) {
+        await this.notificationsService.sendNotification(vendor.owner._id.toString(), {
+          title: 'Booking Cancelled ❌',
+          body: `${studentName} has cancelled their booking.`,
+          type: 'BOOKING_CANCELLED',
+          data: { appointmentId: appointment._id }
+        });
+        
+        if (vendor.owner.email) {
+          await this.emailService.sendVendorBookingCancelled(vendor.owner.email, studentName);
+        }
+      }
+    } catch (e) {
+      this.logger.error(`Failed to send vendor cancellation notification: ${e.message}`);
+    }
+
     return { success: true, message: 'Booking cancelled successfully', appointment };
   }
 
   async cancelForUser(id: string, userId: string) {
-    const appointment = await this.appointmentModel.findOne({ _id: new Types.ObjectId(id), user: new Types.ObjectId(userId) });
+    const appointment = await this.appointmentModel.findOne({ _id: new Types.ObjectId(id), user: new Types.ObjectId(userId) })
+      .populate({ path: 'vendor', select: 'owner', populate: { path: 'owner', select: 'email' } })
+      .populate('user', 'firstName lastName');
+      
     if (!appointment) throw new NotFoundException('Booking not found');
 
     if (appointment.status === AppointmentStatus.COMPLETED || appointment.status === AppointmentStatus.CANCELLED) {
@@ -231,6 +363,28 @@ export class AppointmentsService {
 
     appointment.status = AppointmentStatus.CANCELLED;
     await appointment.save();
+
+    // Notify Vendor
+    try {
+      const vendor: any = appointment.vendor;
+      const user: any = appointment.user;
+      const studentName = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : (appointment.guestInfo?.firstName || 'A Student');
+      
+      if (vendor?.owner?._id) {
+        await this.notificationsService.sendNotification(vendor.owner._id.toString(), {
+          title: 'Booking Cancelled ❌',
+          body: `${studentName} has cancelled their booking.`,
+          type: 'BOOKING_CANCELLED',
+          data: { appointmentId: appointment._id }
+        });
+        
+        if (vendor.owner.email) {
+          await this.emailService.sendVendorBookingCancelled(vendor.owner.email, studentName);
+        }
+      }
+    } catch (e) {
+      this.logger.error(`Failed to send vendor cancellation notification: ${e.message}`);
+    }
 
     return { success: true, message: 'Booking cancelled successfully', appointment };
   }
@@ -250,5 +404,19 @@ export class AppointmentsService {
     await appointment.save();
 
     return { success: true, message: 'Booking rescheduled successfully', appointment };
+  }
+
+  async getVendorAvailability(vendorId: string, dateStr: string) {
+    // dateStr in 'YYYY-MM-DD'
+    const startOfDay = new Date(`${dateStr}T00:00:00.000Z`);
+    const endOfDay = new Date(`${dateStr}T23:59:59.999Z`);
+
+    const appointments = await this.appointmentModel.find({
+      vendor: new Types.ObjectId(vendorId),
+      scheduledDate: { $gte: startOfDay, $lte: endOfDay },
+      status: { $in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED, AppointmentStatus.COMPLETED] }
+    });
+
+    return { data: appointments.map(app => app.startTime) };
   }
 }

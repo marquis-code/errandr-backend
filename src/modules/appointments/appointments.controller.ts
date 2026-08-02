@@ -3,11 +3,27 @@ import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AppointmentsService } from './appointments.service';
 import { JwtAuthGuard, CurrentUser } from '../../common/decorators';
 import { AppointmentStatus } from './schemas/appointment.schema';
+import { VendorsService } from '../vendors/vendors.service';
+import { NotFoundException } from '@nestjs/common';
+import { AdminService } from '../admin/admin.service';
 
 @ApiTags('Appointments')
 @Controller('appointments')
 export class AppointmentsController {
-  constructor(private readonly appointmentsService: AppointmentsService) {}
+  constructor(
+    private readonly appointmentsService: AppointmentsService,
+    private readonly vendorsService: VendorsService,
+    private readonly adminService: AdminService
+  ) {}
+
+  @Get('settings')
+  @ApiOperation({ summary: 'Get appointment system settings' })
+  async getSettings() {
+    const feePercentage = await this.adminService.getSetting('APPOINTMENT_COMMITMENT_FEE_PERCENTAGE') || 30;
+    return {
+      commitmentFeePercentage: feePercentage,
+    };
+  }
 
   @Post()
   @UseGuards(JwtAuthGuard)
@@ -55,9 +71,23 @@ export class AppointmentsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'List appointments for the logged in vendor' })
-  findForVendor(@CurrentUser() vendor: any, @Query() query: any) {
+  async findForVendor(@CurrentUser() user: any, @Query() query: any) {
+    console.log('[DEBUG] findForVendor user._id:', user._id);
+    const vendor = await this.vendorsService.findByOwner(user._id);
+    if (!vendor) {
+      console.log('[DEBUG] findForVendor: no vendor found for owner', user._id);
+      throw new NotFoundException('Vendor profile not found for this user');
+    }
+    console.log('[DEBUG] findForVendor resolved vendor ID:', vendor._id);
     return this.appointmentsService.findAllForVendor((vendor._id as unknown) as string, query);
   }
+
+  @Get('availability/:vendorId')
+  @ApiOperation({ summary: 'Get booked times for a vendor on a specific date' })
+  getVendorAvailability(@Param('vendorId') vendorId: string, @Query('date') date: string) {
+    return this.appointmentsService.getVendorAvailability(vendorId, date);
+  }
+
 
   @Get('mine')
   @UseGuards(JwtAuthGuard)
@@ -71,11 +101,15 @@ export class AppointmentsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update appointment status (Vendor)' })
-  updateStatus(
+  async updateStatus(
     @Param('id') id: string, 
-    @CurrentUser() vendor: any, 
+    @CurrentUser() user: any, 
     @Body('status') status: AppointmentStatus
   ) {
+    const vendor = await this.vendorsService.findByOwner(user._id);
+    if (!vendor) {
+      throw new NotFoundException('Vendor profile not found for this user');
+    }
     return this.appointmentsService.updateStatus(id, (vendor._id as unknown) as string, status);
   }
 

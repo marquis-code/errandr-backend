@@ -62,7 +62,13 @@ export class Appointment extends Document {
   endTime: string; // e.g., '15:00'
 
   @Prop({ required: true })
-  price: number;
+  price: number; // Total price
+
+  @Prop({ required: true, default: 0 })
+  commitmentFee: number; // Amount paid upfront
+
+  @Prop({ required: true, default: 0 })
+  pendingBalance: number; // Amount to be paid in person
 
   @Prop({ type: String, enum: AppointmentStatus, default: AppointmentStatus.PENDING })
   status: AppointmentStatus;

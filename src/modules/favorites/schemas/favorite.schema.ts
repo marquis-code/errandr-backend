@@ -17,5 +17,12 @@ export class Favorite extends Document {
 }
 
 export const FavoriteSchema = SchemaFactory.createForClass(Favorite);
-FavoriteSchema.index({ user: 1, product: 1 }, { unique: true });
+FavoriteSchema.index(
+  { user: 1, product: 1 }, 
+  { unique: true, partialFilterExpression: { product: { $type: 'objectId' } } }
+);
+FavoriteSchema.index(
+  { user: 1, vendor: 1 }, 
+  { unique: true, partialFilterExpression: { vendor: { $type: 'objectId' } } }
+);
 FavoriteSchema.index({ user: 1 });

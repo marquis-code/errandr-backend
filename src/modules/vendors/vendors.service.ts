@@ -11,6 +11,8 @@ import { Product } from '../products/schemas/product.schema';
 import { Service } from '../services/schemas/service.schema';
 import { WebPushService } from './web-push.service';
 import { MenuItem } from '../menu/schemas/menu-item.schema';
+import { Wallet } from '../wallets/schemas/wallet.schema';
+import { Appointment, AppointmentStatus } from '../appointments/schemas/appointment.schema';
 import { augmentVendor, checkIsOpen } from '../../utils/vendor-helpers';
 
 @Injectable()
@@ -24,6 +26,8 @@ export class VendorsService {
     @InjectModel(Product.name) private productModel: Model<Product>,
     @InjectModel(Service.name) private serviceModel: Model<Service>,
     @InjectModel(MenuItem.name) private menuItemModel: Model<MenuItem>,
+    @InjectModel(Appointment.name) private appointmentModel: Model<Appointment>,
+    @InjectModel(Wallet.name) private walletModel: Model<Wallet>,
     private redisService: RedisService,
     private emailService: EmailService,
     private webPushService: WebPushService,
@@ -273,27 +277,46 @@ export class VendorsService {
     if (!vendor) throw new NotFoundException('Vendor not found');
 
     const orders = await this.orderModel.find({ vendor: vendor._id });
+    const appointments = await this.appointmentModel.find({ vendor: vendor._id });
+    const wallet = await this.walletModel.findOne({ owner: new Types.ObjectId(ownerId) });
     
     const deliveredOrders = orders.filter(o => o.status === OrderStatus.DELIVERED);
-    const totalSales = deliveredOrders.reduce((sum, o) => sum + (o.total || 0), 0);
+    const completedAppointments = appointments.filter(a => a.status === AppointmentStatus.COMPLETED);
+
+    const totalSales = wallet ? wallet.totalEarned : 0;
     
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const todayOrders = orders.filter(o => new Date((o as any).createdAt) >= today);
-    const todaySales = todayOrders
-      .filter(o => o.status === OrderStatus.DELIVERED)
-      .reduce((sum, o) => sum + (o.total || 0), 0);
 
-    const activeOrders = orders.filter(o => 
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const todayOrders = orders.filter(o => {
+      const d = new Date((o as any).createdAt);
+      return d >= today && d < tomorrow;
+    });
+
+    const todayAppointments = appointments.filter(a => {
+      const d = new Date(a.scheduledDate);
+      return d >= today && d < tomorrow;
+    });
+
+    const todaySales = wallet ? wallet.balance : 0;
+
+    const activeOrdersCount = orders.filter(o => 
       [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP].includes(o.status)
+    ).length;
+
+    const activeAppointmentsCount = appointments.filter(a =>
+      [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED].includes(a.status)
     ).length;
 
     return {
       totalSales,
       todaySales,
-      totalOrders: orders.length,
-      todayOrders: todayOrders.length,
-      activeOrders,
+      totalOrders: orders.length + appointments.length,
+      todayOrders: todayOrders.length + todayAppointments.length,
+      activeOrders: activeOrdersCount + activeAppointmentsCount,
       rating: vendor.rating || 5.0,
       reviewsCount: vendor.totalRatings || 0
     };

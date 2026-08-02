@@ -1198,21 +1198,21 @@ export class OrdersService {
     );
 
     // Free up errander or update batch
-    const errander = await this.erranderModel.findOne({ user: new Types.ObjectId(erranderId) });
-    if (errander) {
-      if (errander.currentOrder?.toString() === orderId) {
-        (errander as any).currentOrder = null;
+    const erranderDoc = await this.erranderModel.findOne({ user: new Types.ObjectId(erranderId) });
+    if (erranderDoc) {
+      if (erranderDoc.currentOrder?.toString() === orderId) {
+        (erranderDoc as any).currentOrder = null;
       }
-      errander.batchOrders = errander.batchOrders?.filter(id => id.toString() !== orderId) || [];
+      erranderDoc.batchOrders = erranderDoc.batchOrders?.filter(id => id.toString() !== orderId) || [];
       
-      if (!errander.currentOrder && (!errander.batchOrders || errander.batchOrders.length === 0)) {
-        errander.status = ErranderStatus.AVAILABLE;
+      if (!erranderDoc.currentOrder && (!erranderDoc.batchOrders || erranderDoc.batchOrders.length === 0)) {
+        erranderDoc.status = ErranderStatus.AVAILABLE;
       }
 
-      errander.totalDeliveries = (errander.totalDeliveries || 0) + 1;
-      errander.totalEarnings = (errander.totalEarnings || 0) + erranderEarnings;
+      erranderDoc.totalDeliveries = (erranderDoc.totalDeliveries || 0) + 1;
+      erranderDoc.totalEarnings = (erranderDoc.totalEarnings || 0) + erranderEarnings;
 
-      await errander.save();
+      await erranderDoc.save();
     }
 
     // Award Points for Order Completion
@@ -1297,21 +1297,21 @@ export class OrdersService {
     );
 
     // Free up errander or update batch
-    const errander = await this.erranderModel.findOne({ user: new Types.ObjectId(erranderId) });
-    if (errander) {
-      if (errander.currentOrder?.toString() === orderId) {
-        (errander as any).currentOrder = null;
+    const erranderDoc = await this.erranderModel.findOne({ user: new Types.ObjectId(erranderId) });
+    if (erranderDoc) {
+      if (erranderDoc.currentOrder?.toString() === orderId) {
+        (erranderDoc as any).currentOrder = null;
       }
-      errander.batchOrders = errander.batchOrders?.filter(id => id.toString() !== orderId) || [];
+      erranderDoc.batchOrders = erranderDoc.batchOrders?.filter(id => id.toString() !== orderId) || [];
       
-      if (!errander.currentOrder && (!errander.batchOrders || errander.batchOrders.length === 0)) {
-        errander.status = ErranderStatus.AVAILABLE;
+      if (!erranderDoc.currentOrder && (!erranderDoc.batchOrders || erranderDoc.batchOrders.length === 0)) {
+        erranderDoc.status = ErranderStatus.AVAILABLE;
       }
 
-      errander.totalDeliveries = (errander.totalDeliveries || 0) + 1;
-      errander.totalEarnings = (errander.totalEarnings || 0) + erranderEarnings;
+      erranderDoc.totalDeliveries = (erranderDoc.totalDeliveries || 0) + 1;
+      erranderDoc.totalEarnings = (erranderDoc.totalEarnings || 0) + erranderEarnings;
 
-      await errander.save();
+      await erranderDoc.save();
     }
 
     // Award Points for Order Completion

@@ -23,6 +23,7 @@ import { FavoritesModule } from './modules/favorites/favorites.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { MealPlannerModule } from './modules/meal-planner/meal-planner.module';
 import { WalletsModule } from './modules/wallets/wallets.module';
+import { WaitlistModule } from './modules/waitlist/waitlist.module';
 import { EmailModule } from './modules/email/email.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { GroupOrdersModule } from './modules/group-orders/group-orders.module';
@@ -94,6 +95,7 @@ import { ExamModeModule } from './modules/exam-mode/exam-mode.module';
     ReportsModule,
     MealPlannerModule,
     WalletsModule,
+    WaitlistModule,
     EmailModule,
     PaymentsModule,
     GroupOrdersModule,

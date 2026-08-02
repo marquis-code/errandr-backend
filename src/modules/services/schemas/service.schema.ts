@@ -21,6 +21,9 @@ export class Service extends Document {
   @Prop()
   image: string;
 
+  @Prop()
+  video: string;
+
   @Prop({ required: true })
   category: string;
 
@@ -42,9 +45,11 @@ export class Service extends Document {
   @Prop([{
     name: { type: String, required: true },
     price: { type: Number, required: true },
-    durationInMinutes: { type: Number, required: true }
+    durationInMinutes: { type: Number, required: true },
+    image: { type: String, required: false },
+    video: { type: String, required: false }
   }])
-  variants: { name: string; price: number; durationInMinutes: number }[];
+  variants: { name: string; price: number; durationInMinutes: number; image?: string; video?: string }[];
 
   @Prop([{
     name: { type: String, required: true },

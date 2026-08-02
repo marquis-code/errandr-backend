@@ -43,6 +43,14 @@ export class ServicesService {
 
   async updateForOwner(id: string, ownerId: string, data: any) {
     const vendor = await this.vendorsService.findByOwner(ownerId);
+    
+    // Sanitize data
+    delete data._id;
+    delete data.vendor;
+    delete data.__v;
+    delete data.createdAt;
+    delete data.updatedAt;
+
     const service = await this.serviceModel.findOneAndUpdate(
       { _id: new Types.ObjectId(id), vendor: vendor._id },
       { $set: data },
