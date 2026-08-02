@@ -43,9 +43,10 @@ async function bootstrap() {
 
   // CORS
   app.enableCors({
-    origin: (origin, callback) => callback(null, true),
+    origin: true, // Reflects the request origin, allowing all origins with credentials
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
+    allowedHeaders: 'Content-Type, Accept, Authorization, X-Requested-With, Origin, x-api-key',
   });
 
   // Validation
