@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { AppointmentsController } from './appointments.controller';
 import { AppointmentsService } from './appointments.service';
 
@@ -15,7 +15,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     MongooseModule.forFeature([{ name: Appointment.name, schema: AppointmentSchema }]),
     EmailModule,
     VendorsModule,
-    WalletsModule,
+    forwardRef(() => WalletsModule),
     AdminModule,
     NotificationsModule,
   ],
