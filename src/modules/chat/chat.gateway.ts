@@ -13,7 +13,9 @@ import { RedisService } from '../redis/redis.service';
 
 @WebSocketGateway({
   cors: {
-    origin: true,
+    origin: (origin, callback) => {
+      callback(null, true);
+    },
     credentials: true,
   },
   namespace: '/chat',
