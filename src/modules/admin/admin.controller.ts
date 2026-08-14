@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Param, Query, UseGuards, DefaultValuePipe, ParseIntPipe, Body } from '@nestjs/common';
+import { Controller, Get, Put, Delete, Param, Query, UseGuards, DefaultValuePipe, ParseIntPipe, Body } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard, Roles, RolesGuard } from '../../common/decorators';
@@ -159,5 +159,17 @@ export class AdminController {
   @ApiOperation({ summary: 'Update dispatcher full details' })
   updateDispatcher(@Param('id') id: string, @Body() body: any) {
     return this.adminService.updateDispatcher(id, body);
+  }
+
+  @Put('vendors/:id/visibility')
+  @ApiOperation({ summary: 'Toggle vendor visibility' })
+  toggleVendorVisibility(@Param('id') id: string, @Body() body: { isVisible: boolean }) {
+    return this.adminService.toggleVendorVisibility(id, body.isVisible);
+  }
+
+  @Delete('vendors/:id')
+  @ApiOperation({ summary: 'Delete vendor permanently' })
+  deleteVendor(@Param('id') id: string) {
+    return this.adminService.deleteVendor(id);
   }
 }

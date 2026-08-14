@@ -29,7 +29,7 @@ import { PromoCodesService } from '../promo-codes/promo-codes.service';
 import * as bcrypt from 'bcryptjs';
 
 import { ModuleRef } from '@nestjs/core';
-import type { ExamModeService } from '../exam-mode/exam-mode.service';
+import { ExamModeService } from '../exam-mode/exam-mode.service';
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
@@ -61,7 +61,7 @@ export class OrdersService {
   ) {}
 
   private get examModeService(): ExamModeService {
-    return this.moduleRef.get('ExamModeService', { strict: false });
+    return this.moduleRef.get(ExamModeService, { strict: false });
   }
 
   async getBatchStatus() {

@@ -6,7 +6,7 @@ import { Order } from '../orders/schemas/order.schema';
 import { Appointment } from '../appointments/schemas/appointment.schema';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ModuleRef } from '@nestjs/core';
-import type { ExamModeService } from '../exam-mode/exam-mode.service';
+import { ExamModeService } from '../exam-mode/exam-mode.service';
 @Injectable()
 export class ChatService {
   constructor(
@@ -18,7 +18,7 @@ export class ChatService {
   ) {}
 
   private get examModeService(): ExamModeService {
-    return this.moduleRef.get('ExamModeService', { strict: false });
+    return this.moduleRef.get(ExamModeService, { strict: false });
   }
 
   private readonly botAnswers = [

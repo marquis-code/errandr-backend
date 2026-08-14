@@ -282,6 +282,18 @@ export class AdminService {
     ).populate('owner');
   }
 
+  async toggleVendorVisibility(id: string, isVisible: boolean) {
+    return this.vendorModel.findByIdAndUpdate(
+      id,
+      { isVisible },
+      { new: true }
+    ).populate('owner');
+  }
+
+  async deleteVendor(id: string) {
+    return this.vendorModel.findByIdAndDelete(id);
+  }
+
   async updateDispatcher(id: string, payload: any) {
     return this.erranderModel.findByIdAndUpdate(
       id,

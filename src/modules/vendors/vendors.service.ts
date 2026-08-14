@@ -74,7 +74,7 @@ export class VendorsService {
     limit?: number;
   }): Promise<{ vendors: Vendor[]; total: number }> {
     const { category, isInsideCampus, isStudentBusiness, preOrderOnly, search, sortBy, page = 1, limit = 20 } = query;
-    const filter: any = { status: VendorStatus.APPROVED };
+    const filter: any = { status: VendorStatus.APPROVED, isVisible: { $ne: false } };
 
     if (category) filter.category = category;
     if (isInsideCampus !== undefined) filter.isInsideCampus = isInsideCampus;
@@ -141,14 +141,14 @@ export class VendorsService {
 
   async getStudentBusinesses(): Promise<Vendor[]> {
     return this.vendorModel
-      .find({ status: VendorStatus.APPROVED, isStudentBusiness: true })
+      .find({ status: VendorStatus.APPROVED, isStudentBusiness: true, isVisible: { $ne: false } })
       .populate('owner', 'firstName lastName avatar')
       .sort({ rating: -1 });
   }
 
   async getPopularVendors(): Promise<Vendor[]> {
     const vendors = await this.vendorModel
-      .find({ status: VendorStatus.APPROVED })
+      .find({ status: VendorStatus.APPROVED, isVisible: { $ne: false } })
       .populate('owner', 'firstName lastName avatar')
       .sort({ rating: -1 })
       .limit(10);
@@ -324,7 +324,7 @@ export class VendorsService {
 
   async getOnlineVendors(): Promise<Vendor[]> {
     const vendors = await this.vendorModel
-      .find({ status: VendorStatus.APPROVED, isOnline: true })
+      .find({ status: VendorStatus.APPROVED, isOnline: true, isVisible: { $ne: false } })
       .populate('owner', 'firstName lastName avatar')
       .sort({ rating: -1 });
     
@@ -339,6 +339,7 @@ export class VendorsService {
     return this.vendorModel.find({
       status: VendorStatus.APPROVED,
       isOnline: true,
+      isVisible: { $ne: false },
       location: {
         $near: {
           $geometry: { type: 'Point', coordinates: [lng, lat] },

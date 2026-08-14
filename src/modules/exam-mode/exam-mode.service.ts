@@ -8,7 +8,7 @@ import { RescheduleRequest, RescheduleStatus } from './schemas/reschedule-reques
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ModuleRef } from '@nestjs/core';
-import type { OrdersService } from '../orders/orders.service';
+import { OrdersService } from '../orders/orders.service';
 @Injectable()
 export class ExamModeService {
   private readonly logger = new Logger(ExamModeService.name);
@@ -23,7 +23,7 @@ export class ExamModeService {
   ) {}
 
   private get ordersService(): OrdersService {
-    return this.moduleRef.get('OrdersService', { strict: false });
+    return this.moduleRef.get(OrdersService, { strict: false });
   }
 
   // --- VENDOR AVAILABILITY ---

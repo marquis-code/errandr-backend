@@ -166,6 +166,9 @@ export class Vendor extends Document {
   @Prop({ default: true })
   isOnline: boolean;
 
+  @Prop({ default: true })
+  isVisible: boolean;
+
   @Prop({
     type: [
       {
