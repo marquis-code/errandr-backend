@@ -110,6 +110,21 @@ export class OrdersService {
         ...statusData,
       });
     }
+
+    // Nudge unassigned erranders if vendor makes progress
+    if (!erranderId && order.type !== OrderType.CUSTOM_ERRAND && [OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP].includes(status as any)) {
+      const isPreparing = status === OrderStatus.PREPARING;
+      const creativeBody = isPreparing
+        ? `🔥 A vendor just started preparing an order! Accept it now to pick it up exactly when it's hot!`
+        : `🚨 An order is ready and waiting at the counter! Quick pickup available, grab it now!`;
+        
+      await this.redisService.publish('notification:broadcast:erranders', JSON.stringify({
+        type: 'NEW_ORDER', // We use NEW_ORDER so the errander app prompts it like a fresh order availability
+        title: isPreparing ? 'Hot Order Alert!' : 'Ready for Pickup!',
+        body: creativeBody,
+        data: { orderId: order._id.toString(), status }
+      }));
+    }
   }
 
   /**

@@ -180,4 +180,39 @@ export class SettingsController {
     await setting.save();
     return setting.value;
   }
+
+  @Get('exam-promo/public')
+  @ApiOperation({ summary: 'Get exam promo banner settings for frontend' })
+  async getExamPromoSettingsPublic() {
+    let setting = await this.settingModel.findOne({ key: 'exam_promo_banner' }).exec();
+    if (!setting) {
+      setting = await this.settingModel.create({
+        key: 'exam_promo_banner',
+        value: {
+          enabled: true,
+          text: 'We are running exam combo from your Favorite vendors: 1. Iya Waris Kitchen 2. Chijoke Kithcen 3. HVIP Kitchen 4. Motee Chips 5. Aunty Iyabo Kitchen. We are giving 1000 off form any purchease from these stores. Limited Offers available and offer runs through out the exam duraton'
+        },
+      });
+    }
+    return setting.value;
+  }
+
+  @Put('exam-promo')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update exam promo banner settings (admin only)' })
+  async updateExamPromoSettings(@Body() body: { enabled: boolean; text: string }) {
+    let setting = await this.settingModel.findOne({ key: 'exam_promo_banner' }).exec();
+    if (!setting) {
+      setting = new this.settingModel({ key: 'exam_promo_banner' });
+    }
+    setting.value = {
+      enabled: body.enabled ?? false,
+      text: body.text ?? ''
+    };
+    setting.markModified('value');
+    await setting.save();
+    return setting.value;
+  }
 }
