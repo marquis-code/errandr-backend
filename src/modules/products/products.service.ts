@@ -108,12 +108,60 @@ export class ProductsService {
     return this.applyMarkupToProducts(products);
   }
 
+  async getPromos(): Promise<Product[]> {
+    const products = await this.productModel
+      .find({ isPrepaidByPlatform: true })
+      .populate('vendor', 'storeName logo brandColor isOnline isVisible')
+      .sort({ createdAt: -1 });
+    return this.applyMarkupToProducts(products);
+  }
+
   async getPacks(vendorId: string): Promise<Pack[]> {
     if (!Types.ObjectId.isValid(vendorId)) return [];
     const packs = await this.packModel
       .find({ vendorId: new Types.ObjectId(vendorId), isActive: true })
       .populate('items.itemId')
       .sort({ orderCount: -1 });
+    return this.applyMarkupToPacks(packs);
+  }
+
+  async getPackPromos(): Promise<any[]> {
+    // Aggressive fix: since data is currently stored in 'menupacks' and 'packs' is empty,
+    // we query 'menupacks' directly to ensure this legacy endpoint also returns the correct data structure.
+    const packs = await this.packModel
+      .find({ isActive: true })
+      .populate('vendorId', 'storeName logo brandColor isOnline isVisible')
+      .populate('items.itemId')
+      .sort({ createdAt: -1 })
+      .limit(20);
+      
+    if (packs.length === 0) {
+      // Fallback to menupacks
+      const menuPacks = await this.productModel.db.collection('menupacks')
+        .find({ isAvailable: true })
+        .sort({ createdAt: -1 })
+        .limit(20)
+        .toArray();
+        
+      // Manually populate vendor to match the expected data structure
+      for (const p of menuPacks) {
+        if (p.vendorId) {
+          const vendor = await this.productModel.db.collection('vendors').findOne({ _id: p.vendorId });
+          if (vendor) {
+            p.vendorId = {
+              _id: vendor._id,
+              storeName: vendor.storeName,
+              logo: vendor.logo,
+              brandColor: vendor.brandColor,
+              isOnline: vendor.isOnline,
+              isVisible: vendor.isVisible
+            };
+          }
+        }
+      }
+      return menuPacks;
+    }
+    
     return this.applyMarkupToPacks(packs);
   }
 

@@ -11,6 +11,7 @@ import { Errander, ErranderStatus } from '../erranders/schemas/errander.schema';
 import { User } from '../users/schemas/user.schema';
 import { Product } from '../products/schemas/product.schema';
 import { MenuItem } from '../menu/schemas/menu-item.schema';
+import { MenuPack } from '../menu/schemas/menu-pack.schema';
 import { SystemSetting } from '../admin/schemas/system-setting.schema';
 import { RedisService } from '../redis/redis.service';
 import { InjectQueue } from '@nestjs/bull';
@@ -22,6 +23,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { ChatService } from '../chat/chat.service';
 import { BatchDeliveryService } from './batch-delivery.service';
+import { augmentVendor } from '../../utils/vendor-helpers';
 import { RewardsService } from '../rewards/rewards.service';
 import { AfricasTalkingService } from '../africastalking/africastalking.service';
 import { MapboxService } from '../mapbox/mapbox.service';
@@ -40,6 +42,7 @@ export class OrdersService {
     @InjectModel(Errander.name) private erranderModel: Model<Errander>,
     @InjectModel(Product.name) private productModel: Model<Product>,
     @InjectModel(MenuItem.name) private menuItemModel: Model<MenuItem>,
+    @InjectModel(MenuPack.name) private menuPackModel: Model<MenuPack>,
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(SystemSetting.name) private settingModel: Model<SystemSetting>,
     @InjectModel('ErrandPool') private errandPoolModel: Model<any>,
@@ -161,6 +164,7 @@ export class OrdersService {
       subtotal: populated.subtotal,
       deliveryFee: populated.deliveryFee,
       total: populated.total,
+      erranderPayout: populated.erranderPayout,
       erranderShare: populated.erranderShare || populated.deliveryFee || 0,
       status: populated.status,
       type: populated.type,
@@ -278,24 +282,55 @@ export class OrdersService {
 
     // Calculate totals from packs or items
     let subtotal = 0;
+    let prepaidSubtotal = 0;
+    let hasPrepaidItems = false;
+    let allProductIds: Types.ObjectId[] = [];
+
+    if (data.packs && data.packs.length > 0) {
+      data.packs.forEach((pack: any) => {
+        pack.items.forEach((item: any) => {
+          if (item.productId || item.product) {
+            allProductIds.push(new Types.ObjectId(item.productId || item.product));
+          }
+        });
+      });
+    } else if (data.items) {
+      allProductIds = data.items.map((i: any) => new Types.ObjectId(i.productId || i.product));
+    }
+
+    const allProducts = await this.productModel.find({ _id: { $in: allProductIds } }).lean();
+    const allMenuItems = await this.menuItemModel.find({ _id: { $in: allProductIds } }).lean();
+    const allMenuPacks = await this.menuPackModel.find({ _id: { $in: allProductIds } }).lean();
+
+    const productMap = [...allProducts, ...allMenuItems, ...allMenuPacks].reduce((acc, p) => {
+      acc[p._id.toString()] = p;
+      return acc;
+    }, {} as Record<string, any>);
+
     if (data.packs && data.packs.length > 0) {
       subtotal = data.packs.reduce((packSum: number, pack: any) =>
-        packSum + pack.items.reduce((itemSum: number, item: any) => itemSum + (item.subtotal || item.price * item.quantity), 0),
+        packSum + pack.items.reduce((itemSum: number, item: any) => {
+          const itemTotal = (item.subtotal || item.price * item.quantity);
+          const pData = productMap[(item.productId || item.product)?.toString()];
+          if (pData?.isPrepaidByPlatform) {
+            prepaidSubtotal += itemTotal;
+            hasPrepaidItems = true;
+          }
+          return itemSum + itemTotal;
+        }, 0),
         0,
       );
     } else if (data.items) {
-      // Get all product images for items
-      const productIds = data.items.map((i: any) => new Types.ObjectId(i.productId || i.product));
-      const products = await this.productModel.find({ _id: { $in: productIds } });
-      const imageMap = products.reduce((acc, p) => {
-        acc[p._id.toString()] = p.image || p.images?.[0];
-        return acc;
-      }, {});
-
       subtotal = data.items.reduce(
         (sum: number, item: any) => {
-          item.image = imageMap[item.productId || item.product];
-          return sum + item.subtotal;
+          const pData = productMap[(item.productId || item.product)?.toString()];
+          item.image = pData?.image || pData?.images?.[0];
+          const itemTotal = item.subtotal;
+          if (pData?.isPrepaidByPlatform) {
+            prepaidSubtotal += itemTotal;
+            hasPrepaidItems = true;
+          }
+          return sum + itemTotal;
         },
         0,
       );
@@ -421,11 +456,40 @@ export class OrdersService {
     const markupPct = errandSetting?.value?.foodMarkupPercentage ?? 5;
     const MARKUP_FACTOR = 1 + (markupPct / 100);
     const foodMarkup = subtotal - Math.round(subtotal / MARKUP_FACTOR);
-    const platformShare = serviceFee + deliveryCommission + foodMarkup;
+    let platformShare = serviceFee + deliveryCommission + foodMarkup;
     
     // Calculate vendor share (vendor subtotal + packaging fee)
     const vendorSubtotal = Math.round(subtotal / MARKUP_FACTOR);
-    const vendorShare = vendorSubtotal + packagingFee;
+    const prepaidVendorSubtotal = Math.round(prepaidSubtotal / MARKUP_FACTOR);
+    
+    let vendorShare = vendorSubtotal - prepaidVendorSubtotal;
+    platformShare += prepaidVendorSubtotal; // Platform intercepts prepaid food subtotal
+    
+    // Platform intercepts packaging fee if there are prepaid items (promo logic)
+    if (hasPrepaidItems) {
+      platformShare += packagingFee;
+    } else {
+      vendorShare += packagingFee;
+    }
+
+    // ── Vendor-Level Prepaid Promo (e.g. "pick anything worth ₦2000") ──
+    let isVendorPrepaidPromo = false;
+    if (
+      vendor.prepaidPromo &&
+      vendor.prepaidPromo.enabled &&
+      vendor.prepaidPromo.maxOrders > 0 &&
+      vendor.prepaidPromo.usedOrders < vendor.prepaidPromo.maxOrders
+    ) {
+      isVendorPrepaidPromo = true;
+      // Route ALL vendor revenue (subtotal + packaging) to platform
+      platformShare += vendorShare; // absorb whatever vendor would have gotten
+      vendorShare = 0;
+
+      // Increment the used counter atomically
+      await this.vendorModel.findByIdAndUpdate(vendor._id, {
+        $inc: { 'prepaidPromo.usedOrders': 1 },
+      });
+    }
 
     // Exam Night Owl Free Delivery (10 PM - 2 AM)
     if (isExamBrethrenActive) {
@@ -489,6 +553,14 @@ export class OrdersService {
       } catch (e) {
         // Ignore invalid promo codes or handle error
         this.logger.warn(`Invalid promo code applied: ${data.promoCode} - ${e.message}`);
+      }
+    }
+
+    
+    // Combo Promo Discount
+    if (vendor && (vendor.storeName.toLowerCase().includes('iyabo') || vendor.storeName.toLowerCase().includes('hvip') || vendor.storeName.toLowerCase().includes('waris') || vendor.storeName.toLowerCase().includes('chijioke'))) {
+      if (data.packs && data.packs.length > 0) {
+        discount += 1000;
       }
     }
 
@@ -607,6 +679,11 @@ export class OrdersService {
 
     // Schedule timeout check (e.g. 5 mins)
     await this.orderQueue.add('orderTimeout', { orderId: order._id }, { delay: 300000 });
+
+    // If order was created pre-paid, process vendor payout immediately
+    if (data.paymentReference) {
+      await this.processVendorPayout(order);
+    }
 
     // Trigger Vendor Notification Cascade & Fetch for later use
     const populatedVendor = await this.vendorModel.findById(data.vendorId).populate('owner');
@@ -1184,10 +1261,10 @@ export class OrdersService {
     if (!errander) throw new BadRequestException('Errander profile not found');
     
     const orderErranderId = (order.errander as any)?._id?.toString() || order.errander?.toString();
-    this.logger.log(`completeOrder check: order.errander=${orderErranderId} vs erranderId=${errander._id.toString()}`);
+    this.logger.log(`completeOrder check: order.errander=${orderErranderId} vs erranderId=${erranderId.toString()}`);
     
-    if (orderErranderId !== errander._id.toString() && orderErranderId !== erranderId) {
-      this.logger.error(`Assignment mismatch: ${orderErranderId} !== ${errander._id.toString()}`);
+    if (orderErranderId !== errander._id.toString() && orderErranderId !== erranderId.toString()) {
+      this.logger.error(`Assignment mismatch: ${orderErranderId} !== ${errander._id.toString()} or ${erranderId.toString()}`);
       throw new BadRequestException('You are not assigned to this order');
     }
 
@@ -1286,7 +1363,7 @@ export class OrdersService {
     if (!errander) throw new BadRequestException('Errander profile not found');
 
     const orderErranderId = (order.errander as any)?._id?.toString() || order.errander?.toString();
-    if (orderErranderId !== errander._id.toString() && orderErranderId !== erranderId) {
+    if (orderErranderId !== errander._id.toString() && orderErranderId !== erranderId.toString()) {
       throw new BadRequestException('You are not assigned to this order');
     }
 
@@ -1350,14 +1427,23 @@ export class OrdersService {
     const [orders, total] = await Promise.all([
       this.orderModel
         .find({ customer: new Types.ObjectId(customerId) })
-        .populate('vendor', 'storeName logo')
+        .populate('vendor', 'storeName logo banner isOnline businessHours breakPeriod openingTime closingTime isOpen')
         .populate('errander', 'firstName lastName phone avatar')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(l),
       this.orderModel.countDocuments({ customer: new Types.ObjectId(customerId) }),
     ]);
-    return { orders, total };
+
+    const augmentedOrders = orders.map((o: any) => {
+      const orderObj = o.toObject ? o.toObject() : o;
+      if (orderObj.vendor) {
+        orderObj.vendor = augmentVendor(orderObj.vendor);
+      }
+      return orderObj;
+    });
+
+    return { orders: augmentedOrders, total };
   }
 
   async getVendorOrders(vendorId: string, status?: OrderStatus, page: any = 1, limit: any = 20) {
@@ -1475,7 +1561,7 @@ export class OrdersService {
     return order;
   }
 
-  private async processVendorPayout(order: Order): Promise<void> {
+  async processVendorPayout(order: Order): Promise<void> {
     const fullOrder = await this.orderModel.findById(order._id)
       .populate({
         path: 'vendor',
@@ -1505,7 +1591,29 @@ export class OrdersService {
     if (vendorUser && vendorUser._id) {
       const userId = vendorUser._id.toString();
       
-      // 1. Credit wallet for record keeping
+      // Check if combo purchase (Admin has already pre-paid the business)
+      let isCombo = false;
+      if (fullOrder.packs) {
+        for (const pack of fullOrder.packs) {
+          for (const item of pack.items) {
+             if (item.product) {
+               const prod = await this.productModel.findById(item.product);
+               if (prod && (prod as any).isPrepaidByPlatform) {
+                 isCombo = true;
+                 break;
+               }
+             }
+          }
+          if (isCombo) break;
+        }
+      }
+      
+      if (isCombo) {
+        this.logger.log(`Skipping wallet credit for vendor on order ${fullOrder.orderNumber} because it is a pre-paid combo purchase.`);
+        return;
+      }
+
+      // 1. Credit wallet for record keeping (Non-combo only)
       await this.walletsService.creditWallet(
         userId,
         vendorEarnings,
@@ -1513,20 +1621,27 @@ export class OrdersService {
         fullOrder._id.toString(),
       );
 
-      // 2. Trigger instant withdrawal to bank account
-      try {
-        await this.walletsService.withdrawFunds(
-          userId,
-          vendorEarnings,
-          vendorUser.email || 'vendor@erranders.com',
-          `${vendorUser.firstName || 'Vendor'} ${vendorUser.lastName || ''}`.trim(),
-          undefined,
-          true // isInstant
-        );
-        this.logger.log(`Auto-payout initiated for vendor on order ${fullOrder.orderNumber}`);
-      } catch (err: any) {
-        // If payout fails (e.g. no bank account set), leave the funds in wallet
-        this.logger.warn(`Failed to auto-payout vendor for order ${fullOrder.orderNumber}: ${err.message}. Funds remain in wallet.`);
+      const wallet = await this.walletsService.getWallet(userId);
+      const wantsInstant = wallet && wallet.payoutPreference === 'instant';
+
+      if (wantsInstant) {
+        // 2. Trigger instant withdrawal to bank account
+        try {
+          await this.walletsService.withdrawFunds(
+            userId,
+            vendorEarnings,
+            vendorUser.email || 'vendor@erranders.com',
+            `${vendorUser.firstName || 'Vendor'} ${vendorUser.lastName || ''}`.trim(),
+            undefined,
+            true // isInstant
+          );
+          this.logger.log(`Auto-payout initiated for vendor on order ${fullOrder.orderNumber}`);
+        } catch (err: any) {
+          // If payout fails (e.g. no bank account set), leave the funds in wallet
+          this.logger.warn(`Failed to auto-payout vendor for order ${fullOrder.orderNumber}: ${err.message}. Funds remain in wallet.`);
+        }
+      } else {
+        this.logger.log(`Funds retained in wallet for vendor on order ${fullOrder.orderNumber} (Instant Pref: ${wantsInstant})`);
       }
     }
   }
@@ -2221,8 +2336,8 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     }
     
     // Fetch base delivery fee from admin system settings
-    const baseFeeSetting = await this.settingModel.findOne({ key: 'base_delivery_fee' }).exec();
-    const baseFare = baseFeeSetting?.value?.amount || 300;
+    const customErrandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
+    const baseFare = customErrandSetting?.value?.baseFee || 350;
     let fallbackFee = baseFare;
 
     if (!vendor) return fallbackFee;
@@ -2300,7 +2415,7 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     }
 
     if (isCMUL) {
-      return 300;
+      return baseFare;
     }
 
     if (vCoords && vCoords[0] !== 0 && customerLocation && customerLocation[0] !== 0) {

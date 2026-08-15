@@ -207,6 +207,10 @@ export class PaymentsController {
                 );
                 
                 // Broadcast to all erranders
+                // Payout vendor now that payment is confirmed
+                await this.ordersService.processVendorPayout(updatedOrder);
+                
+                // Broadcast to all erranders
                 await this.ordersService.broadcastNewOrderToErranders(updatedOrder);
               } catch (err: any) {
                 this.logger.error(`Failed to process order ${id} from webhook: ${err.message}`);

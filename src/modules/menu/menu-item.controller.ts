@@ -58,6 +58,12 @@ export class MenuItemController {
     return this.service.getTopPicks(vendorId);
   }
 
+  @Get('promos')
+  @ApiOperation({ summary: 'Get all prepaid platform items (promos)' })
+  getPromos() {
+    return this.service.getPromos();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get menu item by ID (fully populated)' })
   findById(@Param('id') id: string) {
@@ -82,6 +88,19 @@ export class MenuItemController {
     @Body() dto: Partial<CreateMenuItemDto>,
   ) {
     return this.service.update(id, (user._id as unknown) as string, dto);
+  }
+
+  @Patch('admin/update/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Admin update a menu item (e.g. prepaid combos, stock limit)' })
+  adminUpdate(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+    @Body() dto: any,
+  ) {
+    if (user.role !== 'admin') throw new Error('Unauthorized');
+    return this.service.adminUpdate(id, dto);
   }
 
   @Patch(':id/toggle')

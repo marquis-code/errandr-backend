@@ -159,6 +159,15 @@ export class VendorsController {
     return this.vendorsService.update(id, (user._id as unknown) as string, body);
   }
 
+  @Patch('admin/update/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Admin update vendor (e.g. prepaid promo settings)' })
+  adminUpdate(@Param('id') id: string, @CurrentUser() user: User, @Body() body: any) {
+    if (user.role !== 'admin') throw new BadRequestException('Unauthorized');
+    return this.vendorsService.adminUpdate(id, body);
+  }
+
   @Patch('fcm-token')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

@@ -245,6 +245,28 @@ export class MenuItemService {
     return item;
   }
 
+  async adminUpdate(id: string, dto: any): Promise<MenuItem> {
+    const item = await this.menuItemModel.findById(id);
+    if (!item) throw new NotFoundException('Menu item not found');
+
+    const data: any = { ...dto };
+    const toObjectId = (val: any): Types.ObjectId | null => {
+      if (!val) return null;
+      if (typeof val === 'string') return new Types.ObjectId(val);
+      if (val._id) return new Types.ObjectId(val._id);
+      return null;
+    };
+    if (dto.categoryId !== undefined) {
+      data.categoryId = toObjectId(dto.categoryId);
+    }
+
+    const updated = await this.menuItemModel.findByIdAndUpdate(id, { $set: data }, { new: true })
+      .populate('categoryId', 'name')
+      .populate('addOnGroupIds')
+      .exec();
+    return updated as MenuItem;
+  }
+
   async togglePublish(id: string, ownerId: string): Promise<MenuItem> {
     const vendor = await this.resolveVendor(ownerId);
     const item = await this.menuItemModel.findOne({ _id: id, vendorId: vendor._id });
@@ -252,6 +274,16 @@ export class MenuItemService {
     item.isAvailable = !item.isAvailable;
     await item.save();
     return item;
+  }
+
+  async getPromos(): Promise<MenuItem[]> {
+    const items = await this.menuItemModel
+      .find({ isPrepaidByPlatform: true, isAvailable: true })
+      .populate('vendorId', 'storeName logo brandColor isOnline isVisible')
+      .populate('categoryId')
+      .sort({ createdAt: -1 });
+    const factor = await this.getMarkupFactor();
+    return this.applyMarkupToItems(items);
   }
 
   async delete(id: string, ownerId: string): Promise<void> {

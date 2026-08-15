@@ -134,6 +134,18 @@ export class ProductsController {
   }
 
 
+  @Get('promos')
+  @ApiOperation({ summary: 'Get all prepaid platform products (promos)' })
+  getPromos() {
+    return this.productsService.getPromos();
+  }
+
+  @Get('packs/promos')
+  @ApiOperation({ summary: 'Get all prepaid platform packs (promos)' })
+  getPackPromos() {
+    return this.productsService.getPackPromos();
+  }
+
   @Get('vendor/:vendorId/packs')
   @ApiOperation({ summary: 'Get bundles/packs for a vendor' })
   getPacks(@Param('vendorId') vendorId: string) {

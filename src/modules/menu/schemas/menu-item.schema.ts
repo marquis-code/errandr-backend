@@ -42,6 +42,10 @@ export class MenuItem extends Document {
   @Prop({ default: false })
   trackStock: boolean;
 
+  @Prop({ default: false })
+  isPrepaidByPlatform: boolean;
+
+
   @Prop({ default: 0 })
   stockQuantity: number;
 

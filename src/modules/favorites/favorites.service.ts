@@ -2,6 +2,7 @@ import { Injectable, ConflictException, NotFoundException } from '@nestjs/common
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Favorite } from './schemas/favorite.schema';
+import { augmentVendor } from '../../utils/vendor-helpers';
 
 @Injectable()
 export class FavoritesService {
@@ -31,8 +32,8 @@ export class FavoritesService {
     });
   }
 
-  async getUserFavorites(userId: string): Promise<Favorite[]> {
-    return this.favoriteModel
+  async getUserFavorites(userId: string): Promise<any[]> {
+    const favorites = await this.favoriteModel
       .find({ user: new Types.ObjectId(userId) })
       .populate({
         path: 'product',
@@ -40,9 +41,17 @@ export class FavoritesService {
       })
       .populate({
         path: 'vendor',
-        select: 'storeName logo banner isOnline rating totalRatings category address location isStudentBusiness isFeatured businessType serviceLocation minOrder deliveryFee',
+        select: 'storeName logo banner isOnline rating totalRatings category address location isStudentBusiness isFeatured businessType serviceLocation minOrder deliveryFee businessHours breakPeriod openingTime closingTime isOpen',
       })
       .sort({ createdAt: -1 });
+
+    return favorites.map((f: any) => {
+      const favObj = f.toObject ? f.toObject() : f;
+      if (favObj.vendor) {
+        favObj.vendor = augmentVendor(favObj.vendor);
+      }
+      return favObj;
+    });
   }
 
   async isFavorite(userId: string, productId?: string, vendorId?: string): Promise<boolean> {

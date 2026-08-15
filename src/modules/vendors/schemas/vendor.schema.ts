@@ -353,6 +353,25 @@ export class Vendor extends Document {
     deliveryDate: Date;
     isActive: boolean;
   }[];
+
+  // ── Vendor-Level Prepaid Promo (e.g. "pick anything worth ₦2000") ──
+  @Prop({
+    type: {
+      enabled: { type: Boolean, default: false },
+      budgetPerOrder: { type: Number, default: 0 },    // max subtotal (inclusive of pack fee) per promo order
+      maxOrders: { type: Number, default: 0 },          // total promo slots (e.g. 20)
+      usedOrders: { type: Number, default: 0 },         // how many have been redeemed
+      label: { type: String, default: '' },             // display name e.g. "Waris Kitchen Combo"
+    },
+    default: { enabled: false, budgetPerOrder: 0, maxOrders: 0, usedOrders: 0, label: '' },
+  })
+  prepaidPromo: {
+    enabled: boolean;
+    budgetPerOrder: number;
+    maxOrders: number;
+    usedOrders: number;
+    label: string;
+  };
 }
 
 export const VendorSchema = SchemaFactory.createForClass(Vendor);

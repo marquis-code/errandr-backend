@@ -48,5 +48,14 @@ export class MenuPack extends Document {
 
   @Prop({ default: true })
   isAvailable: boolean;
+
+  @Prop({ default: false })
+  isPrepaidByPlatform: boolean;
+
+  @Prop({ default: false })
+  trackStock: boolean;
+
+  @Prop({ default: 0 })
+  stockQuantity: number;
 }
 export const MenuPackSchema = SchemaFactory.createForClass(MenuPack);

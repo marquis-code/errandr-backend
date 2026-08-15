@@ -239,6 +239,14 @@ export class VendorsService {
     return vendor;
   }
 
+  async adminUpdate(id: string, data: Partial<Vendor>): Promise<Vendor> {
+    const vendor = await this.vendorModel.findById(id);
+    if (!vendor) throw new NotFoundException('Vendor not found');
+    Object.assign(vendor, data);
+    await vendor.save();
+    return vendor;
+  }
+
   async updateFcmToken(ownerId: string, fcmToken: string): Promise<Vendor> {
     const vendor = await this.vendorModel.findOne({ owner: new Types.ObjectId(ownerId) });
     if (!vendor) throw new NotFoundException('Vendor not found');

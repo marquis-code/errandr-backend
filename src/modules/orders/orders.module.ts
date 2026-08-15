@@ -12,6 +12,7 @@ import { Product, ProductSchema } from '../products/schemas/product.schema';
 import { Errander, ErranderSchema } from '../erranders/schemas/errander.schema';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { MenuItem, MenuItemSchema } from '../menu/schemas/menu-item.schema';
+import { MenuPack, MenuPackSchema } from '../menu/schemas/menu-pack.schema';
 import { SystemSetting, SystemSettingSchema } from '../admin/schemas/system-setting.schema';
 
 import { PaymentsModule } from '../payments/payments.module';
@@ -36,6 +37,7 @@ import { ExamModeModule } from '../exam-mode/exam-mode.module';
       { name: Errander.name, schema: ErranderSchema },
       { name: User.name, schema: UserSchema },
       { name: MenuItem.name, schema: MenuItemSchema },
+      { name: MenuPack.name, schema: MenuPackSchema },
       { name: SystemSetting.name, schema: SystemSettingSchema },
       { name: ErrandPool.name, schema: ErrandPoolSchema },
     ]),

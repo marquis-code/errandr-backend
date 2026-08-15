@@ -61,6 +61,15 @@ export class MenuPackService {
       .sort({ name: 1 });
   }
 
+  async findByVendor(vendorId: string): Promise<MenuPack[]> {
+    return this.packModel
+      .find({ vendorId: new Types.ObjectId(vendorId) })
+      .populate('categoryId')
+      .populate('addOnGroupIds')
+      .populate('components.itemId', 'name pricePerPortion image')
+      .sort({ name: 1 });
+  }
+
   async findById(id: string): Promise<MenuPack> {
     const pack = await this.packModel
       .findById(id)
@@ -102,6 +111,32 @@ export class MenuPackService {
     );
     if (!pack) throw new NotFoundException('Pack not found');
     return pack;
+  }
+
+  async adminUpdate(id: string, updates: any): Promise<MenuPack> {
+    const data: any = { ...updates };
+    delete data._id;
+    delete data.__v;
+    delete data.vendorId;
+    delete data.createdAt;
+    delete data.updatedAt;
+
+    const pack = await this.packModel.findByIdAndUpdate(
+      id,
+      { $set: data },
+      { new: true },
+    );
+    if (!pack) throw new NotFoundException('Pack not found');
+    return pack;
+  }
+
+  async getPromos(): Promise<MenuPack[]> {
+    return this.packModel
+      .find({ isAvailable: true })
+      .populate('vendorId', 'storeName logo brandColor isOnline isVisible')
+      .populate('categoryId')
+      .populate('components.itemId', 'name pricePerPortion image')
+      .sort({ createdAt: -1 });
   }
 
   async delete(id: string, ownerId: string): Promise<void> {
