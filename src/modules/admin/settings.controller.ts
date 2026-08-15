@@ -23,7 +23,7 @@ export class SettingsController {
       // Seed default settings if not exists
       setting = await this.settingModel.create({
         key: 'custom_errand',
-        value: { baseFee: 450, expressFee: 850, convenienceFee: 50, commissionPercentage: 10, platformProcessingFee: 500, platformServiceFeePercentage: 5, foodMarkupPercentage: 5 },
+        value: { baseFee: 450, expressFee: 850, convenienceFee: 50, commissionFlatFee: 50, customErrandCommissionPercentage: 20, platformProcessingFee: 500, platformServiceFeePercentage: 5, foodMarkupPercentage: 5 },
       });
     }
     return setting.value;
@@ -34,7 +34,7 @@ export class SettingsController {
   @Roles(UserRole.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update custom errand pricing settings (admin only)' })
-  async updateCustomErrandSettings(@Body() body: { baseFee: number; expressFee: number; convenienceFee?: number; commissionPercentage?: number; platformProcessingFee?: number; platformServiceFeePercentage?: number; foodMarkupPercentage?: number }) {
+  async updateCustomErrandSettings(@Body() body: { baseFee: number; expressFee: number; convenienceFee?: number; commissionFlatFee?: number; customErrandCommissionPercentage?: number; platformProcessingFee?: number; platformServiceFeePercentage?: number; foodMarkupPercentage?: number }) {
     let setting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
     if (!setting) {
       setting = new this.settingModel({ key: 'custom_errand' });
@@ -43,7 +43,8 @@ export class SettingsController {
       baseFee: Number(body.baseFee || 450),
       expressFee: Number(body.expressFee || 850),
       convenienceFee: Number(body.convenienceFee ?? 50),
-      commissionPercentage: Number(body.commissionPercentage ?? 10),
+      commissionFlatFee: Number(body.commissionFlatFee ?? 50),
+      customErrandCommissionPercentage: Number(body.customErrandCommissionPercentage ?? 20),
       platformProcessingFee: Number(body.platformProcessingFee ?? 500),
       platformServiceFeePercentage: Number(body.platformServiceFeePercentage ?? 5),
       foodMarkupPercentage: Number(body.foodMarkupPercentage ?? 5),

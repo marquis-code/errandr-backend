@@ -205,7 +205,9 @@ export class OrdersService {
       const total = itemCost + runnerFee + serviceFee + transferFee;
 
       // Commission from Runner (Primary Model)
-      const commissionAmount = Math.round(runnerFee * 0.10); // 10%
+      const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
+      const commissionPercent = errandSetting?.value?.customErrandCommissionPercentage ?? 20;
+      const commissionAmount = Math.round(runnerFee * (commissionPercent / 100));
       const erranderShare = runnerFee - commissionAmount;
       const platformShare = serviceFee + commissionAmount;
 
@@ -409,8 +411,8 @@ export class OrdersService {
 
     // Fetch custom errand settings to get commission percentage for delivery fee
     const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
-    const commissionPercent = errandSetting?.value?.commissionPercentage ?? 10;
-    const deliveryCommission = Math.round(deliveryFee * (commissionPercent / 100));
+    const commissionFlatFee = errandSetting?.value?.commissionFlatFee ?? 50;
+    const deliveryCommission = commissionFlatFee;
     
     // Save errander payout (delivery fee minus platform commission)
     const erranderPayout = deliveryFee - deliveryCommission;
@@ -1184,7 +1186,7 @@ export class OrdersService {
     const orderErranderId = (order.errander as any)?._id?.toString() || order.errander?.toString();
     this.logger.log(`completeOrder check: order.errander=${orderErranderId} vs erranderId=${errander._id.toString()}`);
     
-    if (orderErranderId !== errander._id.toString()) {
+    if (orderErranderId !== errander._id.toString() && orderErranderId !== erranderId) {
       this.logger.error(`Assignment mismatch: ${orderErranderId} !== ${errander._id.toString()}`);
       throw new BadRequestException('You are not assigned to this order');
     }
@@ -1284,7 +1286,7 @@ export class OrdersService {
     if (!errander) throw new BadRequestException('Errander profile not found');
 
     const orderErranderId = (order.errander as any)?._id?.toString() || order.errander?.toString();
-    if (orderErranderId !== errander._id.toString()) {
+    if (orderErranderId !== errander._id.toString() && orderErranderId !== erranderId) {
       throw new BadRequestException('You are not assigned to this order');
     }
 
@@ -2053,7 +2055,9 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
 
     const serviceFee = 50; 
     const total = newFee + serviceFee;
-    const commissionAmount = Math.round(newFee * 0.10); 
+    const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
+    const commissionPercent = errandSetting?.value?.customErrandCommissionPercentage ?? 20;
+    const commissionAmount = Math.round(newFee * (commissionPercent / 100)); 
     const erranderShare = newFee - commissionAmount;
     const platformShare = serviceFee + commissionAmount;
 
@@ -2147,7 +2151,9 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     const newFee = bid.amount;
     const serviceFee = 50; 
     const total = newFee + serviceFee;
-    const commissionAmount = Math.round(newFee * 0.10); 
+    const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
+    const commissionPercent = errandSetting?.value?.customErrandCommissionPercentage ?? 20;
+    const commissionAmount = Math.round(newFee * (commissionPercent / 100)); 
     const erranderShare = newFee - commissionAmount;
     const platformShare = serviceFee + commissionAmount;
 
@@ -2336,7 +2342,7 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
       throw new BadRequestException('Errander profile not found');
     }
 
-    if (!order.errander || order.errander.toString() !== erranderProfile._id.toString()) {
+    if (!order.errander || (order.errander.toString() !== erranderProfile._id.toString() && order.errander.toString() !== erranderProfile.user.toString())) {
       throw new BadRequestException('Only the assigned errander can submit reconciliation');
     }
     if (order.reconciliationStatus === 'approved') {
