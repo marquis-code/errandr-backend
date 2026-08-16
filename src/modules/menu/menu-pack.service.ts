@@ -132,7 +132,7 @@ export class MenuPackService {
 
   async getPromos(): Promise<MenuPack[]> {
     return this.packModel
-      .find({ isAvailable: true })
+      .find({ isPrepaidByPlatform: true, isAvailable: true })
       .populate('vendorId', 'storeName logo brandColor isOnline isVisible')
       .populate('categoryId')
       .populate('components.itemId', 'name pricePerPortion image')

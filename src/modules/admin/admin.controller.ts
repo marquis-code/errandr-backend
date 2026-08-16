@@ -18,6 +18,14 @@ export class AdminController {
     return this.adminService.getDashboardStats();
   }
 
+  @Get('chart-data')
+  @ApiOperation({ summary: 'Get admin dashboard revenue chart data' })
+  getChartData(
+    @Query('days', new DefaultValuePipe(30), ParseIntPipe) days: number,
+  ) {
+    return this.adminService.getRevenueChartData(days);
+  }
+
   @Get('users')
   @ApiOperation({ summary: 'Get all users' })
   getUsers() {

@@ -60,6 +60,48 @@ export class AdminService {
     };
   }
 
+  async getRevenueChartData(days: number = 30) {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+
+    // Aggregate daily revenue from DELIVERED orders
+    const dailyData = await this.orderModel.aggregate([
+      {
+        $match: {
+          status: OrderStatus.DELIVERED,
+          createdAt: { $gte: startDate }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: "%Y-%m-%d", date: "$createdAt" }
+          },
+          revenue: { $sum: "$serviceFee" },
+          orderCount: { $sum: 1 }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    // Fill in missing dates with zero values
+    const chartData: any[] = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      const dateString = date.toISOString().split('T')[0];
+      
+      const existingData = dailyData.find(d => d._id === dateString);
+      chartData.push({
+        date: dateString,
+        revenue: existingData ? existingData.revenue : 0,
+        orders: existingData ? existingData.orderCount : 0
+      });
+    }
+
+    return chartData;
+  }
+
   async getUsers() {
     return this.userModel.find().sort({ createdAt: -1 });
   }

@@ -117,126 +117,158 @@ export class ProductsService {
   }
 
   async getAllPromos(): Promise<any[]> {
-    const products = await this.productModel
-      .find({ isPrepaidByPlatform: true, isAvailable: true })
-      .populate('vendor', 'storeName logo brandColor isOnline isVisible')
-      .sort({ createdAt: -1 });
-      
-    const packs = await this.packModel
-      .find({ isPrepaidByPlatform: true, isActive: true })
-      .populate('vendorId', 'storeName logo brandColor isOnline isVisible')
-      .populate('items.itemId')
-      .sort({ createdAt: -1 });
+    try {
+      const factor = await this.getMarkupFactor().catch(() => 1.05);
 
-    const menuPacks = await this.productModel.db.collection('menupacks')
-      .find({ isPrepaidByPlatform: true, isAvailable: true })
-      .sort({ createdAt: -1 })
-      .toArray();
+      const products = await this.productModel
+        .find({ isPrepaidByPlatform: true, isAvailable: true })
+        .populate('vendor', 'storeName logo brandColor isOnline isVisible prepaidPromo')
+        .sort({ createdAt: -1 })
+        .lean()
+        .exec()
+        .catch(() => []);
+        
+      const packs = await this.packModel
+        .find({ isPrepaidByPlatform: true, isActive: true })
+        .populate('vendorId', 'storeName logo brandColor isOnline isVisible prepaidPromo')
+        .populate('items.itemId')
+        .sort({ createdAt: -1 })
+        .lean()
+        .exec()
+        .catch(() => []);
 
-    const menuItems = await this.productModel.db.collection('menuitems')
-      .find({ isPrepaidByPlatform: true, isAvailable: true })
-      .sort({ createdAt: -1 })
-      .toArray();
+      let menuPacks: any[] = [];
+      try {
+        menuPacks = await this.productModel.db.collection('menupacks')
+          .find({ isPrepaidByPlatform: true, isAvailable: true })
+          .sort({ createdAt: -1 })
+          .toArray();
+      } catch (err) {
+        console.error('Error fetching menupacks:', err);
+      }
 
-    const vendorIds = new Set<string>();
-    [...menuPacks, ...menuItems].forEach(p => {
-      if (p.vendorId) {
-        const idStr = typeof p.vendorId === 'string' ? p.vendorId : p.vendorId.toString();
-        if (Types.ObjectId.isValid(idStr)) {
-          vendorIds.add(idStr);
+      let menuItems: any[] = [];
+      try {
+        menuItems = await this.productModel.db.collection('menuitems')
+          .find({ isPrepaidByPlatform: true, isAvailable: true })
+          .sort({ createdAt: -1 })
+          .toArray();
+      } catch (err) {
+        console.error('Error fetching menuitems:', err);
+      }
+
+      const vendorIds = new Set<string>();
+      [...menuPacks, ...menuItems].forEach(p => {
+        if (p.vendorId) {
+          const idStr = typeof p.vendorId === 'string' ? p.vendorId : (p.vendorId._id ? p.vendorId._id.toString() : p.vendorId.toString());
+          if (Types.ObjectId.isValid(idStr)) {
+            vendorIds.add(idStr);
+          }
         }
-      }
-    });
-    
-    const vendors = await this.productModel.db.collection('vendors').find({
-      _id: { $in: Array.from(vendorIds).map((id: string) => new Types.ObjectId(id)) }
-    }).toArray();
-    
-    const vendorMap = new Map();
-    vendors.forEach(v => vendorMap.set(v._id.toString(), {
-      _id: v._id,
-      storeName: v.storeName,
-      logo: v.logo,
-      brandColor: v.brandColor,
-      isOnline: v.isOnline,
-      isVisible: v.isVisible
-    }));
-    
-    [...menuPacks, ...menuItems].forEach(p => {
-      if (p.vendorId) {
-        const vidStr = typeof p.vendorId === 'string' ? p.vendorId : p.vendorId.toString();
-        p.vendorId = vendorMap.get(vidStr);
-      }
-    });
-
-    const factor = await this.getMarkupFactor();
-    const factorProducts = await this.applyMarkupToProducts(products);
-    const factorPacks = await this.applyMarkupToPacks(packs);
-    
-    const factorMenuPacks = menuPacks.map(p => {
-      if (p.price) p.price = Math.ceil(p.price * factor);
-      if (p.bundlePrice) p.bundlePrice = Math.ceil(p.bundlePrice * factor);
-      return p;
-    });
-    
-    const factorMenuItems = menuItems.map(p => {
-      if (p.pricePerPortion) p.pricePerPortion = Math.ceil(p.pricePerPortion * factor);
-      return p;
-    });
-    
-    
-    const promoVendors = await this.productModel.db.collection('vendors').find({
-      'prepaidPromo.enabled': true,
-      isVisible: true
-    }).toArray();
-
-    const vendorPromos = promoVendors.map(v => {
-      const p = v.prepaidPromo || {};
-      const maxOrders = p.maxOrders || 0;
-      const usedOrders = p.usedOrders || 0;
-      const slotsLeft = maxOrders - usedOrders;
+      });
       
-      return {
-        _id: v._id,
-        name: p.label || `${v.storeName} Promo`,
-        description: p.description || `Spend ₦${p.budgetPerOrder || 0}, Get ₦${p.discountValue || 1000} Off (${slotsLeft} slots left!)`,
-        price: (p.budgetPerOrder || 0) - (p.discountValue || 1000), // or the effective price
-        originalPrice: p.budgetPerOrder || 0,
-        vendorId: v,
-        vendor: v,
-        isVendorPromo: true, 
-        slotsLeft: slotsLeft,
-        createdAt: new Date(),
-        image: v.banner || v.logo
-      };
-    }).filter(vp => {
-      // only return if slots are left
-      return vp.slotsLeft > 0;
-    });
-
-    
-    let combined = [...vendorPromos, ...factorProducts, ...factorPacks, ...factorMenuPacks, ...factorMenuItems];
-    
-    // Inject slotsLeft into any promo that belongs to a vendor with prepaidPromo enabled
-    combined = combined.map(item => {
-      const v = item.vendorId || item.vendor;
-      if (v && v.prepaidPromo && v.prepaidPromo.enabled) {
-         const maxOrders = v.prepaidPromo.maxOrders || 0;
-         const usedOrders = v.prepaidPromo.usedOrders || 0;
-         item.slotsLeft = maxOrders - usedOrders;
+      let vendors: any[] = [];
+      try {
+        vendors = await this.productModel.db.collection('vendors').find({
+          _id: { $in: Array.from(vendorIds).map((id: string) => new Types.ObjectId(id)) }
+        }).toArray();
+      } catch (err) {
+        console.error('Error fetching vendors for menu packs/items:', err);
       }
-      return item;
-    });
+      
+      const vendorMap = new Map();
+      vendors.forEach(v => vendorMap.set(v._id.toString(), {
+        _id: v._id,
+        storeName: v.storeName,
+        logo: v.logo,
+        brandColor: v.brandColor,
+        isOnline: v.isOnline,
+        isVisible: v.isVisible,
+        prepaidPromo: v.prepaidPromo
+      }));
+      
+      [...menuPacks, ...menuItems].forEach(p => {
+        if (p.vendorId) {
+          const vidStr = typeof p.vendorId === 'string' ? p.vendorId : (p.vendorId._id ? p.vendorId._id.toString() : p.vendorId.toString());
+          if (vendorMap.has(vidStr)) {
+            p.vendorId = vendorMap.get(vidStr);
+          }
+        }
+      });
 
+      const factorProducts = await this.applyMarkupToProducts(products as any);
+      const factorPacks = await this.applyMarkupToPacks(packs as any);
+      
+      const factorMenuPacks = menuPacks.map(p => {
+        if (p.price) p.price = Math.ceil(p.price * factor);
+        if (p.bundlePrice) p.bundlePrice = Math.ceil(p.bundlePrice * factor);
+        return p;
+      });
+      
+      const factorMenuItems = menuItems.map(p => {
+        if (p.pricePerPortion) p.pricePerPortion = Math.ceil(p.pricePerPortion * factor);
+        return p;
+      });
+      
+      let promoVendors: any[] = [];
+      try {
+        promoVendors = await this.productModel.db.collection('vendors').find({
+          'prepaidPromo.enabled': true,
+          isVisible: true
+        }).toArray();
+      } catch (err) {
+        console.error('Error fetching promoVendors:', err);
+      }
 
-    const uniqueMap = new Map();
-    combined.forEach(item => {
-      if (item && item._id) uniqueMap.set(item._id.toString(), item);
-    });
-    
-    combined = Array.from(uniqueMap.values());
-    combined.sort((a, b) => new Date(b.createdAt || Date.now()).getTime() - new Date(a.createdAt || Date.now()).getTime());
-    return combined;
+      const vendorPromos = promoVendors.map(v => {
+        const p = v.prepaidPromo || {};
+        const maxOrders = p.maxOrders || 0;
+        const usedOrders = p.usedOrders || 0;
+        const slotsLeft = maxOrders - usedOrders;
+        
+        return {
+          _id: v._id,
+          name: p.label || `${v.storeName} Promo`,
+          description: p.description || `Spend ₦${p.budgetPerOrder || 0}, Get ₦${p.discountValue || 1000} Off (${slotsLeft} slots left!)`,
+          price: (p.budgetPerOrder || 0) - (p.discountValue || 1000),
+          originalPrice: p.budgetPerOrder || 0,
+          vendorId: v,
+          vendor: v,
+          isVendorPromo: true, 
+          slotsLeft: slotsLeft,
+          createdAt: new Date(),
+          image: v.banner || v.logo
+        };
+      }).filter(vp => {
+        return vp.slotsLeft > 0;
+      });
+      
+      let combined = [...vendorPromos, ...factorProducts, ...factorPacks, ...factorMenuPacks, ...factorMenuItems];
+      
+      // Inject slotsLeft into any promo that belongs to a vendor with prepaidPromo enabled
+      combined = combined.map(item => {
+        const itemObj = typeof item.toObject === 'function' ? item.toObject() : { ...item };
+        const v = itemObj.vendorId || itemObj.vendor;
+        if (v && v.prepaidPromo && v.prepaidPromo.enabled) {
+           const maxOrders = v.prepaidPromo.maxOrders || 0;
+           const usedOrders = v.prepaidPromo.usedOrders || 0;
+           itemObj.slotsLeft = maxOrders - usedOrders;
+        }
+        return itemObj;
+      });
+
+      const uniqueMap = new Map();
+      combined.forEach(item => {
+        if (item && item._id) uniqueMap.set(item._id.toString(), item);
+      });
+      
+      combined = Array.from(uniqueMap.values());
+      combined.sort((a, b) => new Date(b.createdAt || Date.now()).getTime() - new Date(a.createdAt || Date.now()).getTime());
+      return combined;
+    } catch (error) {
+      console.error('Error in getAllPromos:', error);
+      return [];
+    }
   }
 
   async getPacks(vendorId: string): Promise<Pack[]> {
@@ -341,6 +373,9 @@ export class ProductsService {
   }
 
   async findById(id: string): Promise<Product> {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new NotFoundException('Product not found');
+    }
     const product = await this.productModel.findById(id).populate('vendor');
     if (!product) throw new NotFoundException('Product not found');
     const factor = await this.getMarkupFactor();

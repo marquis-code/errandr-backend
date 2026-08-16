@@ -31,7 +31,55 @@ export class WalletsService {
         }
       }
     }
+    if (wallet && !wallet.virtualAccount) {
+      // Async fire-and-forget to avoid blocking the initial wallet load
+      this.generateVirtualAccount(wallet).catch(err => {
+        console.error('Failed to generate virtual account for wallet:', err.message);
+      });
+    }
+
     return wallet as WalletDocument;
+  }
+
+  async generateVirtualAccount(wallet: WalletDocument): Promise<void> {
+    if (wallet.virtualAccount) return; // Already exists
+
+    const user = await this.userModel.findById(wallet.owner);
+    if (!user) return;
+
+    try {
+      let customerId = wallet.paystackCustomerId;
+      
+      if (!customerId) {
+        // 1. Create Customer
+        const customer = await this.paystackService.createCustomer({
+          email: user.email || `${user._id}@erranders.org`,
+          first_name: user.firstName || 'Errander',
+          last_name: user.lastName || 'User',
+          phone: user.phone || '00000000000'
+        });
+        customerId = customer.customer_code;
+        wallet.paystackCustomerId = customerId;
+        await wallet.save();
+      }
+
+      // 2. Create Dedicated Virtual Account
+      const dva = await this.paystackService.createDedicatedAccount({
+        customer: customerId as string,
+        preferred_bank: 'wema-bank'
+      });
+
+      // 3. Save to wallet
+      wallet.virtualAccount = {
+        bankName: dva.bank.name,
+        accountNumber: dva.account_number,
+        accountName: dva.account_name
+      };
+      await wallet.save();
+    } catch (error: any) {
+      console.error(`Error generating virtual account for ${user._id}:`, error.message);
+      throw error;
+    }
   }
 
   async getWallet(userId: string): Promise<WalletDocument> {
@@ -174,7 +222,7 @@ export class WalletsService {
     wallet.balance -= amount;
     await wallet.save();
 
-    // Log Transaction as PENDING (Queued for admin approval)
+    // Log Transaction as PENDING (Queued for automated processing)
     const transaction = await this.transactionModel.create({
       wallet: wallet._id,
       amount,
@@ -184,7 +232,7 @@ export class WalletsService {
       reference,
       metadata: { 
         isPayoutRequest: true,
-        isInstant: isInstant || false,
+        isInstant: true,
         userName,
         userEmail,
         bankCode: targetBankCode, 
@@ -192,15 +240,17 @@ export class WalletsService {
       },
     });
 
-    if (isInstant) {
-      const user = await this.userModel.findById(userId);
-      const isVendor = user?.role === 'vendor';
-
-      if (amount > 5000 && !isVendor) {
-        throw new Error('Instant withdrawals are limited to a maximum of ₦5,000. For larger amounts, please submit a standard withdrawal request.');
-      }
-      // Process immediately
+    // Process immediately for all users
+    try {
       await this.approvePayoutRequest(transaction._id.toString());
+    } catch (error: any) {
+      // Rollback if instant payout fails
+      wallet.balance += amount;
+      await wallet.save();
+      transaction.status = TransactionStatus.FAILED;
+      transaction.description = `Instant withdrawal failed: ${error.message}`;
+      await transaction.save();
+      throw error;
     }
   }
 
@@ -258,6 +308,24 @@ export class WalletsService {
       approvedAt: new Date().toISOString()
     };
     // Keep it pending until webhook confirms, but update metadata
+    await transaction.save();
+  }
+
+  async markPayoutAsPaid(transactionId: string): Promise<void> {
+    const transaction = await this.transactionModel.findById(transactionId);
+    
+    if (!transaction || transaction.type !== TransactionType.DEBIT || transaction.status !== TransactionStatus.PENDING) {
+      throw new Error('Invalid or already processed payout request');
+    }
+
+    transaction.status = TransactionStatus.COMPLETED;
+    transaction.description = transaction.description + ' (Manual Completion)';
+    transaction.metadata = { 
+      ...transaction.metadata, 
+      manualCompletion: true,
+      approvedAt: new Date().toISOString()
+    };
+    
     await transaction.save();
   }
 

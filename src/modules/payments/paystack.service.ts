@@ -233,4 +233,78 @@ export class PaystackService {
       );
     }
   }
+
+  /**
+   * Create a Paystack customer
+   * POST https://api.paystack.co/customer
+   */
+  async createCustomer(data: {
+    email: string;
+    first_name: string;
+    last_name: string;
+    phone: string;
+  }) {
+    let email = data.email;
+    // Paystack rejects non-standard TLDs like .test in sandbox/test mode
+    if (email.endsWith('.test')) {
+      email = email.replace(/\.test$/, '.org');
+    } else if (email.endsWith('.local')) {
+      email = email.replace(/\.local$/, '.com');
+    }
+
+    try {
+      const response = await axios.post(
+        `${this.baseUrl}/customer`,
+        {
+          ...data,
+          email,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${this.secretKey}`,
+            'Content-Type': 'application/json',
+          },
+          httpsAgent: this.httpsAgent,
+        } as any,
+      );
+      return (response.data as any).data;
+    } catch (error: any) {
+      this.logger.error('Paystack Create Customer Error:', error.response?.data || error.message);
+      throw new InternalServerErrorException(
+        error.response?.data?.message || 'Failed to create Paystack customer',
+      );
+    }
+  }
+
+  /**
+   * Create a Dedicated Virtual Account
+   * POST https://api.paystack.co/dedicated_account
+   */
+  async createDedicatedAccount(data: {
+    customer: string;
+    preferred_bank?: string;
+  }) {
+    try {
+      const response = await axios.post(
+        `${this.baseUrl}/dedicated_account`,
+        {
+          customer: data.customer,
+          preferred_bank: data.preferred_bank || 'wema-bank',
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${this.secretKey}`,
+            'Content-Type': 'application/json',
+          },
+          httpsAgent: this.httpsAgent,
+        } as any,
+      );
+      return (response.data as any).data;
+    } catch (error: any) {
+      this.logger.error('Paystack Create Dedicated Account Error:', error.response?.data || error.message);
+      throw new InternalServerErrorException(
+        error.response?.data?.message || 'Failed to create dedicated virtual account',
+      );
+    }
+  }
 }

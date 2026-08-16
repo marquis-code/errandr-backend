@@ -556,11 +556,56 @@ export class OrdersService {
       }
     }
 
-    
     // Combo Promo Discount
-    if (vendor && (vendor.storeName.toLowerCase().includes('iyabo') || vendor.storeName.toLowerCase().includes('hvip') || vendor.storeName.toLowerCase().includes('waris') || vendor.storeName.toLowerCase().includes('chijioke'))) {
-      if (data.packs && data.packs.length > 0) {
-        discount += 1000;
+    let isPrepaidPromoApplied = false;
+    if (vendor && vendor.prepaidPromo && vendor.prepaidPromo.enabled) {
+      if (vendor.prepaidPromo.usedOrders < vendor.prepaidPromo.maxOrders) {
+        if (subtotal >= vendor.prepaidPromo.budgetPerOrder) {
+          discount += (vendor.prepaidPromo && vendor.prepaidPromo.discountValue) ? vendor.prepaidPromo.discountValue : 1000;
+          isPrepaidPromoApplied = true;
+          // Increment usage
+          vendor.prepaidPromo.usedOrders += 1;
+          await vendor.save();
+        }
+      }
+    }
+
+    if (!isPrepaidPromoApplied && vendor && (vendor.storeName.toLowerCase().includes('iyabo') || vendor.storeName.toLowerCase().includes('hvip') || vendor.storeName.toLowerCase().includes('waris') || vendor.storeName.toLowerCase().includes('chijioke'))) {
+      if (vendor.storeName.toLowerCase().includes('waris')) {
+        if (subtotal >= 2000) {
+          discount += (vendor.prepaidPromo && vendor.prepaidPromo.discountValue) ? vendor.prepaidPromo.discountValue : 1000;
+        }
+      } else {
+        let isCombo = false;
+        
+        // Check packs
+        if (data.packs) {
+          for (const pack of data.packs) {
+            if (pack.name?.toLowerCase().includes('combo') || pack.packType === 'combo') isCombo = true;
+            for (const item of (pack.items || [])) {
+              if (item.name?.toLowerCase().includes('combo')) isCombo = true;
+              if (item.product) {
+                 const p = await this.productModel.findById(item.product);
+                 if (p && (p as any).isPrepaidByPlatform) isCombo = true;
+              }
+            }
+          }
+        }
+        
+        // Check menu items
+        if (data.items) {
+          for (const item of data.items) {
+            if (item.name?.toLowerCase().includes('combo')) isCombo = true;
+            if (item.menuItem) {
+               const mi = await this.menuItemModel.findById(item.menuItem);
+               if (mi && mi.isPrepaidByPlatform) isCombo = true;
+            }
+          }
+        }
+
+        if (isCombo) {
+          discount += (vendor.prepaidPromo && vendor.prepaidPromo.discountValue) ? vendor.prepaidPromo.discountValue : 1000;
+        }
       }
     }
 
@@ -1621,8 +1666,9 @@ export class OrdersService {
         fullOrder._id.toString(),
       );
 
-      const wallet = await this.walletsService.getWallet(userId);
-      const wantsInstant = wallet && wallet.payoutPreference === 'instant';
+      // Instant payouts disabled as per new Daily Cron payout decision
+      // const wantsInstant = wallet && wallet.payoutPreference === 'instant';
+      const wantsInstant = false;
 
       if (wantsInstant) {
         // 2. Trigger instant withdrawal to bank account
@@ -1638,7 +1684,7 @@ export class OrdersService {
           this.logger.log(`Auto-payout initiated for vendor on order ${fullOrder.orderNumber}`);
         } catch (err: any) {
           // If payout fails (e.g. no bank account set), leave the funds in wallet
-          this.logger.warn(`Failed to auto-payout vendor for order ${fullOrder.orderNumber}: ${err.message}. Funds remain in wallet.`);
+          this.logger.error(`Instant auto-payout failed for vendor on order ${fullOrder.orderNumber}: ${err.message}`);
         }
       } else {
         this.logger.log(`Funds retained in wallet for vendor on order ${fullOrder.orderNumber} (Instant Pref: ${wantsInstant})`);

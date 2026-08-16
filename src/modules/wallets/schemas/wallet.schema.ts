@@ -6,6 +6,7 @@ export type WalletDocument = Wallet & Document;
 
 export enum PayoutPreference {
   INSTANT = 'instant',
+  DAILY = 'daily',
   WEEKLY = 'weekly',
   MONTHLY = 'monthly',
 }
@@ -23,6 +24,23 @@ export class Wallet {
 
   @Prop({ type: String, enum: PayoutPreference, default: PayoutPreference.WEEKLY })
   payoutPreference: PayoutPreference;
+
+  @Prop({ type: String, required: false })
+  paystackCustomerId?: string;
+
+  @Prop({
+    type: {
+      bankName: String,
+      accountNumber: String,
+      accountName: String,
+    },
+    required: false,
+  })
+  virtualAccount?: {
+    bankName: string;
+    accountNumber: string;
+    accountName: string;
+  };
 
   @Prop({
     type: {

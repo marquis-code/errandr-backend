@@ -359,18 +359,22 @@ export class Vendor extends Document {
     type: {
       enabled: { type: Boolean, default: false },
       budgetPerOrder: { type: Number, default: 0 },    // max subtotal (inclusive of pack fee) per promo order
-      maxOrders: { type: Number, default: 0 },          // total promo slots (e.g. 20)
+      maxOrders: { type: Number, default: 0 },
+      discountValue: { type: Number, default: 1000 },          // total promo slots (e.g. 20)
       usedOrders: { type: Number, default: 0 },         // how many have been redeemed
       label: { type: String, default: '' },             // display name e.g. "Waris Kitchen Combo"
+      description: { type: String, default: '' },       // display description e.g. "Special promo combo..."
     },
-    default: { enabled: false, budgetPerOrder: 0, maxOrders: 0, usedOrders: 0, label: '' },
+    default: { enabled: false, budgetPerOrder: 0, maxOrders: 0, usedOrders: 0, label: '', description: '' },
   })
   prepaidPromo: {
     enabled: boolean;
     budgetPerOrder: number;
     maxOrders: number;
+    discountValue: number;
     usedOrders: number;
     label: string;
+    description?: string;
   };
 }
 

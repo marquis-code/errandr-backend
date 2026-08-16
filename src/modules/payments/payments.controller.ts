@@ -145,7 +145,24 @@ export class PaymentsController {
           const type = data.metadata?.type;
           const reference = data.reference;
 
-          if (type === 'wallet_topup') {
+          // Virtual Account Top-ups (DVA)
+          if (data.channel === 'dedicated_nuban') {
+            const customerEmail = data.customer?.email;
+            const amount = data.amount / 100;
+            if (customerEmail) {
+              const user = await this.userModel.findOne({ email: customerEmail });
+              if (user) {
+                await this.walletsService.creditWallet(
+                  user._id.toString(),
+                  amount,
+                  `Virtual Account Transfer (Ref: ${reference})`,
+                  undefined,
+                  reference,
+                );
+                this.logger.log(`Wallet credited successfully for user via DVA: ${user._id}`);
+              }
+            }
+          } else if (type === 'wallet_topup') {
             const userId = data.metadata?.userId;
             const amount = data.amount / 100; // Paystack sends in kobo
             this.logger.log(`Wallet top-up success for user: ${userId} (Ref: ${reference}, Amount: ${amount})`);

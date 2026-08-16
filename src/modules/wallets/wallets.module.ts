@@ -8,6 +8,7 @@ import { forwardRef } from '@nestjs/common';
 import { PaymentsModule } from '../payments/payments.module';
 import { EmailModule } from '../email/email.module';
 import { User, UserSchema } from '../users/schemas/user.schema';
+import { WalletsCronService } from './wallets.cron';
 
 @Module({
   imports: [
@@ -19,8 +20,8 @@ import { User, UserSchema } from '../users/schemas/user.schema';
     forwardRef(() => PaymentsModule),
     EmailModule,
   ],
-  providers: [WalletsService],
+  providers: [WalletsService, WalletsCronService],
   controllers: [WalletsController],
-  exports: [WalletsService],
+  exports: [WalletsService, WalletsCronService],
 })
 export class WalletsModule {}

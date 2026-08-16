@@ -85,6 +85,13 @@ export class WalletsController {
     return { success: true, message: 'Payout rejected and refunded' };
   }
 
+  @Put('transactions/:id/mark-paid')
+  @ApiOperation({ summary: 'Mark a payout request as paid manually (admin)' })
+  async markPayoutAsPaid(@Param('id') id: string) {
+    await this.walletsService.markPayoutAsPaid(id);
+    return { success: true, message: 'Payout marked as completed manually' };
+  }
+
   @Get('transactions/:id/receipt')
   @ApiOperation({ summary: 'Download transaction receipt' })
   async downloadReceipt(@Param('id') id: string, @Res({ passthrough: true }) res: Response) {

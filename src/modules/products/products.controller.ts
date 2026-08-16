@@ -134,6 +134,12 @@ export class ProductsController {
   }
 
 
+  @Get('all-promos')
+  @ApiOperation({ summary: 'Get all platform promos combined' })
+  async getAllPromos() {
+    return this.productsService.getAllPromos();
+  }
+
   @Get('promos')
   @ApiOperation({ summary: 'Get all prepaid platform products (promos)' })
   getPromos() {
