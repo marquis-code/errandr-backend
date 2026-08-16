@@ -116,6 +116,129 @@ export class ProductsService {
     return this.applyMarkupToProducts(products);
   }
 
+  async getAllPromos(): Promise<any[]> {
+    const products = await this.productModel
+      .find({ isPrepaidByPlatform: true, isAvailable: true })
+      .populate('vendor', 'storeName logo brandColor isOnline isVisible')
+      .sort({ createdAt: -1 });
+      
+    const packs = await this.packModel
+      .find({ isPrepaidByPlatform: true, isActive: true })
+      .populate('vendorId', 'storeName logo brandColor isOnline isVisible')
+      .populate('items.itemId')
+      .sort({ createdAt: -1 });
+
+    const menuPacks = await this.productModel.db.collection('menupacks')
+      .find({ isPrepaidByPlatform: true, isAvailable: true })
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    const menuItems = await this.productModel.db.collection('menuitems')
+      .find({ isPrepaidByPlatform: true, isAvailable: true })
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    const vendorIds = new Set<string>();
+    [...menuPacks, ...menuItems].forEach(p => {
+      if (p.vendorId) {
+        const idStr = typeof p.vendorId === 'string' ? p.vendorId : p.vendorId.toString();
+        if (Types.ObjectId.isValid(idStr)) {
+          vendorIds.add(idStr);
+        }
+      }
+    });
+    
+    const vendors = await this.productModel.db.collection('vendors').find({
+      _id: { $in: Array.from(vendorIds).map((id: string) => new Types.ObjectId(id)) }
+    }).toArray();
+    
+    const vendorMap = new Map();
+    vendors.forEach(v => vendorMap.set(v._id.toString(), {
+      _id: v._id,
+      storeName: v.storeName,
+      logo: v.logo,
+      brandColor: v.brandColor,
+      isOnline: v.isOnline,
+      isVisible: v.isVisible
+    }));
+    
+    [...menuPacks, ...menuItems].forEach(p => {
+      if (p.vendorId) {
+        const vidStr = typeof p.vendorId === 'string' ? p.vendorId : p.vendorId.toString();
+        p.vendorId = vendorMap.get(vidStr);
+      }
+    });
+
+    const factor = await this.getMarkupFactor();
+    const factorProducts = await this.applyMarkupToProducts(products);
+    const factorPacks = await this.applyMarkupToPacks(packs);
+    
+    const factorMenuPacks = menuPacks.map(p => {
+      if (p.price) p.price = Math.ceil(p.price * factor);
+      if (p.bundlePrice) p.bundlePrice = Math.ceil(p.bundlePrice * factor);
+      return p;
+    });
+    
+    const factorMenuItems = menuItems.map(p => {
+      if (p.pricePerPortion) p.pricePerPortion = Math.ceil(p.pricePerPortion * factor);
+      return p;
+    });
+    
+    
+    const promoVendors = await this.productModel.db.collection('vendors').find({
+      'prepaidPromo.enabled': true,
+      isVisible: true
+    }).toArray();
+
+    const vendorPromos = promoVendors.map(v => {
+      const p = v.prepaidPromo || {};
+      const maxOrders = p.maxOrders || 0;
+      const usedOrders = p.usedOrders || 0;
+      const slotsLeft = maxOrders - usedOrders;
+      
+      return {
+        _id: v._id,
+        name: p.label || `${v.storeName} Promo`,
+        description: p.description || `Spend ₦${p.budgetPerOrder || 0}, Get ₦${p.discountValue || 1000} Off (${slotsLeft} slots left!)`,
+        price: (p.budgetPerOrder || 0) - (p.discountValue || 1000), // or the effective price
+        originalPrice: p.budgetPerOrder || 0,
+        vendorId: v,
+        vendor: v,
+        isVendorPromo: true, 
+        slotsLeft: slotsLeft,
+        createdAt: new Date(),
+        image: v.banner || v.logo
+      };
+    }).filter(vp => {
+      // only return if slots are left
+      return vp.slotsLeft > 0;
+    });
+
+    
+    let combined = [...vendorPromos, ...factorProducts, ...factorPacks, ...factorMenuPacks, ...factorMenuItems];
+    
+    // Inject slotsLeft into any promo that belongs to a vendor with prepaidPromo enabled
+    combined = combined.map(item => {
+      const v = item.vendorId || item.vendor;
+      if (v && v.prepaidPromo && v.prepaidPromo.enabled) {
+         const maxOrders = v.prepaidPromo.maxOrders || 0;
+         const usedOrders = v.prepaidPromo.usedOrders || 0;
+         item.slotsLeft = maxOrders - usedOrders;
+      }
+      return item;
+    });
+
+
+    const uniqueMap = new Map();
+    combined.forEach(item => {
+      if (item && item._id) uniqueMap.set(item._id.toString(), item);
+    });
+    
+    combined = Array.from(uniqueMap.values());
+    combined.sort((a, b) => new Date(b.createdAt || Date.now()).getTime() - new Date(a.createdAt || Date.now()).getTime());
+    return combined;
+  }
+
   async getPacks(vendorId: string): Promise<Pack[]> {
     if (!Types.ObjectId.isValid(vendorId)) return [];
     const packs = await this.packModel
@@ -129,7 +252,7 @@ export class ProductsService {
     // Aggressive fix: since data is currently stored in 'menupacks' and 'packs' is empty,
     // we query 'menupacks' directly to ensure this legacy endpoint also returns the correct data structure.
     const packs = await this.packModel
-      .find({ isActive: true })
+      .find({ isPrepaidByPlatform: true, isActive: true })
       .populate('vendorId', 'storeName logo brandColor isOnline isVisible')
       .populate('items.itemId')
       .sort({ createdAt: -1 })
@@ -138,7 +261,7 @@ export class ProductsService {
     if (packs.length === 0) {
       // Fallback to menupacks
       const menuPacks = await this.productModel.db.collection('menupacks')
-        .find({ isAvailable: true })
+        .find({ isPrepaidByPlatform: true, isAvailable: true })
         .sort({ createdAt: -1 })
         .limit(20)
         .toArray();
@@ -146,7 +269,12 @@ export class ProductsService {
       // Manually populate vendor to match the expected data structure
       for (const p of menuPacks) {
         if (p.vendorId) {
-          const vendor = await this.productModel.db.collection('vendors').findOne({ _id: p.vendorId });
+          let vId = p.vendorId;
+          if (typeof vId === 'string') {
+            if (!Types.ObjectId.isValid(vId)) continue;
+            vId = new Types.ObjectId(vId);
+          }
+          const vendor = await this.productModel.db.collection('vendors').findOne({ _id: vId });
           if (vendor) {
             p.vendorId = {
               _id: vendor._id,
