@@ -649,7 +649,7 @@ export class OrdersService {
     const order = await this.orderModel.create({
       orderNumber: `ERR-${uuidv4().slice(0, 8).toUpperCase()}`,
       uniqueCode: Math.floor(100000 + Math.random() * 900000).toString(),
-      deliveryPin: deliveryOption === 'pickup' ? null : Math.floor(1000 + Math.random() * 9000).toString(),
+      deliveryPin: deliveryOption === 'pickup' ? undefined : Math.floor(1000 + Math.random() * 9000).toString(),
       customer: new Types.ObjectId(customerId),
       vendor: new Types.ObjectId(data.vendorId),
       items: flatItems,
