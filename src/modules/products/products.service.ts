@@ -122,7 +122,7 @@ export class ProductsService {
 
       const products = await this.productModel
         .find({ isPrepaidByPlatform: true, isAvailable: true })
-        .populate('vendor', 'storeName logo brandColor isOnline isVisible prepaidPromo')
+        .populate('vendor', 'storeName logo brandColor isOnline isVisible prepaidPromo isOpen statusMessage')
         .sort({ createdAt: -1 })
         .lean()
         .exec()
@@ -130,7 +130,7 @@ export class ProductsService {
         
       const packs = await this.packModel
         .find({ isPrepaidByPlatform: true, isActive: true })
-        .populate('vendorId', 'storeName logo brandColor isOnline isVisible prepaidPromo')
+        .populate('vendorId', 'storeName logo brandColor isOnline isVisible prepaidPromo isOpen statusMessage')
         .populate('items.itemId')
         .sort({ createdAt: -1 })
         .lean()
@@ -184,7 +184,9 @@ export class ProductsService {
         brandColor: v.brandColor,
         isOnline: v.isOnline,
         isVisible: v.isVisible,
-        prepaidPromo: v.prepaidPromo
+        prepaidPromo: v.prepaidPromo,
+        isOpen: v.isOpen,
+        statusMessage: v.statusMessage
       }));
       
       [...menuPacks, ...menuItems].forEach(p => {
@@ -285,7 +287,7 @@ export class ProductsService {
     // we query 'menupacks' directly to ensure this legacy endpoint also returns the correct data structure.
     const packs = await this.packModel
       .find({ isPrepaidByPlatform: true, isActive: true })
-      .populate('vendorId', 'storeName logo brandColor isOnline isVisible')
+      .populate('vendorId', 'storeName logo brandColor isOnline isVisible isOpen statusMessage')
       .populate('items.itemId')
       .sort({ createdAt: -1 })
       .limit(20);
