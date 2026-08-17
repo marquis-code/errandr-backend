@@ -15,7 +15,7 @@ async function run() {
     // Find vendor matching HVIP
     const result = await Vendor.updateMany(
       { storeName: { $regex: /HVIP/i } },
-      { $set: { isOpen: false, statusMessage: 'closed' } }
+      { $set: { isOnline: false, statusMessage: 'closed' } }
     );
     
     console.log(`Matched ${result.matchedCount}, Modified ${result.modifiedCount}`);
