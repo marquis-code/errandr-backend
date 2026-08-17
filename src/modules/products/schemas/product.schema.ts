@@ -33,7 +33,7 @@ export class Product extends Document {
   @Prop({ type: [String], default: [] })
   videos: string[];
 
-  @Prop({ required: true })
+  @Prop()
   category: string;
 
   @Prop({ type: [String], default: [] })

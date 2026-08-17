@@ -16,3 +16,4 @@ export class MenuCategory extends Document {
   isActive: boolean;
 }
 export const MenuCategorySchema = SchemaFactory.createForClass(MenuCategory);
+MenuCategorySchema.index({ vendorId: 1, name: 1 }, { unique: true });

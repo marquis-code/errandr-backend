@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { checkIsOpen } from '../../utils/vendor-helpers';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Product } from './schemas/product.schema';
@@ -122,7 +123,7 @@ export class ProductsService {
 
       const products = await this.productModel
         .find({ isPrepaidByPlatform: true, isAvailable: true })
-        .populate('vendor', 'storeName logo brandColor isOnline isVisible prepaidPromo isOpen statusMessage')
+        .populate('vendor', 'storeName logo brandColor isOnline isVisible prepaidPromo businessHours breakPeriod')
         .sort({ createdAt: -1 })
         .lean()
         .exec()
@@ -130,7 +131,7 @@ export class ProductsService {
         
       const packs = await this.packModel
         .find({ isPrepaidByPlatform: true, isActive: true })
-        .populate('vendorId', 'storeName logo brandColor isOnline isVisible prepaidPromo isOpen statusMessage')
+        .populate('vendorId', 'storeName logo brandColor isOnline isVisible prepaidPromo businessHours breakPeriod')
         .populate('items.itemId')
         .sort({ createdAt: -1 })
         .lean()
@@ -177,17 +178,22 @@ export class ProductsService {
       }
       
       const vendorMap = new Map();
-      vendors.forEach(v => vendorMap.set(v._id.toString(), {
-        _id: v._id,
-        storeName: v.storeName,
-        logo: v.logo,
-        brandColor: v.brandColor,
-        isOnline: v.isOnline,
-        isVisible: v.isVisible,
-        prepaidPromo: v.prepaidPromo,
-        isOpen: v.isOpen,
-        statusMessage: v.statusMessage
-      }));
+      vendors.forEach(v => {
+        const { isOpen, message } = checkIsOpen(v);
+        vendorMap.set(v._id.toString(), {
+          _id: v._id,
+          storeName: v.storeName,
+          logo: v.logo,
+          brandColor: v.brandColor,
+          isOnline: v.isOnline,
+          isVisible: v.isVisible,
+          prepaidPromo: v.prepaidPromo,
+          businessHours: v.businessHours,
+          breakPeriod: v.breakPeriod,
+          isOpen: isOpen,
+          statusMessage: message
+        });
+      });
       
       [...menuPacks, ...menuItems].forEach(p => {
         if (p.vendorId) {
@@ -251,10 +257,15 @@ export class ProductsService {
       combined = combined.map(item => {
         const itemObj = typeof item.toObject === 'function' ? item.toObject() : { ...item };
         const v = itemObj.vendorId || itemObj.vendor;
-        if (v && v.prepaidPromo && v.prepaidPromo.enabled) {
-           const maxOrders = v.prepaidPromo.maxOrders || 0;
-           const usedOrders = v.prepaidPromo.usedOrders || 0;
-           itemObj.slotsLeft = maxOrders - usedOrders;
+        if (v) {
+           if (v.prepaidPromo && v.prepaidPromo.enabled) {
+              const maxOrders = v.prepaidPromo.maxOrders || 0;
+              const usedOrders = v.prepaidPromo.usedOrders || 0;
+              itemObj.slotsLeft = maxOrders - usedOrders;
+           }
+           const { isOpen, message } = checkIsOpen(v);
+           v.isOpen = isOpen;
+           v.statusMessage = message;
         }
         return itemObj;
       });
