@@ -233,10 +233,14 @@ export class NotificationsService {
     // Format phone number, ensure no '+' since infobip usually expects numbers like 234814...
     const formattedPhone = phone.replace(/\+/g, '');
     try {
-      const response = await fetch('https://k9vmv3.api.infobip.com/sms/3/messages', {
+      const baseUrl = process.env.INFOBIP_BASE_URL || 'https://k9vmv3.api.infobip.com';
+      const apiKey = process.env.INFOBIP_API_KEY || 'App da0c3f65763df091571655c600f8fa39-5fce524c-cb59-45a2-b10e-040c6e7cf565';
+      const sender = process.env.INFOBIP_SENDER || '447491163443';
+
+      const response = await fetch(`${baseUrl}/sms/3/messages`, {
         method: 'POST',
         headers: {
-          'Authorization': 'App da0c3f65763df091571655c600f8fa39-5fce524c-cb59-45a2-b10e-040c6e7cf565',
+          'Authorization': apiKey,
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
@@ -244,7 +248,7 @@ export class NotificationsService {
           messages: [
             {
               destinations: [{ to: formattedPhone }],
-              sender: '447491163443',
+              sender: sender,
               content: { text: text }
             }
           ]
