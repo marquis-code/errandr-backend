@@ -197,15 +197,17 @@ export class OrdersService {
       for (const e of filteredErranders) {
         if (e.user) {
           const userObj = e.user as any;
+          const feeDisplay = orderData.type === 'custom_errand' ? (orderData.deliveryFee || 0) : 300;
+          
           if (userObj.fcmToken) {
             await this.notificationsService.sendPushNotification(userObj.fcmToken, {
               title: '🚨 NEW ERRAND AVAILABLE!',
-              body: `An order from ${vendorName} needs a runner right now! ₦${orderData.deliveryFee || 0} fee`,
+              body: `An order from ${vendorName} needs a runner right now! ₦${feeDisplay} fee`,
               data: { type: 'NEW_ORDER', orderId: orderData.orderId.toString() },
             });
           }
           if (userObj.phone) {
-             await this.notificationsService.sendInfobipSMS(userObj.phone, `🚨 NEW ERRAND AVAILABLE! An order from ${vendorName} needs a runner right now! ₦${orderData.deliveryFee || 0} fee`);
+             await this.notificationsService.sendInfobipSMS(userObj.phone, `🚨 NEW ERRAND AVAILABLE! An order from ${vendorName} needs a runner right now! ₦${feeDisplay} fee`);
           }
         }
       }

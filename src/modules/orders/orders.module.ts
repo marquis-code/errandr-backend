@@ -27,6 +27,7 @@ import { PromoCodesModule } from '../promo-codes/promo-codes.module';
 
 import { ErrandPool, ErrandPoolSchema } from './schemas/errand-pool.schema';
 import { ExamModeModule } from '../exam-mode/exam-mode.module';
+import { ErrandersModule } from '../erranders/erranders.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { ExamModeModule } from '../exam-mode/exam-mode.module';
     RewardsModule,
     PromoCodesModule,
     forwardRef(() => ExamModeModule),
+    forwardRef(() => ErrandersModule),
   ],
   controllers: [OrdersController, SimulationController],
   providers: [OrdersService, BatchDeliveryService],
