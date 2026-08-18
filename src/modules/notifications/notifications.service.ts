@@ -230,8 +230,11 @@ export class NotificationsService {
   // ─── Infobip SMS ────────────────
   async sendInfobipSMS(phone: string, text: string) {
     if (!phone) return;
-    // Format phone number, ensure no '+' since infobip usually expects numbers like 234814...
-    const formattedPhone = phone.replace(/\+/g, '');
+    let formattedPhone = phone.replace(/\+/g, '').replace(/\s+/g, '');
+    // Convert local Nigerian format (e.g. 081...) to international E.164 without plus (e.g. 23481...)
+    if (formattedPhone.startsWith('0')) {
+      formattedPhone = '234' + formattedPhone.substring(1);
+    }
     try {
       const baseUrl = process.env.INFOBIP_BASE_URL || 'https://k9vmv3.api.infobip.com';
       const rawApiKey = process.env.INFOBIP_API_KEY || 'da0c3f65763df091571655c600f8fa39-5fce524c-cb59-45a2-b10e-040c6e7cf565';
