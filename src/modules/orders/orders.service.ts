@@ -1789,6 +1789,9 @@ export class OrdersService {
     if (!order) throw new NotFoundException('Order not found');
     
     if (data.vendorRating) {
+      if (order.hasRatedVendor) {
+        throw new BadRequestException('Vendor has already been rated for this order');
+      }
       order.vendorRating = data.vendorRating;
       order.vendorReview = data.vendorReview || '';
       order.hasRatedVendor = true;
@@ -1809,6 +1812,9 @@ export class OrdersService {
     }
 
     if (data.erranderRating) {
+      if (order.hasRatedErrander) {
+        throw new BadRequestException('Errander has already been rated for this order');
+      }
       order.erranderRating = data.erranderRating;
       order.erranderReview = data.erranderReview || '';
       order.hasRatedErrander = true;
