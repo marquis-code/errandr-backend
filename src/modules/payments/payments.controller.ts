@@ -218,7 +218,7 @@ export class PaymentsController {
             }
 
             const amountPaid = data.amount / 100; // Paystack sends in kobo
-            if (Math.round(amountPaid) < Math.round(expectedTotal)) {
+            if (amountPaid < expectedTotal - 5) {
               this.logger.error(`Webhook amount mismatch for Ref: ${reference}. Paid: ${amountPaid}, Expected: ${expectedTotal}. Attempted hack!`);
               return { status: 'error', message: 'Amount mismatch' };
             }

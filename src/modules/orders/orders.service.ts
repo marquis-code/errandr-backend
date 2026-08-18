@@ -243,7 +243,7 @@ export class OrdersService {
       let paymentVerified = false;
       if (data.paymentReference) {
         const verification = await this.paystackService.verifyTransaction(data.paymentReference);
-        if (verification?.status === 'success' && Math.round(verification.amount) >= total) {
+        if (verification?.status === 'success' && verification.amount >= total - 5) {
            paymentVerified = true;
         }
       }
@@ -271,18 +271,20 @@ export class OrdersService {
         erranderPayout: erranderShare,
         platformShare,
         total,
-        paymentStatus: PaymentStatus.PAID,
-        paymentReference: data.paymentReference,
+        paymentStatus: data.paymentReference ? (paymentVerified ? PaymentStatus.PAID : PaymentStatus.PENDING) : PaymentStatus.PENDING,
+        paymentReference: data.paymentReference || undefined,
         status: OrderStatus.PENDING,
         itemCostDisbursementStatus: itemCost > 0 ? 'pending' : 'not_applicable',
         reconciliationStatus: itemCost > 0 ? 'pending' : 'not_applicable',
         statusHistory: [
-          { status: OrderStatus.PENDING, timestamp: new Date(), note: 'Custom errand paid and broadcasted to riders' },
+          { status: OrderStatus.PENDING, timestamp: new Date(), note: 'Custom errand created' },
         ],
       });
 
-      // Always broadcast since payment is now guaranteed
-      await this.broadcastNewOrderToErranders(order);
+      // Only broadcast if payment is guaranteed (already verified or cash)
+      if (paymentVerified || data.paymentMethod === 'cash') {
+        await this.broadcastNewOrderToErranders(order);
+      }
 
       return order.populate('customer', 'firstName lastName phone avatar');
     }
@@ -651,7 +653,7 @@ export class OrdersService {
     let paymentVerified = false;
     if (data.paymentReference) {
       const verification = await this.paystackService.verifyTransaction(data.paymentReference);
-      if (verification?.status === 'success' && Math.round(verification.amount) >= total) {
+      if (verification?.status === 'success' && verification.amount >= total - 5) {
          paymentVerified = true;
       }
     }
@@ -2240,7 +2242,7 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     if (verification?.status !== 'success') {
       throw new BadRequestException('Payment verification failed');
     }
-    if (Math.round(verification.amount) < order.total) {
+    if (verification.amount < order.total - 5) {
       throw new BadRequestException('Payment amount mismatch');
     }
 
