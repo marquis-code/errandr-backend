@@ -234,7 +234,8 @@ export class NotificationsService {
     const formattedPhone = phone.replace(/\+/g, '');
     try {
       const baseUrl = process.env.INFOBIP_BASE_URL || 'https://k9vmv3.api.infobip.com';
-      const apiKey = process.env.INFOBIP_API_KEY || 'App da0c3f65763df091571655c600f8fa39-5fce524c-cb59-45a2-b10e-040c6e7cf565';
+      const rawApiKey = process.env.INFOBIP_API_KEY || 'da0c3f65763df091571655c600f8fa39-5fce524c-cb59-45a2-b10e-040c6e7cf565';
+      const apiKey = rawApiKey.startsWith('App ') ? rawApiKey : `App ${rawApiKey}`;
       const sender = process.env.INFOBIP_SENDER || '447491163443';
 
       const response = await fetch(`${baseUrl}/sms/3/messages`, {
