@@ -18,35 +18,46 @@ export class ReviewsService {
       throw new BadRequestException('Rating must be between 1 and 5');
     }
 
-    // Check if user has a completed order from this vendor
-    const completedOrder = await this.orderModel.findOne({
+    // Find all completed orders for this vendor by this user
+    const completedOrders = await this.orderModel.find({
       customer: userId,
       vendor: vendorId,
       status: { $in: [OrderStatus.DELIVERED, OrderStatus.PICKED_UP] }
     });
 
-    if (!completedOrder) {
+    if (!completedOrders || completedOrders.length === 0) {
       throw new BadRequestException('You can only review vendors you have completed an order with.');
     }
 
-    // Check if user already reviewed this order
-    const existingReview = await this.reviewModel.findOne({
+    // Find all reviews by this user for this vendor
+    const existingReviews = await this.reviewModel.find({
       user: userId,
       vendor: vendorId,
-      order: completedOrder._id
+      order: { $in: completedOrders.map(o => o._id) }
     });
 
-    if (existingReview) {
-      throw new BadRequestException('You have already reviewed this vendor for this order.');
+    const reviewedOrderIds = existingReviews.map(r => r.order.toString());
+    
+    // Find an order that hasn't been reviewed yet
+    const unreviewedOrder = completedOrders.find(o => !reviewedOrderIds.includes(o._id.toString()));
+
+    if (!unreviewedOrder) {
+      throw new BadRequestException('You have already reviewed all your orders from this vendor.');
     }
 
     const review = await this.reviewModel.create({
       user: userId,
       vendor: vendorId,
-      order: completedOrder._id,
+      order: unreviewedOrder._id,
       rating,
       comment,
     });
+
+    // Sync the order status so it knows it has been rated
+    unreviewedOrder.hasRatedVendor = true;
+    unreviewedOrder.vendorRating = rating;
+    unreviewedOrder.vendorReview = comment || '';
+    await unreviewedOrder.save();
 
     // Update vendor rating averages
     await this.updateVendorRating(vendorId);
