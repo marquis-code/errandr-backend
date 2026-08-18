@@ -237,18 +237,13 @@ export class OrdersService {
       const erranderShare = runnerFee - commissionAmount;
       const platformShare = serviceFee + commissionAmount;
 
-      // Payment is REQUIRED before order creation — prevent order abandonment
-      if (!data.paymentReference) {
-        throw new BadRequestException('Payment is required before placing an order. Please complete payment first.');
-      }
-
-      // Verify Paystack payment
-      const verification = await this.paystackService.verifyTransaction(data.paymentReference);
-      if (verification?.status !== 'success') {
-        throw new BadRequestException('Payment verification failed');
-      }
-      if (Math.round(verification.amount) < total) {
-        throw new BadRequestException(`Payment amount mismatch. Expected ₦${total}, got ₦${Math.round(verification.amount)}`);
+      // Optional Paystack verification
+      let paymentVerified = false;
+      if (data.paymentReference) {
+        const verification = await this.paystackService.verifyTransaction(data.paymentReference);
+        if (verification?.status === 'success' && Math.round(verification.amount) >= total) {
+           paymentVerified = true;
+        }
       }
 
       const order = await this.orderModel.create({
@@ -650,17 +645,13 @@ export class OrdersService {
 
     const total = subtotal + deliveryFee + serviceFee + packagingFee + platformProcessingFee - discount;
 
-    // PAYSTACK VERIFICATION — Payment is REQUIRED before order creation
-    if (!data.paymentReference) {
-      throw new BadRequestException('Payment is required before placing an order. Please complete payment first.');
-    }
-
-    const verification = await this.paystackService.verifyTransaction(data.paymentReference);
-    if (verification?.status !== 'success') {
-      throw new BadRequestException('Payment verification failed');
-    }
-    if (Math.round(verification.amount) < total) {
-       throw new BadRequestException('Payment amount mismatch');
+    // Optional Paystack verification if reference is passed (e.g., from some legacy flows)
+    let paymentVerified = false;
+    if (data.paymentReference) {
+      const verification = await this.paystackService.verifyTransaction(data.paymentReference);
+      if (verification?.status === 'success' && Math.round(verification.amount) >= total) {
+         paymentVerified = true;
+      }
     }
 
     // Build items from packs for backward compatibility
