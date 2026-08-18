@@ -432,4 +432,15 @@ async getMyVendorOrders(
   ) {
     return this.ordersService.lockPool(poolId, (user._id as unknown) as string);
   }
+
+  @Post(':id/feedback')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Submit feedback for an abandoned or pending order' })
+  submitOrderFeedback(
+    @Param('id') id: string,
+    @Body() body: { feedback: string },
+  ) {
+    return this.ordersService.submitFeedback(id, body.feedback);
+  }
 }

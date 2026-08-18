@@ -1526,7 +1526,11 @@ export class OrdersService {
       return { orders: [], total: 0 };
     }
     const filter: any = { vendor: new Types.ObjectId(vendorId) };
-    if (status) filter.status = status;
+    if (status) {
+      filter.status = status;
+    } else {
+      filter.status = { $nin: [OrderStatus.PENDING, OrderStatus.AWAITING_PAYMENT] };
+    }
 
     const p = Math.max(1, parseInt(page) || 1);
     const l = Math.max(1, parseInt(limit) || 20);
@@ -1567,8 +1571,11 @@ export class OrdersService {
       this.logger.log(`findByVendorOwner() found vendorIds=[${vendorIds.join(', ')}]`);
       
       const filter: any = { vendor: { $in: vendorIds } };
-      if (status) filter.status = status;
-
+      if (status) {
+        filter.status = status;
+      } else {
+        filter.status = { $nin: [OrderStatus.PENDING, OrderStatus.AWAITING_PAYMENT] };
+      }
       const p = Math.max(1, Number(page) || 1);
       const l = Math.max(1, Number(limit) || 10);
       const skip = (p - 1) * l;
@@ -1592,6 +1599,19 @@ export class OrdersService {
     }
   }
 
+  async submitFeedback(id: string, feedback: string) {
+    if (!feedback || feedback.trim() === '') {
+      throw new BadRequestException('Feedback cannot be empty');
+    }
+    const order = await this.orderModel.findByIdAndUpdate(
+      id,
+      { abandonmentFeedback: feedback },
+      { new: true }
+    );
+    if (!order) throw new NotFoundException('Order not found');
+    return { success: true, message: 'Feedback submitted successfully' };
+  }
+
   async getErranderOrders(erranderId: string) {
     return this.orderModel
       .find({ errander: new Types.ObjectId(erranderId) })
@@ -1605,7 +1625,7 @@ export class OrdersService {
       .find({
         status: { $in: [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP] },
         errander: { $exists: false },
-        $or: [
+         $or: [
           { deliveryOption: 'use_an_errander' },
           { deliveryOption: { $exists: false } },
           { deliveryOption: null }

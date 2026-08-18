@@ -473,6 +473,9 @@ export class Order extends Document {
 
   @Prop()
   refundAmount: number;
+
+  @Prop()
+  abandonmentFeedback: string;
 }
 
 export const OrderSchema = SchemaFactory.createForClass(Order);
