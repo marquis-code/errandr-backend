@@ -22,7 +22,7 @@ import { UsersModule } from '../users/users.module';
 import { BatchDeliveryService } from './batch-delivery.service';
 import { RewardsModule } from '../rewards/rewards.module';
 import { SimulationController } from './simulation.controller';
-import { AfricasTalkingModule } from '../africastalking/africastalking.module';
+
 import { PromoCodesModule } from '../promo-codes/promo-codes.module';
 
 import { ErrandPool, ErrandPoolSchema } from './schemas/errand-pool.schema';
@@ -49,7 +49,6 @@ import { ExamModeModule } from '../exam-mode/exam-mode.module';
     forwardRef(() => WalletsModule),
     forwardRef(() => PaymentsModule),
     RewardsModule,
-    forwardRef(() => AfricasTalkingModule),
     PromoCodesModule,
     forwardRef(() => ExamModeModule),
   ],

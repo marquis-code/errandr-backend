@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, NotFoundException, BadRequestException, Logger, Inject, forwardRef } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -10,20 +10,23 @@ import { ConfigService } from '@nestjs/config';
 import { EmailService } from '../email/email.service';
 import { WalletsService } from '../wallets/wallets.service';
 import { RewardsService } from '../rewards/rewards.service';
-import { AfricasTalkingService } from '../africastalking/africastalking.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { ReferralsService } from '../referrals/referrals.service';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
-    @InjectModel(User.name) private userModel: Model<User>,
-    private jwtService: JwtService,
-    private configService: ConfigService,
-    private emailService: EmailService,
-    private walletsService: WalletsService,
-    private rewardsService: RewardsService,
-    private africasTalkingService: AfricasTalkingService,
-    private referralsService: ReferralsService,
+    @InjectModel(User.name) private readonly userModel: Model<User>,
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
+    private readonly emailService: EmailService,
+    private readonly notificationsService: NotificationsService,
+    @Inject(forwardRef(() => WalletsService))
+    private readonly walletsService: WalletsService,
+    private readonly rewardsService: RewardsService,
+    private readonly referralsService: ReferralsService,
   ) {}
 
   async register(registerDto: RegisterDto) {
@@ -209,11 +212,9 @@ export class AuthService {
     await user.save();
 
     if (method === 'sms' && user.phone) {
-      const sent = await this.africasTalkingService.sendSMSOTP(user.phone, otp);
-      if (sent) return { success: true, message: 'Code sent to your phone via SMS 📱' };
-    } else if (method === 'voice' && user.phone) {
-      await this.africasTalkingService.sendVoiceOTP(user.phone, otp);
-      return { success: true, message: 'Calling you now with the code 📞' };
+      const message = `Your Erranders verification code is ${otp}. It expires in 10 minutes.`;
+      await this.notificationsService.sendInfobipSMS(user.phone, message);
+      return { success: true, message: 'OTP sent via SMS' };
     }
 
     // Default or fallback to email

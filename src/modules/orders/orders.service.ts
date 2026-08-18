@@ -25,7 +25,7 @@ import { ChatService } from '../chat/chat.service';
 import { BatchDeliveryService } from './batch-delivery.service';
 import { augmentVendor } from '../../utils/vendor-helpers';
 import { RewardsService } from '../rewards/rewards.service';
-import { AfricasTalkingService } from '../africastalking/africastalking.service';
+import { ErrandersService } from '../erranders/erranders.service';
 import { MapboxService } from '../mapbox/mapbox.service';
 import { PromoCodesService } from '../promo-codes/promo-codes.service';
 import * as bcrypt from 'bcryptjs';
@@ -56,11 +56,11 @@ export class OrdersService {
     private chatService: ChatService,
     private batchDeliveryService: BatchDeliveryService,
     private rewardsService: RewardsService,
-    @Inject(forwardRef(() => AfricasTalkingService))
-    private africasTalkingService: AfricasTalkingService,
     private mapboxService: MapboxService,
     private promoCodesService: PromoCodesService,
     private moduleRef: ModuleRef,
+    @Inject(forwardRef(() => ErrandersService))
+    private errandersService: ErrandersService,
   ) {}
 
   private get examModeService(): ExamModeService {
@@ -811,13 +811,9 @@ export class OrdersService {
     if (order.paymentStatus === PaymentStatus.PAID && populatedVendor?.phone) {
       try {
         const itemsList = order.items.map(i => `${i.quantity} ${i.name}`);
-        await this.africasTalkingService.sendOrderDispatchCall(populatedVendor.phone, {
-          orderNumber: order.orderNumber,
-          orderId: (order._id as any).toString(),
-          items: itemsList,
-          total: order.total
-        });
-        this.logger.log(`Triggered automated order dispatch call for order ${order.orderNumber} to ${populatedVendor.phone}`);
+        const message = `Hello, this is Erranders. You have a new order #${order.orderNumber} for ${order.total} Naira. Items: ${itemsList.join(', ')}. Please prepare it.`;
+        await this.notificationsService.sendInfobipSMS(populatedVendor.phone, message);
+        this.logger.log(`Triggered automated order dispatch SMS for order ${order.orderNumber} to ${populatedVendor.phone}`);
       } catch (e) {
         this.logger.error(`Failed to trigger dispatch call: ${e.message}`);
       }
@@ -2072,31 +2068,21 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
       const vendor = await this.vendorModel.findById(order.vendor).populate('owner');
       if (vendor && (vendor.owner as any)?.phone) {
         const phone = (vendor.owner as any).phone;
-        const smsSent = await this.africasTalkingService.sendSMS(phone, `Erranders Pickup Code for #${order.orderNumber}: ${otp}`);
-        if (!smsSent) {
-          this.logger.warn(`SMS failed for pickup OTP to ${phone}, falling back to voice call`);
-          await this.africasTalkingService.sendVoiceOTP(phone, otp);
-          method = 'voice';
-        }
+        await this.notificationsService.sendInfobipSMS(phone, `Erranders Pickup Code for #${order.orderNumber}: ${otp}`);
       }
     } else {
       order.deliveryOtpHash = hash;
       const customer = order.customer as any;
       if (customer && customer.phone) {
-        const smsSent = await this.africasTalkingService.sendSMSOTP(customer.phone, otp);
-        if (!smsSent) {
-          this.logger.warn(`SMS failed for delivery OTP to ${customer.phone}, falling back to voice call`);
-          await this.africasTalkingService.sendVoiceOTP(customer.phone, otp);
-          method = 'voice';
-        }
+        await this.notificationsService.sendInfobipSMS(customer.phone, `Your Erranders Delivery Code for #${order.orderNumber} is: ${otp}. Do not share until delivery is complete.`);
       }
     }
 
     await order.save();
     return { 
       success: true, 
-      message: method === 'voice' ? 'SMS failing, initiated voice call fallback' : 'OTP sent via SMS',
-      method 
+      message: 'OTP sent via SMS',
+      method: 'sms'
     };
   }
 
@@ -2124,12 +2110,18 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     if (!phone) throw new BadRequestException('Recipient phone number not found');
 
     await order.save();
-    await this.africasTalkingService.sendVoiceOTP(phone, otp);
+    
+    // Fallback: Just sending an SMS for now since Africa's Talking is removed.
+    const msg = type === 'pickup' 
+      ? `Erranders Pickup Code for #${order.orderNumber}: ${otp}`
+      : `Your Erranders Delivery Code for #${order.orderNumber} is: ${otp}. Do not share until delivery is complete.`;
+      
+    await this.notificationsService.sendInfobipSMS(phone, msg);
     
     return { 
       success: true, 
-      message: 'Voice call initiated',
-      method: 'voice' 
+      message: 'OTP resent via SMS',
+      method: 'sms' 
     };
   }
 
