@@ -1074,7 +1074,8 @@ export class OrdersService {
 
   async acceptOrder(orderId: string, erranderId: string): Promise<Order> {
     const isBatchActive = await this.batchDeliveryService.isWindowActive();
-    const maxOrders = isBatchActive ? 5 : 1;
+    // Allow multiple concurrent orders (3 for normal, 5 for batch) to clear more orders
+    const maxOrders = isBatchActive ? 5 : 3;
 
     // Find errander profile, or auto-create if they just signed up and haven't fetched profile
     let errander = await this.erranderModel.findOne({
@@ -1242,12 +1243,13 @@ export class OrdersService {
       }
     }
 
-    // Update errander status and batch list
+    // Update errander status and batch list (always use batchOrders to support multiple concurrent normal orders)
     errander.status = ErranderStatus.BUSY;
-    if (isBatchActive) {
-      if (!errander.batchOrders) errander.batchOrders = [];
-      errander.batchOrders.push(order._id as Types.ObjectId);
-    } else {
+    if (!errander.batchOrders) errander.batchOrders = [];
+    errander.batchOrders.push(order._id as Types.ObjectId);
+    
+    // Also set currentOrder for backwards compatibility with single-order tracking
+    if (!isBatchActive && !errander.currentOrder) {
       errander.currentOrder = order._id as Types.ObjectId;
     }
     await errander.save();
