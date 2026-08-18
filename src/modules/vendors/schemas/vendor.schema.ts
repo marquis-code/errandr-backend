@@ -169,6 +169,12 @@ export class Vendor extends Document {
   @Prop({ default: true })
   isVisible: boolean;
 
+  @Prop({ type: String, default: '08:00' })
+  openingTime: string;
+
+  @Prop({ type: String, default: '20:00' })
+  closingTime: string;
+
   @Prop({
     type: [
       {
