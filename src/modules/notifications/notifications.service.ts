@@ -236,10 +236,16 @@ export class NotificationsService {
       formattedPhone = '234' + formattedPhone.substring(1);
     }
     try {
-      const baseUrl = process.env.INFOBIP_BASE_URL || 'https://k9vmv3.api.infobip.com';
-      const rawApiKey = process.env.INFOBIP_API_KEY || 'da0c3f65763df091571655c600f8fa39-5fce524c-cb59-45a2-b10e-040c6e7cf565';
+      const baseUrl = this.configService.get<string>('INFOBIP_BASE_URL') || process.env.INFOBIP_BASE_URL || 'https://k9vmv3.api.infobip.com';
+      const rawApiKey = this.configService.get<string>('INFOBIP_API_KEY') || process.env.INFOBIP_API_KEY;
+      
+      if (!rawApiKey) {
+        this.logger.warn('INFOBIP_API_KEY is not set');
+        return;
+      }
+      
       const apiKey = rawApiKey.startsWith('App ') ? rawApiKey : `App ${rawApiKey}`;
-      const sender = process.env.INFOBIP_SENDER || '447491163443';
+      const sender = this.configService.get<string>('INFOBIP_SENDER') || process.env.INFOBIP_SENDER || '447491163443';
 
       const response = await fetch(`${baseUrl}/sms/3/messages`, {
         method: 'POST',
