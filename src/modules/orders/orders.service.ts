@@ -718,14 +718,14 @@ export class OrdersService {
       deliveryAddress: data.deliveryAddress || data.specificAddress || '',
       deliveryLocation: data.deliveryLocation,
       deliveryNotes: data.deliveryNotes,
-      paymentStatus: PaymentStatus.PAID,
+      paymentStatus: (paymentVerified || data.paymentMethod === 'cash') ? PaymentStatus.PAID : PaymentStatus.PENDING,
       paymentReference: data.paymentReference,
-      status: OrderStatus.CONFIRMED,
+      status: (paymentVerified || data.paymentMethod === 'cash') ? OrderStatus.CONFIRMED : OrderStatus.PENDING,
       statusHistory: [
         { 
-          status: OrderStatus.CONFIRMED, 
+          status: (paymentVerified || data.paymentMethod === 'cash') ? OrderStatus.CONFIRMED : OrderStatus.PENDING, 
           timestamp: new Date(), 
-          note: 'Order placed and payment confirmed' 
+          note: (paymentVerified || data.paymentMethod === 'cash') ? 'Order placed and payment confirmed' : 'Order placed, awaiting payment' 
         },
       ],
       isPreOrder: data.isPreOrder || false,
@@ -757,35 +757,37 @@ export class OrdersService {
     // Schedule timeout check (e.g. 5 mins)
     await this.orderQueue.add('orderTimeout', { orderId: order._id }, { delay: 300000 });
 
-    // Process vendor payout immediately since payment is always verified
-    await this.processVendorPayout(order);
-
     // Trigger Vendor Notification Cascade & Fetch for later use
     const populatedVendor = await this.vendorModel.findById(data.vendorId).populate('owner');
 
-    // Exam Mode: Handle conflict or proceed normally
-    if (conflictDate) {
-      // Order placed during an unavailable window
-      order.status = OrderStatus.PENDING; // Keep it pending until resolved
-      await order.save();
-      
-      this.logger.log(`Order ${order.orderNumber} intercepted for Exam Mode. Auto-suggesting reschedule to ${conflictDate}.`);
-      await this.examModeService.createRescheduleRequest(
-        order._id.toString(),
-        data.vendorId,
-        customerId,
-        requestedDate,
-        conflictDate
-      );
-    } else {
-      // Always broadcast since payment is guaranteed
-      await this.broadcastNewOrderToErranders(order);
+    // Process vendor payout immediately only if paid
+    if (order.paymentStatus === PaymentStatus.PAID) {
+      await this.processVendorPayout(order);
 
-      if (populatedVendor) {
-        // Fire-and-forget cascade
-        this.notificationsService.notifyVendor(populatedVendor, order).catch(e => {
-          this.logger.error(`Vendor notification cascade failed: ${e.message}`);
-        });
+      // Exam Mode: Handle conflict or proceed normally
+      if (conflictDate) {
+        // Order placed during an unavailable window
+        order.status = OrderStatus.PENDING; // Keep it pending until resolved
+        await order.save();
+        
+        this.logger.log(`Order ${order.orderNumber} intercepted for Exam Mode. Auto-suggesting reschedule to ${conflictDate}.`);
+        await this.examModeService.createRescheduleRequest(
+          order._id.toString(),
+          data.vendorId,
+          customerId,
+          requestedDate,
+          conflictDate
+        );
+      } else {
+        // Always broadcast since payment is guaranteed
+        await this.broadcastNewOrderToErranders(order);
+
+        if (populatedVendor) {
+          // Fire-and-forget cascade
+          this.notificationsService.notifyVendor(populatedVendor, order).catch(e => {
+            this.logger.error(`Vendor notification cascade failed: ${e.message}`);
+          });
+        }
       }
     }
 

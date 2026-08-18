@@ -9,7 +9,7 @@ import { OrdersService } from '../orders/orders.service';
 import { AppointmentsService } from '../appointments/appointments.service';
 import { WalletsService } from '../wallets/wallets.service';
 import { TransactionStatus } from '../wallets/schemas/transaction.schema';
-import { OrderStatus } from '../orders/schemas/order.schema';
+import { OrderStatus, PaymentStatus } from '../orders/schemas/order.schema';
 import { User } from '../users/schemas/user.schema';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -68,9 +68,26 @@ export class PaymentsController {
 
         for (const id of idsToProcess) {
           const order = await this.ordersService.findById(id);
-          if (order && order.status !== OrderStatus.CONFIRMED) {
-            await this.ordersService.updateStatus(id, OrderStatus.CONFIRMED, 'SYSTEM', `Payment confirmed via Verify (Ref: ${reference})`);
-            // Note: Email and Broadcast might happen in updateStatus or should be added if not.
+          if (order && (order.status !== OrderStatus.CONFIRMED || order.paymentStatus !== PaymentStatus.PAID)) {
+            // Set payment status to PAID
+            order.paymentStatus = PaymentStatus.PAID;
+            await order.save();
+
+            const updatedOrder = await this.ordersService.updateStatus(id, OrderStatus.CONFIRMED, 'SYSTEM', `Payment confirmed via Verify (Ref: ${reference})`);
+            
+            // Payout vendor now that payment is confirmed
+            await this.ordersService.processVendorPayout(updatedOrder);
+            
+            // Broadcast to all erranders
+            await this.ordersService.broadcastNewOrderToErranders(updatedOrder);
+
+            // Notify Vendor
+            const vendorObj = await (this.ordersService as any).vendorModel.findById(updatedOrder.vendor).populate('owner');
+            if (vendorObj) {
+              (this.ordersService as any).notificationsService.notifyVendor(vendorObj, updatedOrder).catch(e => {
+                this.logger.error(`Vendor notification cascade failed from verify: ${e.message}`);
+              });
+            }
           }
         }
       }
@@ -210,12 +227,17 @@ export class PaymentsController {
               const id = order._id.toString();
               try {
                 // Idempotency: Check if order is already confirmed
-                if (order.status === OrderStatus.CONFIRMED) {
-                  this.logger.log(`Order ${id} already confirmed, skipping webhook logic.`);
+                if (order.status === OrderStatus.CONFIRMED && order.paymentStatus === PaymentStatus.PAID) {
+                  this.logger.log(`Order ${id} already confirmed and paid, skipping webhook logic.`);
                   continue;
                 }
 
                 this.logger.log(`Charge success for order: ${id} (Ref: ${reference})`);
+                
+                // Set payment status to PAID
+                order.paymentStatus = PaymentStatus.PAID;
+                await order.save();
+
                 const updatedOrder = await this.ordersService.updateStatus(
                   id,
                   OrderStatus.CONFIRMED,
@@ -223,12 +245,19 @@ export class PaymentsController {
                   `Payment confirmed via Webhook (Ref: ${reference})`,
                 );
                 
-                // Broadcast to all erranders
                 // Payout vendor now that payment is confirmed
                 await this.ordersService.processVendorPayout(updatedOrder);
                 
                 // Broadcast to all erranders
                 await this.ordersService.broadcastNewOrderToErranders(updatedOrder);
+
+                // Notify Vendor
+                const vendorObj = await (this.ordersService as any).vendorModel.findById(updatedOrder.vendor).populate('owner');
+                if (vendorObj) {
+                  (this.ordersService as any).notificationsService.notifyVendor(vendorObj, updatedOrder).catch(e => {
+                    this.logger.error(`Vendor notification cascade failed from webhook: ${e.message}`);
+                  });
+                }
               } catch (err: any) {
                 this.logger.error(`Failed to process order ${id} from webhook: ${err.message}`);
               }
