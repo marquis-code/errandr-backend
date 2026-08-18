@@ -106,6 +106,12 @@ export class AdminController {
     return this.adminService.getPendingDispatchers(page, limit);
   }
 
+  @Post('dispatchers/batch-delete')
+  @ApiOperation({ summary: 'Batch delete dispatchers' })
+  batchDeleteDispatchers(@Body() body: { ids: string[] }): Promise<any> {
+    return this.adminService.batchDeleteDispatchers(body.ids);
+  }
+
   @Put('dispatchers/:id/approve')
   @ApiOperation({ summary: 'Approve a dispatcher verification' })
   approveDispatcher(@Param('id') id: string, @Body() body?: { level?: number }) {
@@ -185,11 +191,5 @@ export class AdminController {
   @ApiOperation({ summary: 'Delete dispatcher permanently' })
   deleteDispatcher(@Param('id') id: string) {
     return this.adminService.deleteDispatcher(id);
-  }
-
-  @Post('dispatchers/batch-delete')
-  @ApiOperation({ summary: 'Batch delete dispatchers' })
-  batchDeleteDispatchers(@Body() body: { ids: string[] }): Promise<any> {
-    return this.adminService.batchDeleteDispatchers(body.ids);
   }
 }
