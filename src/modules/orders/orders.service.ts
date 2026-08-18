@@ -1074,8 +1074,8 @@ export class OrdersService {
 
   async acceptOrder(orderId: string, erranderId: string): Promise<Order> {
     const isBatchActive = await this.batchDeliveryService.isWindowActive();
-    // Allow multiple concurrent orders (3 for normal, 5 for batch) to clear more orders
-    const maxOrders = isBatchActive ? 5 : 3;
+    // Allow multiple concurrent orders (up to 5 max) to clear more orders
+    const maxOrders = 5;
 
     // Find errander profile, or auto-create if they just signed up and haven't fetched profile
     let errander = await this.erranderModel.findOne({
