@@ -101,4 +101,8 @@ export class CreateMenuItemDto {
   @IsOptional()
   @IsNumber()
   stockQuantity?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isPackagingFeeIncluded?: boolean = false;
 }
