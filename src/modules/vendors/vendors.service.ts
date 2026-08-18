@@ -234,6 +234,13 @@ export class VendorsService {
       throw new ForbiddenException('You do not have permission to modify this vendor');
     }
 
+    // Remove immutable fields to prevent 500 errors on save
+    delete (data as any)._id;
+    delete (data as any).__v;
+    delete (data as any).createdAt;
+    delete (data as any).updatedAt;
+    delete data.owner;
+
     Object.assign(vendor, data);
     await vendor.save();
     return vendor;

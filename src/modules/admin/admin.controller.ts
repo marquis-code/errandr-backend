@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Delete, Param, Query, UseGuards, DefaultValuePipe, ParseIntPipe, Body } from '@nestjs/common';
+import { Controller, Get, Put, Delete, Post, Param, Query, UseGuards, DefaultValuePipe, ParseIntPipe, Body } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard, Roles, RolesGuard } from '../../common/decorators';
@@ -179,5 +179,17 @@ export class AdminController {
   @ApiOperation({ summary: 'Delete vendor permanently' })
   deleteVendor(@Param('id') id: string) {
     return this.adminService.deleteVendor(id);
+  }
+
+  @Delete('dispatchers/:id')
+  @ApiOperation({ summary: 'Delete dispatcher permanently' })
+  deleteDispatcher(@Param('id') id: string) {
+    return this.adminService.deleteDispatcher(id);
+  }
+
+  @Post('dispatchers/batch-delete')
+  @ApiOperation({ summary: 'Batch delete dispatchers' })
+  batchDeleteDispatchers(@Body() body: { ids: string[] }): Promise<any> {
+    return this.adminService.batchDeleteDispatchers(body.ids);
   }
 }

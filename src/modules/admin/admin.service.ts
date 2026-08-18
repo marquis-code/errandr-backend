@@ -317,9 +317,23 @@ export class AdminService {
   }
 
   async updateVendor(id: string, payload: any) {
+    const updateData = { ...payload };
+    if (updateData.owner && typeof updateData.owner === 'object') {
+      const vendor = await this.vendorModel.findById(id);
+      if (vendor && vendor.owner) {
+        // safely extract the ObjectId
+        const ownerId = (vendor.owner as any)._id 
+          ? (vendor.owner as any)._id.toString() 
+          : vendor.owner.toString();
+        await this.userModel.findByIdAndUpdate(ownerId, { $set: updateData.owner });
+      }
+      // Delete owner so it doesn't try to update the Vendor's owner reference with an object
+      delete updateData.owner;
+    }
+
     return this.vendorModel.findByIdAndUpdate(
       id,
-      { $set: payload },
+      { $set: updateData },
       { new: true }
     ).populate('owner');
   }
@@ -342,6 +356,14 @@ export class AdminService {
       { $set: payload },
       { new: true }
     ).populate('user');
+  }
+
+  async deleteDispatcher(id: string) {
+    return this.erranderModel.findByIdAndDelete(id);
+  }
+
+  async batchDeleteDispatchers(ids: string[]): Promise<any> {
+    return this.erranderModel.deleteMany({ _id: { $in: ids } });
   }
 
   async getSetting(key: string) {

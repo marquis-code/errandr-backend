@@ -136,7 +136,7 @@ export class OrdersService {
   async broadcastNewOrderToErranders(order: any): Promise<void> {
     const populated = await this.orderModel.findById(order._id)
       .populate('vendor', 'storeName logo address location')
-      .populate('customer', 'firstName lastName deliveryAddress');
+      .populate('customer', 'firstName lastName deliveryAddress erranderGenderPreference');
     
     if (!populated) return;
 
@@ -175,16 +175,38 @@ export class OrdersService {
     await this.notificationsService.broadcastNewOrder(orderData);
     this.logger.log(`Broadcasted order ${populated.orderNumber} to all erranders via Redis`);
 
-    // Aggressively send loud push notifications to all available erranders
+    // Aggressively send loud push notifications to erranders based on gender preference
     try {
-      const availableErranders = await this.erranderModel.find({ status: ErranderStatus.AVAILABLE }).populate('user', 'fcmToken');
-      for (const e of availableErranders) {
-        if (e.user && (e.user as any).fcmToken) {
-          await this.notificationsService.sendPushNotification((e.user as any).fcmToken, {
-            title: '🚨 NEW ERRAND AVAILABLE!',
-            body: `An order from ${vendorName} needs a runner right now! ₦${orderData.deliveryFee || 0} fee`,
-            data: { type: 'NEW_ORDER', orderId: orderData.orderId.toString() },
-          });
+      const availableErranders = await this.erranderModel.find({ status: ErranderStatus.AVAILABLE }).populate('user', 'fcmToken phone gender');
+      
+      const preference = (populated.customer as any)?.erranderGenderPreference || 'Both';
+      let filteredErranders = availableErranders;
+      
+      if (preference !== 'Both' && preference !== 'Any') {
+         filteredErranders = availableErranders.filter(e => {
+            const gender = (e.user as any)?.gender;
+            return gender && gender.toLowerCase() === preference.toLowerCase();
+         });
+         
+         if (filteredErranders.length === 0) {
+            this.logger.warn(`No available erranders matching gender preference '${preference}', falling back to all available erranders.`);
+            filteredErranders = availableErranders;
+         }
+      }
+
+      for (const e of filteredErranders) {
+        if (e.user) {
+          const userObj = e.user as any;
+          if (userObj.fcmToken) {
+            await this.notificationsService.sendPushNotification(userObj.fcmToken, {
+              title: '🚨 NEW ERRAND AVAILABLE!',
+              body: `An order from ${vendorName} needs a runner right now! ₦${orderData.deliveryFee || 0} fee`,
+              data: { type: 'NEW_ORDER', orderId: orderData.orderId.toString() },
+            });
+          }
+          if (userObj.phone) {
+             await this.notificationsService.sendInfobipSMS(userObj.phone, `🚨 NEW ERRAND AVAILABLE! An order from ${vendorName} needs a runner right now! ₦${orderData.deliveryFee || 0} fee`);
+          }
         }
       }
     } catch (e) {
@@ -215,17 +237,18 @@ export class OrdersService {
       const erranderShare = runnerFee - commissionAmount;
       const platformShare = serviceFee + commissionAmount;
 
-      // Verify Paystack payment if reference is provided
-      let paymentVerified = false;
-      if (data.paymentReference) {
-        const verification = await this.paystackService.verifyTransaction(data.paymentReference);
-        if (verification?.status !== 'success') {
-          throw new BadRequestException('Payment verification failed');
-        }
-        if (Math.round(verification.amount) < total) {
-          throw new BadRequestException(`Payment amount mismatch. Expected ₦${total}, got ₦${Math.round(verification.amount)}`);
-        }
-        paymentVerified = true;
+      // Payment is REQUIRED before order creation — prevent order abandonment
+      if (!data.paymentReference) {
+        throw new BadRequestException('Payment is required before placing an order. Please complete payment first.');
+      }
+
+      // Verify Paystack payment
+      const verification = await this.paystackService.verifyTransaction(data.paymentReference);
+      if (verification?.status !== 'success') {
+        throw new BadRequestException('Payment verification failed');
+      }
+      if (Math.round(verification.amount) < total) {
+        throw new BadRequestException(`Payment amount mismatch. Expected ₦${total}, got ₦${Math.round(verification.amount)}`);
       }
 
       const order = await this.orderModel.create({
@@ -251,20 +274,18 @@ export class OrdersService {
         erranderPayout: erranderShare,
         platformShare,
         total,
-        paymentStatus: paymentVerified ? PaymentStatus.PAID : PaymentStatus.PENDING,
-        paymentReference: data.paymentReference || null,
-        status: paymentVerified ? OrderStatus.PENDING : OrderStatus.AWAITING_PAYMENT,
+        paymentStatus: PaymentStatus.PAID,
+        paymentReference: data.paymentReference,
+        status: OrderStatus.PENDING,
         itemCostDisbursementStatus: itemCost > 0 ? 'pending' : 'not_applicable',
         reconciliationStatus: itemCost > 0 ? 'pending' : 'not_applicable',
         statusHistory: [
-          { status: paymentVerified ? OrderStatus.PENDING : OrderStatus.AWAITING_PAYMENT, timestamp: new Date(), note: paymentVerified ? 'Custom errand paid and broadcasted to riders' : 'Custom errand created, awaiting payment' },
+          { status: OrderStatus.PENDING, timestamp: new Date(), note: 'Custom errand paid and broadcasted to riders' },
         ],
       });
 
-      // Only broadcast to erranders after payment is confirmed
-      if (paymentVerified) {
-        await this.broadcastNewOrderToErranders(order);
-      }
+      // Always broadcast since payment is now guaranteed
+      await this.broadcastNewOrderToErranders(order);
 
       return order.populate('customer', 'firstName lastName phone avatar');
     }
@@ -336,7 +357,9 @@ export class OrdersService {
       );
     }
 
-    // Delivery fee based on option
+    if (data.deliveryOption === 'pickup') {
+      throw new BadRequestException('Self pickup is no longer supported.');
+    }
     const deliveryOption = data.deliveryOption || 'use_an_errander';
     let deliveryFee = 0;
     if (deliveryOption === 'use_an_errander') {
@@ -424,12 +447,20 @@ export class OrdersService {
     if (data.packs && data.packs.length > 0) {
       // Sum packaging fee from each individual pack if they have a packType selected
       data.packs.forEach((pack: any) => {
-        if (pack.packType && pack.packType.price !== undefined) {
-          packagingFee += pack.packType.price;
-        } else if (data.selectedPack && data.selectedPack.name) {
-          packagingFee += data.selectedPack.price ?? vendor.packagingFee ?? 300;
-        } else {
-          packagingFee += vendor.packagingFee ?? 300;
+        let isFeeIncluded = false;
+        pack.items?.forEach((item: any) => {
+          const pData = productMap[(item.productId || item.product)?.toString()];
+          if (pData?.isPackagingFeeIncluded) isFeeIncluded = true;
+        });
+
+        if (!isFeeIncluded) {
+          if (pack.packType && pack.packType.price !== undefined) {
+            packagingFee += pack.packType.price;
+          } else if (data.selectedPack && data.selectedPack.name) {
+            packagingFee += data.selectedPack.price ?? vendor.packagingFee ?? 300;
+          } else {
+            packagingFee += vendor.packagingFee ?? 300;
+          }
         }
       });
       // Legacy fallback
@@ -437,10 +468,18 @@ export class OrdersService {
         selectedPackData = data.selectedPack;
       }
     } else {
-      packagingFee = vendor.packagingFee ?? 300;
-      if (data.selectedPack && data.selectedPack.name) {
-        packagingFee = data.selectedPack.price ?? vendor.packagingFee ?? 300;
-        selectedPackData = data.selectedPack;
+      let isFeeIncluded = false;
+      data.items?.forEach((item: any) => {
+        const pData = productMap[(item.productId || item.product)?.toString()];
+        if (pData?.isPackagingFeeIncluded) isFeeIncluded = true;
+      });
+
+      if (!isFeeIncluded) {
+        packagingFee = vendor.packagingFee ?? 300;
+        if (data.selectedPack && data.selectedPack.name) {
+          packagingFee = data.selectedPack.price ?? vendor.packagingFee ?? 300;
+          selectedPackData = data.selectedPack;
+        }
       }
     }
 
@@ -611,15 +650,17 @@ export class OrdersService {
 
     const total = subtotal + deliveryFee + serviceFee + packagingFee + platformProcessingFee - discount;
 
-    // PAYSTACK VERIFICATION
-    if (data.paymentReference) {
-      const verification = await this.paystackService.verifyTransaction(data.paymentReference);
-      if (verification?.status !== 'success') {
-        throw new BadRequestException('Payment verification failed');
-      }
-      if (Math.round(verification.amount) < total) {
-         throw new BadRequestException('Payment amount mismatch');
-      }
+    // PAYSTACK VERIFICATION — Payment is REQUIRED before order creation
+    if (!data.paymentReference) {
+      throw new BadRequestException('Payment is required before placing an order. Please complete payment first.');
+    }
+
+    const verification = await this.paystackService.verifyTransaction(data.paymentReference);
+    if (verification?.status !== 'success') {
+      throw new BadRequestException('Payment verification failed');
+    }
+    if (Math.round(verification.amount) < total) {
+       throw new BadRequestException('Payment amount mismatch');
     }
 
     // Build items from packs for backward compatibility
@@ -649,7 +690,7 @@ export class OrdersService {
     const order = await this.orderModel.create({
       orderNumber: `ERR-${uuidv4().slice(0, 8).toUpperCase()}`,
       uniqueCode: Math.floor(100000 + Math.random() * 900000).toString(),
-      deliveryPin: deliveryOption === 'pickup' ? undefined : Math.floor(1000 + Math.random() * 9000).toString(),
+      deliveryPin: Math.floor(1000 + Math.random() * 9000).toString(),
       customer: new Types.ObjectId(customerId),
       vendor: new Types.ObjectId(data.vendorId),
       items: flatItems,
@@ -686,14 +727,14 @@ export class OrdersService {
       deliveryAddress: data.deliveryAddress || data.specificAddress || '',
       deliveryLocation: data.deliveryLocation,
       deliveryNotes: data.deliveryNotes,
-      paymentStatus: data.paymentReference ? PaymentStatus.PAID : PaymentStatus.PENDING,
-      paymentReference: data.paymentReference || null,
-      status: data.paymentReference ? OrderStatus.CONFIRMED : OrderStatus.AWAITING_PAYMENT,
+      paymentStatus: PaymentStatus.PAID,
+      paymentReference: data.paymentReference,
+      status: OrderStatus.CONFIRMED,
       statusHistory: [
         { 
-          status: data.paymentReference ? OrderStatus.CONFIRMED : OrderStatus.AWAITING_PAYMENT, 
+          status: OrderStatus.CONFIRMED, 
           timestamp: new Date(), 
-          note: data.paymentReference ? 'Order placed and payment confirmed' : 'Order placed, awaiting payment' 
+          note: 'Order placed and payment confirmed' 
         },
       ],
       isPreOrder: data.isPreOrder || false,
@@ -725,10 +766,8 @@ export class OrdersService {
     // Schedule timeout check (e.g. 5 mins)
     await this.orderQueue.add('orderTimeout', { orderId: order._id }, { delay: 300000 });
 
-    // If order was created pre-paid, process vendor payout immediately
-    if (data.paymentReference) {
-      await this.processVendorPayout(order);
-    }
+    // Process vendor payout immediately since payment is always verified
+    await this.processVendorPayout(order);
 
     // Trigger Vendor Notification Cascade & Fetch for later use
     const populatedVendor = await this.vendorModel.findById(data.vendorId).populate('owner');
@@ -748,10 +787,8 @@ export class OrdersService {
         conflictDate
       );
     } else {
-      // Broadcast to available erranders only if paid
-      if (data.paymentReference) {
-        await this.broadcastNewOrderToErranders(order);
-      }
+      // Always broadcast since payment is guaranteed
+      await this.broadcastNewOrderToErranders(order);
 
       if (populatedVendor) {
         // Fire-and-forget cascade
@@ -1590,7 +1627,11 @@ export class OrdersService {
     const order = await this.orderModel
       .findById(id)
       .populate('customer', 'firstName lastName phone avatar deliveryAddress location')
-      .populate('vendor', 'storeName logo phone address location user')
+      .populate({
+        path: 'vendor',
+        select: 'storeName logo phone address location user owner',
+        populate: { path: 'owner', select: 'phone' }
+      })
       .populate('errander', 'firstName lastName phone user')
       .populate('bids.errander', 'firstName lastName avatar phone')
       .populate('viewers.errander', 'firstName lastName avatar phone')
@@ -1603,6 +1644,20 @@ export class OrdersService {
         (order as any).erranderDetails = erranderDetails;
       }
     }
+
+    // Attach WhatsApp Links
+    const customerPhone = (order.customer as any)?.phone;
+    const vendorPhone = (order.vendor as any)?.phone || (order.vendor as any)?.owner?.phone;
+    const erranderPhone = (order.errander as any)?.phone;
+
+    const formatWa = (p) => p ? `https://wa.me/${p.replace(/\+/g, '')}` : null;
+
+    (order as any).whatsappLinks = {
+      customer: formatWa(customerPhone),
+      vendor: formatWa(vendorPhone),
+      errander: formatWa(erranderPhone),
+    };
+
     return order;
   }
 
@@ -2091,6 +2146,17 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
       timestamp: new Date(),
       note: 'Cancelled by customer via tracking portal'
     });
+
+    // Refund if paid
+    if (order.paymentStatus === PaymentStatus.PAID) {
+      await this.walletsService.creditWallet(
+        order.customer._id ? order.customer._id.toString() : order.customer.toString(),
+        order.total,
+        `Refund for cancelled order #${order.orderNumber}`,
+        order._id.toString()
+      );
+      order.paymentStatus = PaymentStatus.REFUNDED;
+    }
 
     await order.save();
 

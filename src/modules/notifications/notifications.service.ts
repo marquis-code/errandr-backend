@@ -53,19 +53,30 @@ export class NotificationsService {
     await this.redisService.publish(`notification:${userId}`, enriched);
     this.logger.log(`Notification sent to ${userId}: ${notification.type}`);
 
-    // Try to resolve FCM token to send push notification
+    // Try to resolve FCM token and phone to send push/sms notification
     try {
-      const user = await this.userModel.findById(userId).select('fcmToken');
-      if (user && user.fcmToken) {
-        await this.sendPushNotification(user.fcmToken, enriched);
+      const user = await this.userModel.findById(userId).select('fcmToken phone');
+      if (user) {
+        if (user.fcmToken) {
+          await this.sendPushNotification(user.fcmToken, enriched);
+        }
+        if (user.phone) {
+          await this.sendInfobipSMS(user.phone, notification.body);
+        }
         return;
       }
-      const vendor = await this.vendorModel.findById(userId).select('fcmToken');
-      if (vendor && vendor.fcmToken) {
-        await this.sendPushNotification(vendor.fcmToken, enriched);
+      const vendor = await this.vendorModel.findById(userId).select('fcmToken owner').populate('owner', 'phone');
+      if (vendor) {
+        if (vendor.fcmToken) {
+          await this.sendPushNotification(vendor.fcmToken, enriched);
+        }
+        const ownerPhone = (vendor.owner as any)?.phone;
+        if (ownerPhone) {
+          await this.sendInfobipSMS(ownerPhone, notification.body);
+        }
       }
     } catch (err) {
-      this.logger.warn(`Failed to resolve FCM token for push notification to ${userId}: ${err.message}`);
+      this.logger.warn(`Failed to send push/sms notification to ${userId}: ${err.message}`);
     }
   }
 
@@ -216,6 +227,36 @@ export class NotificationsService {
     }
   }
 
+  // ─── Infobip SMS ────────────────
+  async sendInfobipSMS(phone: string, text: string) {
+    if (!phone) return;
+    // Format phone number, ensure no '+' since infobip usually expects numbers like 234814...
+    const formattedPhone = phone.replace(/\+/g, '');
+    try {
+      const response = await fetch('https://k9vmv3.api.infobip.com/sms/3/messages', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'App da0c3f65763df091571655c600f8fa39-5fce524c-cb59-45a2-b10e-040c6e7cf565',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              destinations: [{ to: formattedPhone }],
+              sender: '447491163443',
+              content: { text: text }
+            }
+          ]
+        })
+      });
+      const data = await response.json();
+      this.logger.log(`Infobip SMS sent to ${formattedPhone}: ${JSON.stringify(data)}`);
+    } catch (error) {
+      this.logger.error(`Infobip SMS Failed: ${error.message}`);
+    }
+  }
+
   // ─── Cascade Orchestrator ────────────────
   async notifyVendor(vendor: any, order: any) {
     const title = '🚨 New Order on Erranders!';
@@ -246,12 +287,17 @@ export class NotificationsService {
       this.logger.warn(`notifyVendor() No FCM token for vendor ${vendor._id} or owner ${ownerId}`);
     }
 
-    // 3. Wait 60s, check if confirmed. If not -> WhatsApp
+    // 3. Send Infobip SMS (Instant)
+    const ownerPhone = vendor.owner?.phone;
+    if (ownerPhone) {
+      await this.sendInfobipSMS(ownerPhone, body);
+    }
+
+    // 4. Wait 60s, check if confirmed. If not -> WhatsApp
     setTimeout(async () => {
       try {
         const checkOrder = await this.orderModel.findById(order._id);
         if (checkOrder && checkOrder.status === OrderStatus.PENDING) {
-          const ownerPhone = vendor.owner?.phone;
           if (ownerPhone) {
             await this.sendWhatsApp(ownerPhone, { body });
           }
@@ -261,12 +307,11 @@ export class NotificationsService {
       }
     }, 60000);
 
-    // 4. Wait 90s, check if confirmed. If not -> SMS
+    // 5. Wait 90s, check if confirmed. If not -> Termii SMS (Fallback)
     setTimeout(async () => {
       try {
         const checkOrder = await this.orderModel.findById(order._id);
         if (checkOrder && checkOrder.status === OrderStatus.PENDING) {
-          const ownerPhone = vendor.owner?.phone;
           if (ownerPhone) {
             await this.sendSMS(ownerPhone, body);
           }

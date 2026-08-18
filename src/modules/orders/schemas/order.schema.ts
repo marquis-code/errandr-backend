@@ -27,6 +27,7 @@ export enum OrderType {
 }
 
 export enum DeliveryOption {
+  /** @deprecated Self-pickup is no longer supported. Kept for legacy order compatibility. */
   PICKUP = 'pickup',
   USE_AN_ERRANDER = 'use_an_errander',
   BATCH_RUN = 'batch_run',

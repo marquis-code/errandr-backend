@@ -160,6 +160,9 @@ export class Product extends Document {
   @Prop({ type: [String], default: [] })
   packs: string[];
 
+  @Prop({ default: false })
+  isPackagingFeeIncluded: boolean;
+
   // ── Advanced Quantity Constraints ──
   @Prop()
   maxQuantity: number;
