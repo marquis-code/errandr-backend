@@ -30,6 +30,7 @@
     "@nestjs/throttler": "^6.3.0",
     "@nestjs/websockets": "^10.4.0",
     "@signalwire/realtime-api": "^4.2.1",
+    "@zavudev/sdk": "^0.56.0",
     "axios": "^1.13.6",
     "bcryptjs": "^2.4.3",
     "bull": "^4.16.5",

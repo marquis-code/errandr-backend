@@ -84,7 +84,7 @@ export class CronService {
           // 4. Send SMS via Infobip
           const message = `Erranders: Today you completed ${totalOrders} orders. You earned ₦${totalEarnings.toLocaleString()}. Total this week: ₦${weeklyTotal.toLocaleString()}.`;
           
-          await this.notificationsService.sendInfobipSMS(owner.phone, message);
+          await this.notificationsService.sendZavuSMS(owner.phone, message);
           this.logger.log(`Sent earnings summary to vendor: ${vendor.storeName}`);
         }
       }

@@ -92,9 +92,15 @@ export class AdminController {
   @Get('orders/recent')
   @ApiOperation({ summary: 'Get recent orders' })
   getRecentOrders(
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number = 10,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('status') status?: string,
+    @Query('customerId') customerId?: string,
+    @Query('vendorId') vendorId?: string,
   ) {
-    return this.adminService.getRecentOrders(limit);
+    return this.adminService.getRecentOrders(page, limit, startDate, endDate, status, customerId, vendorId);
   }
 
   @Get('dispatchers/pending')

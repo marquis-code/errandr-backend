@@ -8,11 +8,13 @@ import { Order, OrderStatus } from '../orders/schemas/order.schema';
 import { User } from '../users/schemas/user.schema';
 import { Vendor } from '../vendors/schemas/vendor.schema';
 import { SystemSetting } from '../admin/schemas/system-setting.schema';
+import Zavudev from '@zavudev/sdk';
 export interface NotificationPayload {
   title: string;
   body: string;
   type: string;
   data?: any;
+  skipSms?: boolean;
 }
 
 @Injectable()
@@ -60,8 +62,8 @@ export class NotificationsService {
         if (user.fcmToken) {
           await this.sendPushNotification(user.fcmToken, enriched);
         }
-        if (user.phone) {
-          await this.sendInfobipSMS(user.phone, notification.body);
+        if (user.phone && !notification.skipSms) {
+          await this.sendZavuSMS(user.phone, notification.body);
         }
         return;
       }
@@ -71,8 +73,8 @@ export class NotificationsService {
           await this.sendPushNotification(vendor.fcmToken, enriched);
         }
         const ownerPhone = (vendor.owner as any)?.phone;
-        if (ownerPhone) {
-          await this.sendInfobipSMS(ownerPhone, notification.body);
+        if (ownerPhone && !notification.skipSms) {
+          await this.sendZavuSMS(ownerPhone, notification.body);
         }
       }
     } catch (err) {
@@ -227,47 +229,60 @@ export class NotificationsService {
     }
   }
 
-  // ─── Infobip SMS ────────────────
-  async sendInfobipSMS(phone: string, text: string) {
+  // ─── Zavu SMS ────────────────
+  async sendZavuSMS(phone: string, text: string, options: { forceSms?: boolean } = { forceSms: false }) {
     if (!phone) return;
+    
+    // Sanitize message: strip emojis to keep standard GSM 160 char limit
+    // Emoji regex to remove most common emoji characters and keep plain text
+    const sanitizedText = text.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2300}-\u{23FF}]/gu, '');
+    
     let formattedPhone = phone.replace(/\+/g, '').replace(/\s+/g, '');
-    // Convert local Nigerian format (e.g. 081...) to international E.164 without plus (e.g. 23481...)
     if (formattedPhone.startsWith('0')) {
-      formattedPhone = '234' + formattedPhone.substring(1);
+      formattedPhone = '+234' + formattedPhone.substring(1);
+    } else if (formattedPhone.startsWith('234')) {
+      formattedPhone = '+' + formattedPhone;
+    } else {
+      formattedPhone = '+234' + formattedPhone;
     }
+
     try {
-      const baseUrl = this.configService.get<string>('INFOBIP_BASE_URL') || process.env.INFOBIP_BASE_URL || 'https://k9vmv3.api.infobip.com';
-      const rawApiKey = this.configService.get<string>('INFOBIP_API_KEY') || process.env.INFOBIP_API_KEY;
+      const apiKey = this.configService.get<string>('ZAVU_API_KEY');
+      const senderId = this.configService.get<string>('ZAVU_SENDER_ID');
       
-      if (!rawApiKey) {
-        this.logger.warn('INFOBIP_API_KEY is not set');
+      if (!apiKey || !senderId) {
+        this.logger.warn('ZAVU_API_KEY or ZAVU_SENDER_ID is not set in environment');
         return;
       }
       
-      const apiKey = rawApiKey.startsWith('App ') ? rawApiKey : `App ${rawApiKey}`;
-      const sender = this.configService.get<string>('INFOBIP_SENDER') || process.env.INFOBIP_SENDER || '447491163443';
-
-      const response = await fetch(`${baseUrl}/sms/3/messages`, {
-        method: 'POST',
-        headers: {
-          'Authorization': apiKey,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        body: JSON.stringify({
-          messages: [
-            {
-              destinations: [{ to: formattedPhone }],
-              sender: sender,
-              content: { text: text }
-            }
-          ]
-        })
+      const zavu = new Zavudev({ apiKey });
+      
+      // Always send via SMS (Throttling/control is handled upstream via skipSms)
+      const smsResponse = await zavu.messages.send({
+        to: formattedPhone,
+        text: sanitizedText,
+        // @ts-ignore: senderId is required by the API but missing in TS types
+        senderId,
+        channel: 'sms_oneway'
       });
-      const data = await response.json();
-      this.logger.log(`Infobip SMS sent to ${formattedPhone}: ${JSON.stringify(data)}`);
+      this.logger.log(`Zavu SMS sent to ${formattedPhone}. Message ID: ${smsResponse.message?.id}`);
     } catch (error) {
-      this.logger.error(`Infobip SMS Failed: ${error.message}`);
+      this.logger.error(`Zavu Message Failed to ${phone}: ${error.message}`);
+    }
+  }
+
+  // ─── Urgent Support Notifications ────────────────
+  async notifySupportTeam(message: string) {
+    const supportContacts = [
+      '+2348052854256', // Goodness
+      '+2348139908262', // Ruth
+      '+2348147626503'  // Marquis
+    ];
+
+    this.logger.log(`Notifying support team: ${message}`);
+    for (const phone of supportContacts) {
+      // Send urgent alerts via both WhatsApp and SMS to ensure delivery
+      await this.sendZavuSMS(phone, `🚨 ERRANDERS URGENT: ${message}`, { forceSms: true });
     }
   }
 
@@ -304,7 +319,7 @@ export class NotificationsService {
     // 3. Send Infobip SMS (Instant)
     const ownerPhone = vendor.owner?.phone;
     if (ownerPhone) {
-      await this.sendInfobipSMS(ownerPhone, body);
+      await this.sendZavuSMS(ownerPhone, body);
     }
 
     // 4. Wait 60s, check if confirmed. If not -> WhatsApp
@@ -369,11 +384,13 @@ export class NotificationsService {
     vendorOwnerId: string,
     orderData: any,
     status: string,
+    skipSms?: boolean
   ): Promise<void> {
     await this.sendNotification(vendorOwnerId, {
       title: '📦 Order Update',
       body: `Order #${orderData.orderNumber} is now ${status.replace(/_/g, ' ')}`,
       type: 'ORDER_STATUS_UPDATE',
+      skipSms,
       data: {
         orderId: orderData._id || orderData.id,
         orderNumber: orderData.orderNumber,

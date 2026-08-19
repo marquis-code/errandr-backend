@@ -186,14 +186,61 @@ export class AdminService {
     );
   }
 
-  async getRecentOrders(limit = 50) {
-    return this.orderModel
-      .find()
-      .populate('customer', 'firstName lastName email')
-      .populate('vendor', 'storeName')
-      .populate('errander', 'firstName lastName')
-      .sort({ createdAt: -1 })
-      .limit(limit);
+  async getRecentOrders(page = 1, limit = 50, startDate?: string, endDate?: string, status?: string, customerId?: string, vendorId?: string) {
+    const query: any = {};
+    
+    if (status && status !== 'all') {
+      query.status = status;
+    }
+    
+    if (customerId) {
+      query.$or = [{ customer: customerId }, { user: customerId }];
+    }
+
+    if (vendorId) {
+      query.vendor = vendorId;
+    }
+    
+    if (startDate || endDate) {
+      query.createdAt = {};
+      if (startDate) {
+        query.createdAt.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        query.createdAt.$lte = new Date(endDate);
+      }
+    }
+
+    const skip = (page - 1) * limit;
+
+    const [orders, total, pendingCount, processingCount, completedCount, cancelledCount] = await Promise.all([
+      this.orderModel
+        .find(query)
+        .populate('customer', 'firstName lastName email phone')
+        .populate('vendor', 'storeName phone')
+        .populate('errander', 'firstName lastName phone vehicleType plateNumber')
+        .sort({ createdAt: -1 })
+        .skip(limit > 0 ? skip : 0)
+        .limit(limit > 0 ? limit : 0),
+      this.orderModel.countDocuments(query),
+      this.orderModel.countDocuments({ ...query, status: 'pending' }),
+      this.orderModel.countDocuments({ ...query, status: { $in: ['accepted', 'assigned', 'picked_up'] } }),
+      this.orderModel.countDocuments({ ...query, status: 'delivered' }),
+      this.orderModel.countDocuments({ ...query, status: 'cancelled' })
+    ]);
+
+    return {
+      orders,
+      total,
+      page,
+      totalPages: limit > 0 ? Math.ceil(total / limit) : 1,
+      stats: {
+        pending: pendingCount,
+        processing: processingCount,
+        completed: completedCount,
+        cancelled: cancelledCount
+      }
+    };
   }
 
   async getPendingDispatchers(page = 1, limit = 20) {

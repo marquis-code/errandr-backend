@@ -237,6 +237,9 @@ export class Order extends Document {
   @Prop({ type: String, enum: DeliveryOption, default: DeliveryOption.USE_AN_ERRANDER })
   deliveryOption: DeliveryOption;
 
+  @Prop({ type: String, enum: ['room_delivery', 'dropoff_service'], default: 'room_delivery' })
+  deliveryMode: 'room_delivery' | 'dropoff_service';
+
   @Prop()
   recipientName: string;
 

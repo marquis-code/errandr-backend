@@ -81,10 +81,20 @@ export class OrdersService {
 
     const statusData = { orderId: order._id, status, orderNumber: order.orderNumber };
 
+    // Milestone control: Only send SMS for major order state changes
+    const majorStatuses = [
+      OrderStatus.CONFIRMED,
+      OrderStatus.PICKED_UP,
+      OrderStatus.IN_TRANSIT,
+      OrderStatus.DELIVERED,
+      OrderStatus.CANCELLED
+    ];
+    const skipSms = !majorStatuses.includes(status);
+
     // Notify Customer (stored + real-time)
     if (customerId) {
       await this.notificationsService.sendNotification(customerId.toString(), {
-        title, body, type: 'ORDER_STATUS_UPDATE', data: statusData,
+        title, body, type: 'ORDER_STATUS_UPDATE', data: statusData, skipSms
       });
       this.notificationsGateway.sendOrderStatusUpdate(customerId.toString(), {
         title, body, ...statusData,
@@ -95,7 +105,7 @@ export class OrdersService {
     if (erranderId) {
       const erranderBody = `Order #${order.orderNumber} status changed to ${status.replace(/_/g, ' ').toLowerCase()}`;
       await this.notificationsService.sendNotification(erranderId.toString(), {
-        title: 'Delivery Update', body: erranderBody, type: 'ORDER_STATUS_UPDATE', data: statusData,
+        title: 'Delivery Update', body: erranderBody, type: 'ORDER_STATUS_UPDATE', data: statusData, skipSms
       });
       this.notificationsGateway.sendOrderStatusUpdate(erranderId.toString(), {
         title: 'Delivery Update', body: erranderBody, ...statusData,
@@ -105,7 +115,7 @@ export class OrdersService {
     // Notify Vendor Owner (stored + real-time)
     if (vendorOwnerId) {
       await this.notificationsService.sendOrderStatusToVendor(
-        vendorOwnerId.toString(), order, status,
+        vendorOwnerId.toString(), order, status, skipSms
       );
       this.notificationsGateway.sendOrderStatusUpdate(vendorOwnerId.toString(), {
         title: '📦 Order Update',
@@ -207,7 +217,7 @@ export class OrdersService {
             });
           }
           if (userObj.phone) {
-             await this.notificationsService.sendInfobipSMS(userObj.phone, `🚨 NEW ERRAND AVAILABLE! An order from ${vendorName} needs a runner right now! ₦${feeDisplay} fee`);
+             await this.notificationsService.sendZavuSMS(userObj.phone, `🚨 NEW ERRAND AVAILABLE! An order from ${vendorName} needs a runner right now! ₦${feeDisplay} fee`);
           }
         }
       }
@@ -360,15 +370,20 @@ export class OrdersService {
       throw new BadRequestException('Self pickup is no longer supported.');
     }
     const deliveryOption = data.deliveryOption || 'use_an_errander';
+    const deliveryMode = data.deliveryMode || 'room_delivery';
     let deliveryFee = 0;
+    
+    // Fetch delivery pricing config from admin system settings
+    const deliveryFeesConfig = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
+    const roomDeliveryFee = deliveryFeesConfig?.value?.roomDeliveryFee ?? 350;
+    const dropoffServiceFee = deliveryFeesConfig?.value?.dropoffServiceFee ?? 300;
+    
     if (deliveryOption === 'use_an_errander') {
-      deliveryFee = await this.calculateDynamicFee(
-        data.vendorId, 
-        customerId, 
-        data.deliveryAddress || data.specificAddress,
-        undefined,
-        data.isWithinLuth
-      );
+      if (deliveryMode === 'dropoff_service') {
+        deliveryFee = dropoffServiceFee;
+      } else {
+        deliveryFee = roomDeliveryFee;
+      }
     } else if (deliveryOption === 'batch_run') {
       deliveryFee = 150;
     }
@@ -486,7 +501,7 @@ export class OrdersService {
 
     // Fetch custom errand settings to get commission percentage for delivery fee
     const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
-    const commissionFlatFee = errandSetting?.value?.commissionFlatFee ?? 50;
+    const commissionFlatFee = deliveryFeesConfig?.value?.platformFee ?? 50;
     const deliveryCommission = commissionFlatFee;
     
     // Save errander payout (delivery fee minus platform commission)
@@ -603,9 +618,7 @@ export class OrdersService {
         if (subtotal >= vendor.prepaidPromo.budgetPerOrder) {
           discount += (vendor.prepaidPromo && vendor.prepaidPromo.discountValue) ? vendor.prepaidPromo.discountValue : 1000;
           isPrepaidPromoApplied = true;
-          // Increment usage
-          vendor.prepaidPromo.usedOrders += 1;
-          await vendor.save();
+          // Note: usedOrders is strictly incremented via the atomic update at the top of the function
         }
       }
     }
@@ -818,7 +831,7 @@ export class OrdersService {
       try {
         const itemsList = order.items.map(i => `${i.quantity} ${i.name}`);
         const message = `Hello, this is Erranders. You have a new order #${order.orderNumber} for ${order.total} Naira. Items: ${itemsList.join(', ')}. Please prepare it.`;
-        await this.notificationsService.sendInfobipSMS(populatedVendor.phone, message);
+        await this.notificationsService.sendZavuSMS(populatedVendor.phone, message);
         this.logger.log(`Triggered automated order dispatch SMS for order ${order.orderNumber} to ${populatedVendor.phone}`);
       } catch (e) {
         this.logger.error(`Failed to trigger dispatch call: ${e.message}`);
@@ -1962,6 +1975,9 @@ export class OrdersService {
     // Notify all
     await this.notifyOrderStatusUpdate(order, OrderStatus.CANCELLED, `Cancelled by customer: ${reason}`);
 
+    // Notify Support Team aggressively
+    await this.notificationsService.notifySupportTeam(`User just cancelled order #${order.orderNumber}. Reason: ${reason}`);
+
     return order.populate([
       { path: 'customer', select: 'firstName lastName phone avatar' },
       { path: 'vendor', select: 'storeName logo phone' },
@@ -2074,13 +2090,13 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
       const vendor = await this.vendorModel.findById(order.vendor).populate('owner');
       if (vendor && (vendor.owner as any)?.phone) {
         const phone = (vendor.owner as any).phone;
-        await this.notificationsService.sendInfobipSMS(phone, `Erranders Pickup Code for #${order.orderNumber}: ${otp}`);
+        await this.notificationsService.sendZavuSMS(phone, `Erranders Pickup Code for #${order.orderNumber}: ${otp}`, { forceSms: true });
       }
     } else {
       order.deliveryOtpHash = hash;
       const customer = order.customer as any;
       if (customer && customer.phone) {
-        await this.notificationsService.sendInfobipSMS(customer.phone, `Your Erranders Delivery Code for #${order.orderNumber} is: ${otp}. Do not share until delivery is complete.`);
+        await this.notificationsService.sendZavuSMS(customer.phone, `Your Erranders Delivery Code for #${order.orderNumber} is: ${otp}. Do not share until delivery is complete.`, { forceSms: true });
       }
     }
 
@@ -2122,7 +2138,7 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
       ? `Erranders Pickup Code for #${order.orderNumber}: ${otp}`
       : `Your Erranders Delivery Code for #${order.orderNumber} is: ${otp}. Do not share until delivery is complete.`;
       
-    await this.notificationsService.sendInfobipSMS(phone, msg);
+    await this.notificationsService.sendZavuSMS(phone, msg);
     
     return { 
       success: true, 
@@ -2181,6 +2197,9 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
 
     if (order.vendor) {
       this.notifyOrderStatusUpdate(order, OrderStatus.CANCELLED, 'Order was cancelled by the customer.');
+      
+      // Notify Support Team aggressively
+      this.notificationsService.notifySupportTeam(`User just cancelled tracked order #${order.orderNumber}. Reason: Cancelled by customer via tracking portal`);
     }
 
     return { success: true, message: 'Order cancelled successfully', order };
