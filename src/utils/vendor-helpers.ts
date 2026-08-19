@@ -2,9 +2,23 @@ export function checkIsOpen(vendor: any): { isOpen: boolean; message: string } {
   if (!vendor.isOnline) return { isOpen: false, message: 'Closed (Manual)' };
 
   const now = new Date();
-  const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-  const currentDay = dayNames[now.getDay()];
-  const currentTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+  
+  // Use Africa/Lagos (WAT) timezone to calculate current time regardless of server timezone
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Africa/Lagos',
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    weekday: 'long'
+  });
+  
+  const parts = formatter.formatToParts(now);
+  const getPart = (type: string) => parts.find(p => p.type === type)?.value || '';
+  
+  const currentDay = getPart('weekday').toLowerCase();
+  let hour = getPart('hour');
+  if (hour === '24') hour = '00';
+  const currentTime = `${hour}:${getPart('minute')}`;
 
   let openTime = vendor.openingTime || '08:00';
   let closeTime = vendor.closingTime || '20:00';
