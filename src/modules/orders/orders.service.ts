@@ -365,7 +365,9 @@ export class OrdersService {
       deliveryFee = await this.calculateDynamicFee(
         data.vendorId, 
         customerId, 
-        data.deliveryAddress || data.specificAddress
+        data.deliveryAddress || data.specificAddress,
+        undefined,
+        data.isWithinLuth
       );
     } else if (deliveryOption === 'batch_run') {
       deliveryFee = 150;
@@ -1625,7 +1627,7 @@ export class OrdersService {
   async getAvailableOrders() {
     return this.orderModel
       .find({
-        status: { $in: [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP] },
+        status: { $in: [OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP] },
         errander: { $exists: false },
          $or: [
           { deliveryOption: 'use_an_errander' },
@@ -2457,7 +2459,7 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     return populatedOrder as Order;
   }
 
-  async calculateDynamicFee(vendorId: string, customerId: string, deliveryAddress: string, deliveryLocationStr?: string): Promise<number> {
+  async calculateDynamicFee(vendorId: string, customerId: string, deliveryAddress: string, deliveryLocationStr?: string, isWithinLuth?: boolean): Promise<number> {
     const vendor = await this.vendorModel.findById(vendorId);
     let user: any = null;
     if (customerId) {
@@ -2527,20 +2529,27 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
         // We'll rely more on the string matching.
       }
     }
-    
-    // String fallback because Mapbox coordinates for Nigerian institutions can be wildly inaccurate
-    const addrLower = (deliveryAddress || '').toLowerCase();
-    if (
-      addrLower.includes('college of medicine') || 
-      addrLower.includes('luth') || 
-      addrLower.includes('lagos university teaching hospital') ||
-      addrLower.includes('idi araba') || 
-      addrLower.includes('idi-araba') ||
-      addrLower.includes('cmul') ||
-      addrLower.includes('medilag') ||
-      addrLower.includes('unilag') // In case they write "Unilag Idi araba"
-    ) {
+
+    if (isWithinLuth) {
       isCMUL = true;
+    } else {
+      // String fallback because Mapbox coordinates for Nigerian institutions can be wildly inaccurate
+      const addrLower = (deliveryAddress || '').toLowerCase();
+      if (
+        addrLower.includes('college of medicine') || 
+        addrLower.includes('luth') || 
+        addrLower.includes('lagos university teaching hospital') ||
+        addrLower.includes('idi araba') || 
+        addrLower.includes('idi-araba') ||
+        addrLower.includes('cmul') ||
+        addrLower.includes('medilag') ||
+        addrLower.includes('unilag') ||
+        addrLower.includes('block') ||
+        addrLower.includes('hostel') ||
+        addrLower.includes('hall')
+      ) {
+        isCMUL = true;
+      }
     }
 
     if (isCMUL) {
