@@ -70,8 +70,7 @@ export class PaymentsController {
           const order = await this.ordersService.findById(id);
           if (order && (order.status !== OrderStatus.CONFIRMED || order.paymentStatus !== PaymentStatus.PAID)) {
             // Set payment status to PAID
-            order.paymentStatus = PaymentStatus.PAID;
-            await order.save();
+            await (this.ordersService as any).orderModel.updateOne({ _id: id }, { $set: { paymentStatus: PaymentStatus.PAID } });
 
             const updatedOrder = await this.ordersService.updateStatus(id, OrderStatus.CONFIRMED, 'SYSTEM', `Payment confirmed via Verify (Ref: ${reference})`);
             
@@ -235,8 +234,7 @@ export class PaymentsController {
                 this.logger.log(`Charge success for order: ${id} (Ref: ${reference})`);
                 
                 // Set payment status to PAID
-                order.paymentStatus = PaymentStatus.PAID;
-                await order.save();
+                await (this.ordersService as any).orderModel.updateOne({ _id: id }, { $set: { paymentStatus: PaymentStatus.PAID } });
 
                 const updatedOrder = await this.ordersService.updateStatus(
                   id,
