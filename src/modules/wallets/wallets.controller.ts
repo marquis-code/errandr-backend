@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Body, UseGuards, Param, Res, StreamableFile } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, UseGuards, Param, Res, StreamableFile, Query } from '@nestjs/common';
 import { Response } from 'express';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { WalletsService } from './wallets.service';
@@ -61,8 +61,11 @@ export class WalletsController {
   @Get('all')
   // @UseGuards(RolesGuard) // Assuming RolesGuard is correctly set up
   @ApiOperation({ summary: 'Get all transactions (admin)' })
-  getAllTransactions() {
-    return this.walletsService.getAllTransactions();
+  getAllTransactions(
+    @Query('page') page: string = '1',
+    @Query('limit') limit: string = '50',
+  ) {
+    return this.walletsService.getAllTransactions(Number(page), Number(limit));
   }
 
   @Get('global-stats')

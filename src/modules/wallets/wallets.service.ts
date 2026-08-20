@@ -516,19 +516,31 @@ export class WalletsService {
     }
   }
 
-  async getAllTransactions(): Promise<TransactionDocument[]> {
-    return this.transactionModel
-      .find()
-      .populate({
-        path: 'wallet',
-        populate: { path: 'owner', select: 'firstName lastName email' }
-      })
-      .sort({ createdAt: -1 })
-      .limit(100);
+  async getAllTransactions(page: number = 1, limit: number = 50): Promise<{ transactions: any[], total: number, page: number, limit: number }> {
+    const skip = (page - 1) * limit;
+    
+    const [transactions, total] = await Promise.all([
+      this.transactionModel
+        .find()
+        .populate({
+          path: 'wallet',
+          populate: { path: 'owner', select: 'firstName lastName email' }
+        })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      this.transactionModel.countDocuments()
+    ]);
+
+    return { transactions, total, page, limit };
   }
 
   async getGlobalStats() {
-    const [totalVolume, totalCommissions] = await Promise.all([
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+
+    const [totalVolume, totalCommissions, highestSpender, todaysVol, yesterdaysVol] = await Promise.all([
       this.transactionModel.aggregate([
         { $match: { type: TransactionType.CREDIT } },
         { $group: { _id: null, total: { $sum: '$amount' } } }
@@ -536,12 +548,48 @@ export class WalletsService {
       this.transactionModel.aggregate([
         { $match: { description: { $regex: /order/i } } }, // Simplifying commission logic for now
         { $group: { _id: null, total: { $sum: '$amount' } } }
+      ]),
+      this.transactionModel.aggregate([
+        { $match: { type: TransactionType.DEBIT } },
+        { $group: { _id: '$wallet', totalSpent: { $sum: '$amount' } } },
+        { $sort: { totalSpent: -1 } },
+        { $limit: 1 },
+        {
+          $lookup: {
+            from: 'wallets',
+            localField: '_id',
+            foreignField: '_id',
+            as: 'wallet'
+          }
+        },
+        { $unwind: { path: '$wallet', preserveNullAndEmptyArrays: true } },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'wallet.owner',
+            foreignField: '_id',
+            as: 'owner'
+          }
+        },
+        { $unwind: { path: '$owner', preserveNullAndEmptyArrays: true } },
+        { $project: { _id: 0, totalSpent: 1, owner: { firstName: 1, lastName: 1, email: 1, avatar: 1 } } }
+      ]),
+      this.transactionModel.aggregate([
+        { $match: { type: TransactionType.CREDIT, createdAt: { $gte: startOfToday } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+      ]),
+      this.transactionModel.aggregate([
+        { $match: { type: TransactionType.CREDIT, createdAt: { $gte: startOfYesterday, $lt: startOfToday } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
       ])
     ]);
 
     return {
       totalVolume: totalVolume[0]?.total || 0,
       totalCommissions: Math.round((totalVolume[0]?.total || 0) * 0.05), // Calculated 5% platform share
+      highestPurchaseUser: highestSpender[0] || null,
+      todaysRevenue: todaysVol[0]?.total || 0,
+      yesterdaysRevenue: yesterdaysVol[0]?.total || 0,
     };
   }
 }
