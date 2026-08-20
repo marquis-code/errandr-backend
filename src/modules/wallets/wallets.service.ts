@@ -516,20 +516,93 @@ export class WalletsService {
     }
   }
 
-  async getAllTransactions(page: number = 1, limit: number = 50): Promise<{ transactions: any[], total: number, page: number, limit: number }> {
-    const skip = (page - 1) * limit;
-    
-    const [transactions, total] = await Promise.all([
-      this.transactionModel
-        .find()
+  async getAllTransactions(
+    page: number = 1,
+    limit: number = 50,
+    startDate?: string,
+    endDate?: string,
+    status?: string,
+    search?: string,
+    sortBy?: string,
+    sortOrder?: string,
+    exportAsCsv?: boolean
+  ): Promise<{ transactions: any[], total: number, page: number, limit: number } | string> {
+    const query: any = {};
+
+    if (startDate || endDate) {
+      query.createdAt = {};
+      if (startDate) query.createdAt.$gte = new Date(startDate);
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        query.createdAt.$lte = end;
+      }
+    }
+
+    if (status) {
+      query.status = status;
+    }
+
+    if (search) {
+      query.$or = [
+        { reference: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    let sort: any = { createdAt: -1 };
+    if (sortBy) {
+      // mapping frontend sortKeys to DB fields
+      let dbSortKey = sortBy;
+      if (sortBy === 'amount') dbSortKey = 'amount';
+      else if (sortBy === 'date') dbSortKey = 'createdAt';
+      else if (sortBy === 'type') dbSortKey = 'type';
+      else if (sortBy === 'status') dbSortKey = 'status';
+      
+      sort = {};
+      sort[dbSortKey] = sortOrder === 'asc' ? 1 : -1;
+    }
+
+    if (exportAsCsv) {
+      const transactions = await this.transactionModel
+        .find(query)
         .populate({
           path: 'wallet',
           populate: { path: 'owner', select: 'firstName lastName email' }
         })
-        .sort({ createdAt: -1 })
+        .sort(sort);
+
+      const header = ['ID', 'Date', 'Amount', 'Type', 'Status', 'Description', 'Reference', 'User Name', 'User Email'].join(',');
+      const rows = transactions.map(t => {
+        const owner = (t.wallet as any)?.owner;
+        return [
+          t._id.toString(),
+          t.createdAt.toISOString(),
+          t.amount,
+          t.type,
+          t.status,
+          `"${(t.description || '').replace(/"/g, '""')}"`,
+          t.reference || '',
+          owner ? `"${owner.firstName} ${owner.lastName}"` : '',
+          owner ? owner.email : ''
+        ].join(',');
+      });
+
+      return [header, ...rows].join('\n');
+    }
+
+    const skip = (page - 1) * limit;
+    const [transactions, total] = await Promise.all([
+      this.transactionModel
+        .find(query)
+        .populate({
+          path: 'wallet',
+          populate: { path: 'owner', select: 'firstName lastName email' }
+        })
+        .sort(sort)
         .skip(skip)
         .limit(limit),
-      this.transactionModel.countDocuments()
+      this.transactionModel.countDocuments(query)
     ]);
 
     return { transactions, total, page, limit };

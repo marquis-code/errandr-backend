@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, ConflictException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, ConflictException, Logger, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Vendor, VendorStatus, VendorCategory } from './schemas/vendor.schema';
@@ -249,8 +249,14 @@ export class VendorsService {
   async adminUpdate(id: string, data: Partial<Vendor>): Promise<Vendor> {
     const vendor = await this.vendorModel.findById(id);
     if (!vendor) throw new NotFoundException('Vendor not found');
-    Object.assign(vendor, data);
-    await vendor.save();
+    
+    vendor.set(data);
+    try {
+      await vendor.save();
+    } catch (error) {
+      console.error('Error updating vendor in adminUpdate:', error);
+      throw new BadRequestException(error.message || 'Validation failed');
+    }
     return vendor;
   }
 

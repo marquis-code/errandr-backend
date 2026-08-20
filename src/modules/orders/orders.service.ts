@@ -623,7 +623,10 @@ export class OrdersService {
       }
     }
 
-    if (!isPrepaidPromoApplied && vendor && (vendor.storeName.toLowerCase().includes('iyabo') || vendor.storeName.toLowerCase().includes('hvip') || vendor.storeName.toLowerCase().includes('waris') || vendor.storeName.toLowerCase().includes('chijioke'))) {
+    // If the promo is explicitly disabled, do not apply any fallback legacy logic
+    if (vendor && vendor.prepaidPromo && vendor.prepaidPromo.enabled === false) {
+      // explicitly disabled, do not apply promo
+    } else if (!isPrepaidPromoApplied && vendor && (vendor.storeName.toLowerCase().includes('iyabo') || vendor.storeName.toLowerCase().includes('hvip') || vendor.storeName.toLowerCase().includes('waris') || vendor.storeName.toLowerCase().includes('chijioke'))) {
       if (vendor.storeName.toLowerCase().includes('waris')) {
         if (subtotal >= 2000) {
           discount += (vendor.prepaidPromo && vendor.prepaidPromo.discountValue) ? vendor.prepaidPromo.discountValue : 1000;
@@ -1080,10 +1083,10 @@ export class OrdersService {
     ]);
   }
 
-  async acceptOrder(orderId: string, erranderId: string): Promise<Order> {
+  async acceptOrder(orderId: string, erranderId: string, isAdmin = false): Promise<Order> {
     const isBatchActive = await this.batchDeliveryService.isWindowActive();
     // Allow multiple concurrent orders (up to 5 max) to clear more orders
-    const maxOrders = 5;
+
 
     // Find errander profile, or auto-create if they just signed up and haven't fetched profile
     let errander = await this.erranderModel.findOne({
@@ -1104,27 +1107,33 @@ export class OrdersService {
     }
 
     const level = errander.verificationLevel || 1;
-    if (level < 2) {
-      throw new BadRequestException('You must be verified (at least Tier 2) to accept orders.');
-    }
-    if (level < 3) {
-      const orderValue = targetOrder.total || (targetOrder.customDetails?.estimatedItemCost || 0);
-      if (orderValue > 3000) {
-        throw new BadRequestException('You need Tier 3 (Verified Pro) status to accept orders above ₦3,000');
+    if (!isAdmin) {
+      if (level < 2) {
+        throw new BadRequestException('You must be verified (at least Tier 2) to accept orders.');
       }
-      if (targetOrder.paymentMethod === 'cash') {
-        throw new BadRequestException('You need Tier 3 (Verified Pro) status to accept Cash on Delivery orders');
+      if (level < 3) {
+        const orderValue = targetOrder.total || (targetOrder.customDetails?.estimatedItemCost || 0);
+        if (orderValue > 3000) {
+          throw new BadRequestException('You need Tier 3 (Verified Pro) status to accept orders above ₦3,000');
+        }
+        if (targetOrder.paymentMethod === 'cash') {
+          throw new BadRequestException('You need Tier 3 (Verified Pro) status to accept Cash on Delivery orders');
+        }
       }
-    }
 
-    // Check current load
-    const currentActiveCount = (errander.batchOrders?.length || 0) + (errander.currentOrder ? 1 : 0);
-    if (currentActiveCount >= maxOrders) {
-      throw new BadRequestException(
-        isBatchActive 
-          ? `You have reached the maximum number of concurrent orders (${maxOrders}) for this batch window.`
-          : 'You already have an active order. Complete it before accepting another.'
-      );
+      // Check current load
+      const currentActiveCount = (errander.batchOrders?.length || 0) + (errander.currentOrder ? 1 : 0);
+
+      const erranderSettings = await this.settingModel.findOne({ key: 'errander_settings' }).exec();
+      const maxOrders = erranderSettings?.value?.maxConcurrentOrders || 0;
+      
+      if (maxOrders > 0 && currentActiveCount >= maxOrders) {
+        throw new BadRequestException(
+          isBatchActive 
+            ? `You have reached the maximum number of concurrent orders (${maxOrders}) for this batch window.`
+            : 'You already have an active order. Complete it before accepting another.'
+        );
+      }
     }
 
     const newStatus = targetOrder.status === OrderStatus.PENDING ? OrderStatus.CONFIRMED : targetOrder.status;
@@ -1145,7 +1154,7 @@ export class OrdersService {
           statusHistory: {
             status: newStatus,
             timestamp: new Date(),
-            note: isBatchActive ? 'Order accepted as part of Batch Delivery' : 'Order accepted by errander',
+            note: isAdmin ? 'Order manually assigned by admin' : (isBatchActive ? 'Order accepted as part of Batch Delivery' : 'Order accepted by errander'),
           } as any
         }
       },

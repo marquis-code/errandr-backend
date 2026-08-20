@@ -186,7 +186,19 @@ export class AdminService {
     );
   }
 
-  async getRecentOrders(page = 1, limit = 50, startDate?: string, endDate?: string, status?: string, customerId?: string, vendorId?: string) {
+  async getRecentOrders(
+    page = 1,
+    limit = 50,
+    startDate?: string,
+    endDate?: string,
+    status?: string,
+    customerId?: string,
+    vendorId?: string,
+    search?: string,
+    sortBy?: string,
+    sortOrder?: string,
+    exportAsCsv?: boolean
+  ): Promise<any> {
     const query: any = {};
     
     if (status && status !== 'all') {
@@ -207,8 +219,56 @@ export class AdminService {
         query.createdAt.$gte = new Date(startDate);
       }
       if (endDate) {
-        query.createdAt.$lte = new Date(endDate);
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        query.createdAt.$lte = end;
       }
+    }
+
+    if (search) {
+      query.$or = [
+        ...query.$or || [],
+        { orderNumber: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    let sort: any = { createdAt: -1 };
+    if (sortBy) {
+      let dbSortKey = sortBy;
+      if (sortBy === 'date') dbSortKey = 'createdAt';
+      else if (sortBy === 'order') dbSortKey = 'orderNumber';
+      else if (sortBy === 'amount') dbSortKey = 'total';
+      else if (sortBy === 'status') dbSortKey = 'status';
+      
+      sort = {};
+      sort[dbSortKey] = sortOrder === 'asc' ? 1 : -1;
+    }
+
+    if (exportAsCsv) {
+      const orders = await this.orderModel
+        .find(query)
+        .populate('customer', 'firstName lastName email phone')
+        .populate('vendor', 'storeName phone')
+        .populate('errander', 'firstName lastName phone vehicleType plateNumber')
+        .sort(sort);
+
+      const header = ['ID', 'Order Number', 'Date', 'Customer', 'Vendor', 'Status', 'Total', 'Delivery Fee'].join(',');
+      const rows = orders.map(o => {
+        const customer = o.customer as any;
+        const vendor = o.vendor as any;
+        return [
+          o._id.toString(),
+          o.orderNumber || '',
+          o.createdAt.toISOString(),
+          customer ? `"${customer.firstName} ${customer.lastName}"` : '',
+          vendor ? `"${vendor.storeName}"` : '',
+          o.status,
+          o.total,
+          o.deliveryFee
+        ].join(',');
+      });
+
+      return [header, ...rows].join('\n');
     }
 
     const skip = (page - 1) * limit;
@@ -219,7 +279,7 @@ export class AdminService {
         .populate('customer', 'firstName lastName email phone')
         .populate('vendor', 'storeName phone')
         .populate('errander', 'firstName lastName phone vehicleType plateNumber')
-        .sort({ createdAt: -1 })
+        .sort(sort)
         .skip(limit > 0 ? skip : 0)
         .limit(limit > 0 ? limit : 0),
       this.orderModel.countDocuments(query),

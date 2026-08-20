@@ -216,4 +216,37 @@ export class SettingsController {
     await setting.save();
     return setting.value;
   }
+
+  @Get('erranders')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get global errander settings' })
+  async getErranderSettings() {
+    let setting = await this.settingModel.findOne({ key: 'errander_settings' }).exec();
+    if (!setting) {
+      setting = await this.settingModel.create({
+        key: 'errander_settings',
+        value: { maxConcurrentOrders: 0 },
+      });
+    }
+    return setting.value;
+  }
+
+  @Put('erranders')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update global errander settings (admin only)' })
+  async updateErranderSettings(@Body() body: { maxConcurrentOrders: number }) {
+    let setting = await this.settingModel.findOne({ key: 'errander_settings' }).exec();
+    if (!setting) {
+      setting = new this.settingModel({ key: 'errander_settings' });
+    }
+    setting.value = {
+      maxConcurrentOrders: Number(body.maxConcurrentOrders ?? 0),
+    };
+    setting.markModified('value');
+    await setting.save();
+    return setting.value;
+  }
 }

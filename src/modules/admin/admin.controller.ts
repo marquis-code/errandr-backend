@@ -1,4 +1,5 @@
-import { Controller, Get, Put, Delete, Post, Param, Query, UseGuards, DefaultValuePipe, ParseIntPipe, Body } from '@nestjs/common';
+import { Controller, Get, Put, Delete, Post, Param, Query, UseGuards, DefaultValuePipe, ParseIntPipe, Body, Res, StreamableFile } from '@nestjs/common';
+import { Response } from 'express';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard, Roles, RolesGuard } from '../../common/decorators';
@@ -91,7 +92,7 @@ export class AdminController {
 
   @Get('orders/recent')
   @ApiOperation({ summary: 'Get recent orders' })
-  getRecentOrders(
+  async getRecentOrders(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number = 10,
     @Query('startDate') startDate?: string,
@@ -99,8 +100,26 @@ export class AdminController {
     @Query('status') status?: string,
     @Query('customerId') customerId?: string,
     @Query('vendorId') vendorId?: string,
+    @Query('search') search?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: string,
+    @Query('exportAsCsv') exportAsCsv?: string,
+    @Res({ passthrough: true }) res?: Response,
   ) {
-    return this.adminService.getRecentOrders(page, limit, startDate, endDate, status, customerId, vendorId);
+    const isExport = exportAsCsv === 'true';
+    const result = await this.adminService.getRecentOrders(
+      page, limit, startDate, endDate, status, customerId, vendorId,
+      search, sortBy, sortOrder, isExport
+    );
+
+    if (isExport && res) {
+      res.set({
+        'Content-Type': 'text/csv',
+        'Content-Disposition': 'attachment; filename="orders.csv"',
+      });
+      return new StreamableFile(Buffer.from(result as string));
+    }
+    return result;
   }
 
   @Get('dispatchers/pending')

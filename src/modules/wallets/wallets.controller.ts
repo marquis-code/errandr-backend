@@ -61,11 +61,39 @@ export class WalletsController {
   @Get('all')
   // @UseGuards(RolesGuard) // Assuming RolesGuard is correctly set up
   @ApiOperation({ summary: 'Get all transactions (admin)' })
-  getAllTransactions(
+  async getAllTransactions(
     @Query('page') page: string = '1',
     @Query('limit') limit: string = '50',
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('status') status?: string,
+    @Query('search') search?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: string,
+    @Query('exportAsCsv') exportAsCsv?: string,
+    @Res({ passthrough: true }) res?: Response
   ) {
-    return this.walletsService.getAllTransactions(Number(page), Number(limit));
+    const isExport = exportAsCsv === 'true';
+    const result = await this.walletsService.getAllTransactions(
+      Number(page),
+      Number(limit),
+      startDate,
+      endDate,
+      status,
+      search,
+      sortBy,
+      sortOrder,
+      isExport
+    );
+
+    if (isExport && res) {
+      res.set({
+        'Content-Type': 'text/csv',
+        'Content-Disposition': 'attachment; filename="transactions.csv"',
+      });
+      return new StreamableFile(Buffer.from(result as string));
+    }
+    return result;
   }
 
   @Get('global-stats')

@@ -443,4 +443,18 @@ async getMyVendorOrders(
   ) {
     return this.ordersService.submitFeedback(id, body.feedback);
   }
+
+  @Post(':id/admin-assign')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Admin manually assigns an errander to an order' })
+  adminAssignOrder(
+    @Param('id') id: string,
+    @Body() body: { erranderId: string }
+  ) {
+    this.logger.log(`Admin assigning order=${id} to errander=${body.erranderId}`);
+    // isAdmin = true bypasses normal tier/load constraints
+    return this.ordersService.acceptOrder(id, body.erranderId, true);
+  }
 }
