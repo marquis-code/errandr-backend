@@ -391,12 +391,12 @@ export class AdminService {
       const [dispatchers, total] = await Promise.all([
         this.erranderModel
           .find()
+          .select('-idCardImage -selfieImage -ninSlipImage')
           .populate('user', 'firstName lastName email phone avatar role')
-          .sort({ createdAt: -1 })
           .skip(skip)
           .limit(limit)
           .lean(),
-        this.erranderModel.countDocuments(),
+        this.erranderModel.estimatedDocumentCount(),
       ]);
       return { dispatchers, total };
     } catch (e: any) {
