@@ -194,6 +194,7 @@ export class AdminService {
     status?: string,
     customerId?: string,
     vendorId?: string,
+    erranderId?: string,
     search?: string,
     sortBy?: string,
     sortOrder?: string,
@@ -211,6 +212,10 @@ export class AdminService {
 
     if (vendorId) {
       query.vendor = vendorId;
+    }
+    
+    if (erranderId) {
+      query.errander = erranderId;
     }
     
     if (startDate || endDate) {

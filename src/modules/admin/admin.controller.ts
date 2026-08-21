@@ -100,6 +100,7 @@ export class AdminController {
     @Query('status') status?: string,
     @Query('customerId') customerId?: string,
     @Query('vendorId') vendorId?: string,
+    @Query('erranderId') erranderId?: string,
     @Query('search') search?: string,
     @Query('sortBy') sortBy?: string,
     @Query('sortOrder') sortOrder?: string,
@@ -108,7 +109,7 @@ export class AdminController {
   ) {
     const isExport = exportAsCsv === 'true';
     const result = await this.adminService.getRecentOrders(
-      page, limit, startDate, endDate, status, customerId, vendorId,
+      page, limit, startDate, endDate, status, customerId, vendorId, erranderId,
       search, sortBy, sortOrder, isExport
     );
 
