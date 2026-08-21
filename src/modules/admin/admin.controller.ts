@@ -161,7 +161,9 @@ export class AdminController {
     @Query('page') page: string = '1',
     @Query('limit') limit: string = '10',
   ) {
-    return this.adminService.getAllDispatchers(parseInt(page), parseInt(limit));
+    const parsedPage = parseInt(page) || 1;
+    const parsedLimit = parseInt(limit) || 10;
+    return this.adminService.getAllDispatchers(parsedPage, parsedLimit);
   }
 
   @Get('dispatchers/:id')

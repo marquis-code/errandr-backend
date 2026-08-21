@@ -16,10 +16,10 @@ export class MarketingService {
     private emailService: EmailService,
   ) {}
 
-  // Morning Peak: 8:30 AM
+  // Daily Digest: 8:30 AM
   @Cron('30 8 * * *')
-  async sendMorningMarketing() {
-    this.logger.log('Sending morning marketing emails...');
+  async sendDailyMarketing() {
+    this.logger.log('Sending daily marketing emails...');
     const users = await this.userModel.find({ isVerified: true });
     
     // Pick 2 featured vendors
@@ -28,50 +28,12 @@ export class MarketingService {
     for (const user of users) {
       await this.emailService.sendPromotionalEmail(
         user.email,
-        "Morning, Chef! ☕️ Breakfast is Served",
-        "Wake up to the best campus breakfasts!",
-        "Don't start your lectures on an empty stomach. From hot akara and bread to fresh coffee, our campus plugs are open and ready to deliver sharp-sharp to your hostel.",
-        "ORDER BREAKFAST NOW",
+        "Your Daily Craving Guide! 🍽️ Breakfast, Lunch & Dinner",
+        "Fuel your entire day with Erranders",
+        "Whether it's a hot coffee to kickstart your morning, a quick lunch between lectures, or a hearty dinner after a long day of study, Erranders has got you covered! Order from your favorite campus eateries without stepping out. Best prices, fast delivery, zero stress all day long.",
+        "ORDER YOUR MEALS TODAY",
         "https://erranders.org/vendors",
-        "https://images.unsplash.com/photo-1533089860892-a7c6f0a88666?w=800&q=80"
-      );
-    }
-  }
-
-  // Afternoon Peak: 1:30 PM (Lunch)
-  @Cron('30 13 * * *')
-  async sendAfternoonMarketing() {
-    this.logger.log('Sending afternoon marketing emails...');
-    const users = await this.userModel.find({ isVerified: true });
-    
-    for (const user of users) {
-      await this.emailService.sendPromotionalEmail(
-        user.email,
-        "Hungry yet? 🍱 Lunch is just a tap away",
-        "Refuel with Erranders Lunch Deals",
-        "That 12 PM lecture was long, we know. Skip the cafeteria queue and order from your favorite campus eatery. Best price, fastest delivery, zero stress.",
-        "SECURE MY LUNCH",
-        "https://erranders.org/vendors",
-        "https://images.unsplash.com/photo-1547592180-85f173990554?w=800&q=80"
-      );
-    }
-  }
-
-  // Evening Peak: 7:00 PM (Dinner & Late Night)
-  @Cron('0 19 * * *')
-  async sendEveningMarketing() {
-    this.logger.log('Sending evening marketing emails...');
-    const users = await this.userModel.find({ isVerified: true });
-    
-    for (const user of users) {
-      await this.emailService.sendPromotionalEmail(
-        user.email,
-        "Dinner Time! 🌙 Don't let Sapa win",
-        "End your day with a feast",
-        "You worked hard today. Treat yourself to something special. From spicy noodles to solid swallow, we've got you covered for the late-night study sessions too.",
-        "ORDER DINNER",
-        "https://erranders.org/vendors",
-        "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800&q=80"
+        "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=800&q=80"
       );
     }
   }

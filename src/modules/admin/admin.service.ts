@@ -387,7 +387,8 @@ export class AdminService {
         .populate('user', 'firstName lastName email phone avatar role')
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(limit),
+        .limit(limit)
+        .lean(),
       this.erranderModel.countDocuments(),
     ]);
 
