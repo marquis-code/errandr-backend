@@ -385,13 +385,24 @@ export class AdminService {
   }
 
   async getAllDispatchers(page = 1, limit = 10) {
-    return { 
-      dispatchers: [{
-        _id: 'dummy_id_123',
-        user: { _id: 'dummy_user_123', firstName: 'Test', lastName: 'Dispatcher', phone: '0800000000' }
-      }], 
-      total: 1 
-    };
+    const skip = (page - 1) * limit;
+    
+    try {
+      const [dispatchers, total] = await Promise.all([
+        this.erranderModel
+          .find()
+          .populate('user', 'firstName lastName email phone avatar role')
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        this.erranderModel.countDocuments(),
+      ]);
+      return { dispatchers, total };
+    } catch (e: any) {
+      console.error(`getAllDispatchers ERROR:`, e.message);
+      throw e;
+    }
   }
 
   async getDispatcher(id: string) {
