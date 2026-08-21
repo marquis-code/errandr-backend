@@ -996,11 +996,11 @@ export class OrdersService {
 
       // Trigger engagement updates
       if (order.customer) {
-        await this.rewardsService.updateUserStats(order.customer.toString(), { orders: 1, streak: true });
+        await this.rewardsService.updateUserStats((order.customer as any)._id.toString(), { orders: 1, streak: true });
       }
       if (order.errander) {
         // Find owner user ID from errander profile
-        const errander = await this.erranderModel.findById(order.errander);
+        const errander = await this.erranderModel.findById((order.errander as any)._id);
         if (errander) {
           await this.rewardsService.updateUserStats(errander.user.toString(), { deliveries: 1 });
         }
