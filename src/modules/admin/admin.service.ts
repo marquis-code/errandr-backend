@@ -385,19 +385,32 @@ export class AdminService {
   }
 
   async getAllDispatchers(page = 1, limit = 10) {
-    const skip = (page - 1) * limit;
-    const [dispatchers, total] = await Promise.all([
-      this.erranderModel
+    try {
+      const skip = (page - 1) * limit;
+      
+      const dispatchers = await this.erranderModel
         .find()
-        .populate('user', 'firstName lastName email phone avatar role')
+        .populate({
+          path: 'user',
+          select: 'firstName lastName email phone avatar role',
+          strictPopulate: false
+        })
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
-        .lean(),
-      this.erranderModel.countDocuments(),
-    ]);
+        .lean()
+        .exec();
 
-    return { dispatchers, total };
+      const total = await this.erranderModel.estimatedDocumentCount();
+
+      return { 
+        dispatchers: dispatchers || [], 
+        total: total || 0 
+      };
+    } catch (error: any) {
+      console.error('Error fetching dispatchers:', error);
+      throw new Error(`Failed to fetch dispatchers: ${error.message}`);
+    }
   }
 
   async getDispatcher(id: string) {
