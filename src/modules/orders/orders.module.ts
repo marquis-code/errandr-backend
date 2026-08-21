@@ -22,12 +22,17 @@ import { UsersModule } from '../users/users.module';
 import { BatchDeliveryService } from './batch-delivery.service';
 import { RewardsModule } from '../rewards/rewards.module';
 import { SimulationController } from './simulation.controller';
+import { NegotiationService } from './services/negotiation.service';
+import { NegotiationGateway } from './gateways/negotiation.gateway';
 
 import { PromoCodesModule } from '../promo-codes/promo-codes.module';
 
 import { ErrandPool, ErrandPoolSchema } from './schemas/errand-pool.schema';
+import { DeliveryBid, DeliveryBidSchema } from './schemas/delivery-bid.schema';
 import { ExamModeModule } from '../exam-mode/exam-mode.module';
 import { ErrandersModule } from '../erranders/erranders.module';
+
+import { OrderSchedulerService } from './cron/order-scheduler.service';
 
 @Module({
   imports: [
@@ -41,6 +46,7 @@ import { ErrandersModule } from '../erranders/erranders.module';
       { name: MenuPack.name, schema: MenuPackSchema },
       { name: SystemSetting.name, schema: SystemSettingSchema },
       { name: ErrandPool.name, schema: ErrandPoolSchema },
+      { name: DeliveryBid.name, schema: DeliveryBidSchema },
     ]),
     NotificationsModule,
     ChatModule,
@@ -55,7 +61,7 @@ import { ErrandersModule } from '../erranders/erranders.module';
     forwardRef(() => ErrandersModule),
   ],
   controllers: [OrdersController, SimulationController],
-  providers: [OrdersService, BatchDeliveryService],
-  exports: [OrdersService, BatchDeliveryService, MongooseModule],
+  providers: [OrdersService, BatchDeliveryService, OrderSchedulerService, NegotiationService, NegotiationGateway],
+  exports: [OrdersService, BatchDeliveryService, NegotiationService, MongooseModule],
 })
 export class OrdersModule {}

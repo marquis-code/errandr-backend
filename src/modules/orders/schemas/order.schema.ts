@@ -2,6 +2,7 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 
 export enum OrderStatus {
+  SCHEDULED = 'scheduled',
   PENDING = 'pending',
   CONFIRMED = 'confirmed',
   PREPARING = 'preparing',
@@ -12,6 +13,12 @@ export enum OrderStatus {
   CANCELLED = 'cancelled',
   REFUNDED = 'refunded',
   AWAITING_PAYMENT = 'awaiting_payment',
+  NEGOTIATING = 'negotiating',
+}
+
+export enum LocationType {
+  INSIDE_CAMPUS = 'inside_campus',
+  OUTSIDE_CAMPUS = 'outside_campus',
 }
 
 export enum PaymentStatus {
@@ -46,6 +53,15 @@ export class Order extends Document {
 
   @Prop({ type: String, enum: OrderType, default: OrderType.MARKETPLACE })
   type: OrderType;
+
+  @Prop({ type: String, enum: LocationType, default: LocationType.INSIDE_CAMPUS })
+  locationType: LocationType;
+
+  @Prop({ type: Number })
+  proposedDeliveryFee?: number;
+
+  @Prop({ type: Number })
+  agreedDeliveryFee?: number;
 
   @Prop({
     type: {

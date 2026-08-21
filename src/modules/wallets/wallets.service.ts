@@ -577,7 +577,7 @@ export class WalletsService {
         const owner = (t.wallet as any)?.owner;
         return [
           t._id.toString(),
-          t.createdAt.toISOString(),
+          (t as any).createdAt ? (t as any).createdAt.toISOString() : '',
           t.amount,
           t.type,
           t.status,

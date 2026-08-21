@@ -57,5 +57,8 @@ export class MenuPack extends Document {
 
   @Prop({ default: 0 })
   stockQuantity: number;
+
+  @Prop({ default: false })
+  isPackagingFeeIncluded: boolean;
 }
 export const MenuPackSchema = SchemaFactory.createForClass(MenuPack);

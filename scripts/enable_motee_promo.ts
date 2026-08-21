@@ -10,14 +10,21 @@ async function bootstrap() {
 
   const motee = await vendorModel.findOne({ storeName: /motee/i });
   if (motee) {
-    motee.prepaidPromo = {
-      enabled: true,
-      budgetPerOrder: 0,
-      maxOrders: 10,
-      usedOrders: 0,
-      label: 'Exam Combo',
-    };
-    await motee.save();
+    await vendorModel.updateOne(
+      { _id: motee._id },
+      { 
+        $set: {
+          prepaidPromo: {
+            enabled: true,
+            budgetPerOrder: 0,
+            maxOrders: 10,
+            usedOrders: 0,
+            label: 'Exam Combo',
+            discountValue: 700,
+          }
+        } 
+      }
+    );
     console.log('Successfully enabled Exam Combo promo for Chips by Motee');
   } else {
     console.log('Chips by Motee not found');

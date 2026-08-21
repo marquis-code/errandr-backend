@@ -4,7 +4,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
-import { Order, OrderStatus, PaymentStatus, OrderType } from './schemas/order.schema';
+import { Order, OrderStatus, PaymentStatus, OrderType, LocationType } from './schemas/order.schema';
 
 import { Vendor, VendorStatus } from '../vendors/schemas/vendor.schema';
 import { Errander, ErranderStatus } from '../erranders/schemas/errander.schema';
@@ -178,6 +178,8 @@ export class OrdersService {
       erranderShare: populated.erranderShare || populated.deliveryFee || 0,
       status: populated.status,
       type: populated.type,
+      locationType: (populated as any).locationType,
+      proposedDeliveryFee: (populated as any).proposedDeliveryFee,
       createdAt: (populated as any).createdAt,
     };
 
@@ -742,16 +744,29 @@ export class OrdersService {
       deliveryNotes: data.deliveryNotes,
       paymentStatus: (paymentVerified || data.paymentMethod === 'cash') ? PaymentStatus.PAID : PaymentStatus.PENDING,
       paymentReference: data.paymentReference,
-      status: (paymentVerified || data.paymentMethod === 'cash') ? OrderStatus.CONFIRMED : OrderStatus.PENDING,
+      locationType: data.locationType || LocationType.INSIDE_CAMPUS,
+      proposedDeliveryFee: data.locationType === LocationType.OUTSIDE_CAMPUS ? Number(data.proposedDeliveryFee) : undefined,
+      status: data.locationType === LocationType.OUTSIDE_CAMPUS 
+                ? OrderStatus.NEGOTIATING 
+                : (paymentVerified || data.paymentMethod === 'cash') 
+                ? (data.isPreOrder ? OrderStatus.SCHEDULED : OrderStatus.CONFIRMED) 
+                : OrderStatus.PENDING,
       statusHistory: [
         { 
-          status: (paymentVerified || data.paymentMethod === 'cash') ? OrderStatus.CONFIRMED : OrderStatus.PENDING, 
+          status: data.locationType === LocationType.OUTSIDE_CAMPUS 
+                    ? OrderStatus.NEGOTIATING 
+                    : (paymentVerified || data.paymentMethod === 'cash') 
+                    ? (data.isPreOrder ? OrderStatus.SCHEDULED : OrderStatus.CONFIRMED) 
+                    : OrderStatus.PENDING,
           timestamp: new Date(), 
-          note: (paymentVerified || data.paymentMethod === 'cash') ? 'Order placed and payment confirmed' : 'Order placed, awaiting payment' 
+          note: data.locationType === LocationType.OUTSIDE_CAMPUS ? 'Negotiating with riders' : (paymentVerified || data.paymentMethod === 'cash') 
+                  ? (data.isPreOrder ? 'Order scheduled for a later time' : 'Order placed and payment confirmed') 
+                  : 'Order placed, awaiting payment' 
         },
       ],
       isPreOrder: data.isPreOrder || false,
-      scheduledTime: data.scheduledTime || null,
+      scheduledTime: data.scheduledDate || data.scheduledTime || null, // Capture exact time
+      scheduledDate: data.scheduledDate || '',
       vendorNote: data.vendorNote || '',
     });
 
@@ -811,6 +826,11 @@ export class OrdersService {
           });
         }
       }
+    } else if (order.status === OrderStatus.NEGOTIATING) {
+      // Outside campus: Broadcast to erranders for negotiation but DON'T notify vendor yet
+      // Vendor notification will happen after negotiation + payment is complete
+      await this.broadcastNewOrderToErranders(order);
+      this.logger.log(`NEGOTIATING order ${order.orderNumber} broadcasted to erranders for bidding (vendor NOT notified yet).`);
     }
 
     if (order.customer && (order.customer as any).email) {
@@ -1102,7 +1122,7 @@ export class OrdersService {
 
     // Check verification level limits
     const targetOrder = await this.orderModel.findById(orderId);
-    if (!targetOrder || ![OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP].includes(targetOrder.status as any)) {
+    if (!targetOrder || ![OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP, OrderStatus.NEGOTIATING].includes(targetOrder.status as any)) {
       throw new BadRequestException('Order is no longer available');
     }
 
@@ -1649,7 +1669,7 @@ export class OrdersService {
   async getAvailableOrders() {
     return this.orderModel
       .find({
-        status: { $in: [OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP] },
+        status: { $in: [OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP, OrderStatus.NEGOTIATING] },
         errander: { $exists: false },
          $or: [
           { deliveryOption: 'use_an_errander' },
@@ -2017,11 +2037,11 @@ export class OrdersService {
     }
     
     order.paymentStatus = PaymentStatus.PAID;
-    order.status = OrderStatus.CONFIRMED;
+    order.status = order.isPreOrder ? OrderStatus.SCHEDULED : OrderStatus.CONFIRMED;
     order.statusHistory.push({
-      status: OrderStatus.CONFIRMED,
+      status: order.isPreOrder ? OrderStatus.SCHEDULED : OrderStatus.CONFIRMED,
       timestamp: new Date(),
-      note: 'Order paid via wallet balance',
+      note: order.isPreOrder ? 'Order scheduled and paid via wallet balance' : 'Order paid via wallet balance',
     });
     
     await order.save();
@@ -2349,7 +2369,7 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
   async placeBid(orderId: string, erranderId: string, amount: number): Promise<Order> {
     const order = await this.orderModel.findById(orderId).populate('bids.errander');
     if (!order) throw new NotFoundException('Order not found');
-    if (order.status !== OrderStatus.PENDING) throw new BadRequestException('Order is no longer pending');
+    if (![OrderStatus.PENDING, OrderStatus.NEGOTIATING].includes(order.status as any)) throw new BadRequestException('Order is no longer accepting bids');
 
     // check if this errander already bid
     const existingBidIndex = order.bids.findIndex(b => b.errander._id.toString() === erranderId.toString() && b.status === 'pending');
@@ -2410,7 +2430,7 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     const order = await this.orderModel.findById(orderId).populate('bids.errander');
     if (!order) throw new NotFoundException('Order not found');
     if (order.customer.toString() !== customerId.toString()) throw new BadRequestException('Not your order');
-    if (order.status !== OrderStatus.PENDING) throw new BadRequestException('Order is no longer pending');
+    if (![OrderStatus.PENDING, OrderStatus.NEGOTIATING].includes(order.status as any)) throw new BadRequestException('Order is no longer accepting bids');
 
     const bid = order.bids.find(b => b._id.toString() === bidId);
     if (!bid) throw new NotFoundException('Bid not found');

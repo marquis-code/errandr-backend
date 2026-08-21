@@ -42,4 +42,8 @@ export class CreateMenuPackDto {
   @IsOptional()
   @IsBoolean()
   isAvailable?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isPackagingFeeIncluded?: boolean;
 }
