@@ -1,5 +1,5 @@
 import {
-  Injectable, NotFoundException, BadRequestException, Inject, forwardRef, Logger, ForbiddenException
+  Injectable, NotFoundException, BadRequestException, Inject, forwardRef, Logger, ForbiddenException, InternalServerErrorException
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -65,6 +65,32 @@ export class OrdersService {
 
   private get examModeService(): ExamModeService {
     return this.moduleRef.get(ExamModeService, { strict: false });
+  }
+
+  /**
+   * Retry helper for transient MongoDB errors (ECONNRESET, network timeouts)
+   */
+  private async withRetry<T>(operation: () => Promise<T>, label: string, maxRetries = 3): Promise<T> {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await operation();
+      } catch (error: any) {
+        const isTransient = error?.message?.includes('ECONNRESET') ||
+          error?.message?.includes('ETIMEDOUT') ||
+          error?.message?.includes('MongoNetworkError') ||
+          error?.name === 'MongoNetworkError' ||
+          error?.name === 'MongoNetworkTimeoutError';
+
+        if (isTransient && attempt < maxRetries) {
+          const delay = attempt * 200;
+          this.logger.warn(`[${label}] Transient error (attempt ${attempt}/${maxRetries}), retrying in ${delay}ms: ${error.message}`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw new InternalServerErrorException('Max retries exceeded');
   }
 
   async getBatchStatus() {
@@ -1683,41 +1709,44 @@ export class OrdersService {
   }
 
   async findById(id: string): Promise<any> {
-    const order = await this.orderModel
-      .findById(id)
-      .populate('customer', 'firstName lastName phone avatar deliveryAddress location')
-      .populate({
-        path: 'vendor',
-        select: 'storeName logo phone address location user owner',
-        populate: { path: 'owner', select: 'phone' }
-      })
-      .populate('errander', 'firstName lastName phone user')
-      .populate('bids.errander', 'firstName lastName avatar phone')
-      .populate('viewers.errander', 'firstName lastName avatar phone')
-      .lean();
-    if (!order) throw new NotFoundException('Order not found');
+    return this.withRetry(async () => {
+      const order = await this.orderModel
+        .findById(id)
+        .populate('customer', 'firstName lastName phone avatar deliveryAddress location')
+        .populate({
+          path: 'vendor',
+          select: 'storeName logo phone address location user owner',
+          populate: { path: 'owner', select: 'phone' }
+        })
+        .populate('errander', 'firstName lastName phone user')
+        .populate('bids.errander', 'firstName lastName avatar phone')
+        .populate('viewers.errander', 'firstName lastName avatar phone')
+        .maxTimeMS(10000)
+        .lean();
+      if (!order) throw new NotFoundException('Order not found');
 
-    if (order.errander) {
-      const erranderDetails = await this.erranderModel.findOne({ user: (order.errander as any)._id }).lean();
-      if (erranderDetails) {
-        (order as any).erranderDetails = erranderDetails;
+      if (order.errander) {
+        const erranderDetails = await this.erranderModel.findOne({ user: (order.errander as any)._id }).maxTimeMS(5000).lean();
+        if (erranderDetails) {
+          (order as any).erranderDetails = erranderDetails;
+        }
       }
-    }
 
-    // Attach WhatsApp Links
-    const customerPhone = (order.customer as any)?.phone;
-    const vendorPhone = (order.vendor as any)?.phone || (order.vendor as any)?.owner?.phone;
-    const erranderPhone = (order.errander as any)?.phone;
+      // Attach WhatsApp Links
+      const customerPhone = (order.customer as any)?.phone;
+      const vendorPhone = (order.vendor as any)?.phone || (order.vendor as any)?.owner?.phone;
+      const erranderPhone = (order.errander as any)?.phone;
 
-    const formatWa = (p) => p ? `https://wa.me/${p.replace(/\+/g, '')}` : null;
+      const formatWa = (p) => p ? `https://wa.me/${p.replace(/\+/g, '')}` : null;
 
-    (order as any).whatsappLinks = {
-      customer: formatWa(customerPhone),
-      vendor: formatWa(vendorPhone),
-      errander: formatWa(erranderPhone),
-    };
+      (order as any).whatsappLinks = {
+        customer: formatWa(customerPhone),
+        vendor: formatWa(vendorPhone),
+        errander: formatWa(erranderPhone),
+      };
 
-    return order;
+      return order;
+    }, 'findById');
   }
 
   async processVendorPayout(order: Order): Promise<void> {

@@ -33,48 +33,72 @@ export class NotificationsGateway
   ) {}
 
   async onModuleInit() {
+    // Don't block app startup — set up Redis subscription in background
+    this.initRedisSubscription().catch((error) => {
+      this.logger.warn('NotificationsGateway: Redis subscription unavailable — real-time notifications will use WebSocket only', error?.message);
+    });
+  }
+
+  private async initRedisSubscription() {
+    const subClient = this.redisService.getNewClient();
+
+    subClient.on('connect', () => this.logger.log('Redis Subscriber: Connected'));
+    subClient.on('ready', () => this.logger.log('Redis Subscriber: Ready to receive messages'));
+    subClient.on('error', (err) => {
+      // Log once, don't spam
+      if (!this['_redisErrorLogged']) {
+        this.logger.warn('Redis Subscriber: Connection error (suppressing further logs):', err.message);
+        this['_redisErrorLogged'] = true;
+      }
+    });
+    subClient.on('reconnecting', () => {
+      this.logger.warn('Redis Subscriber: Reconnecting...');
+    });
+
+    // Timeout the subscribe attempt so it doesn't hang forever
+    const subscribeTimeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Redis subscribe timed out after 5s')), 5000)
+    );
+
     try {
-      const subClient = this.redisService.getNewClient();
-      
-      subClient.on('connect', () => this.logger.log('Redis Subscriber: Connected'));
-      subClient.on('ready', () => this.logger.log('Redis Subscriber: Ready to receive messages'));
-      subClient.on('error', (err) => this.logger.error('Redis Subscriber: Error', err));
-      subClient.on('reconnecting', () => this.logger.warn('Redis Subscriber: Reconnecting...'));
-
-      // Subscribe to all notification channels
-      await subClient.psubscribe('notification:*');
-
-      subClient.on('pmessage', (pattern, channel, message) => {
-        // Channel format: notification:<userId> or notification:broadcast
-        const target = channel.split(':').slice(1).join(':');
-        if (!target) return;
-
-        try {
-          const notification = JSON.parse(message);
-
-          if (target === 'broadcast:erranders') {
-            // Broadcast to all connected users (erranders)
-            if (notification.type === 'ORDER_ACCEPTED') {
-              this.server.emit('notification:order-accepted', notification);
-              this.logger.log(`[Redis Broadcast] notification:order-accepted sent to all clients`);
-            } else {
-              this.server.emit('notification:new-order', notification);
-              this.logger.log(`[Redis Broadcast] notification:new-order sent to all clients`);
-            }
-          } else {
-            // Send to specific user
-            this.server.to(`user:${target}`).emit('notification:new', notification);
-            this.logger.log(`[Redis Directed] Sent notification to user:${target}`);
-          }
-        } catch (e) {
-          this.logger.error('Failed to parse redis notification payload', e);
-        }
-      });
-
-      this.logger.log('NotificationsGateway: Initialized on /realtime');
-    } catch (error) {
-      this.logger.error('CRITICAL: NotificationsGateway failed to initialize Redis subscription', error);
+      await Promise.race([
+        subClient.psubscribe('notification:*'),
+        subscribeTimeout,
+      ]);
+    } catch (err) {
+      this.logger.warn(`Redis psubscribe failed: ${err.message} — continuing without Redis pub/sub`);
+      try { subClient.disconnect(); } catch (_) {}
+      return;
     }
+
+    subClient.on('pmessage', (pattern, channel, message) => {
+      // Channel format: notification:<userId> or notification:broadcast
+      const target = channel.split(':').slice(1).join(':');
+      if (!target) return;
+
+      try {
+        const notification = JSON.parse(message);
+
+        if (target === 'broadcast:erranders') {
+          // Broadcast to all connected users (erranders)
+          if (notification.type === 'ORDER_ACCEPTED') {
+            this.server.emit('notification:order-accepted', notification);
+            this.logger.log(`[Redis Broadcast] notification:order-accepted sent to all clients`);
+          } else {
+            this.server.emit('notification:new-order', notification);
+            this.logger.log(`[Redis Broadcast] notification:new-order sent to all clients`);
+          }
+        } else {
+          // Send to specific user
+          this.server.to(`user:${target}`).emit('notification:new', notification);
+          this.logger.log(`[Redis Directed] Sent notification to user:${target}`);
+        }
+      } catch (e) {
+        this.logger.error('Failed to parse redis notification payload', e);
+      }
+    });
+
+    this.logger.log('NotificationsGateway: Initialized on /realtime');
   }
 
   handleConnection(client: Socket) {

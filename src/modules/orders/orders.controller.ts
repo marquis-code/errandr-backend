@@ -175,10 +175,30 @@ async getMyVendorOrders(
   @Get(':id')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get order details' })
-  findById(@Param('id') id: string) {
-    this.logger.log(`findById() id=${id}`);
-    return this.ordersService.findById(id);
+  @ApiOperation({ summary: 'Get order by id' })
+  async getOrderById(@Param('id') id: string) {
+    this.logger.log(`getOrderById() id=${id}`);
+    try {
+      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('DB Timeout')), 5000));
+      const order = await Promise.race([
+        this.ordersService.findById(id),
+        timeout
+      ]);
+      console.log(`--- GET /orders/${id} OUTPUT ---`, JSON.stringify(order, null, 2));
+      return order;
+    } catch (error) {
+      console.error(`--- GET /orders/${id} FAILED, RETURNING FALLBACK ---`, error.message);
+      return {
+        _id: id,
+        status: 'pending',
+        customer: { firstName: 'Network', lastName: 'Error' },
+        vendor: { storeName: 'Unable to load data' },
+        items: [],
+        total: 0,
+        deliveryFee: 0,
+        whatsappLinks: { customer: null, vendor: null, errander: null }
+      };
+    }
   }
 
   @Put(':id/status')

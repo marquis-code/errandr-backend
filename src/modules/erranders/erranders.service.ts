@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, Logger, InternalServerErrorException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Errander, ErranderStatus } from './schemas/errander.schema';
@@ -9,6 +9,8 @@ import { EmailService } from '../email/email.service';
 
 @Injectable()
 export class ErrandersService {
+  private readonly logger = new Logger(ErrandersService.name);
+
   constructor(
     @InjectModel(Errander.name) private erranderModel: Model<Errander>,
     @InjectModel(User.name) private userModel: Model<User>,
@@ -16,6 +18,32 @@ export class ErrandersService {
     private rewardsService: RewardsService,
     private emailService: EmailService,
   ) {}
+
+  /**
+   * Retry helper for transient MongoDB errors (ECONNRESET, network timeouts)
+   */
+  private async withRetry<T>(operation: () => Promise<T>, label: string, maxRetries = 3): Promise<T> {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await operation();
+      } catch (error: any) {
+        const isTransient = error?.message?.includes('ECONNRESET') ||
+          error?.message?.includes('ETIMEDOUT') ||
+          error?.message?.includes('MongoNetworkError') ||
+          error?.name === 'MongoNetworkError' ||
+          error?.name === 'MongoNetworkTimeoutError';
+
+        if (isTransient && attempt < maxRetries) {
+          const delay = attempt * 200;
+          this.logger.warn(`[${label}] Transient error (attempt ${attempt}/${maxRetries}), retrying in ${delay}ms: ${error.message}`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw new InternalServerErrorException('Max retries exceeded');
+  }
 
   async register(userId: string, data: Partial<Errander>): Promise<Errander> {
     const existing = await this.erranderModel.findOne({ user: new Types.ObjectId(userId) });
@@ -70,15 +98,23 @@ export class ErrandersService {
   }
 
   async getProfile(userId: string): Promise<Errander> {
-    const errander = await this.erranderModel
-      .findOne({ user: new Types.ObjectId(userId) })
-      .populate('user', 'firstName lastName email phone avatar');
-    
-    if (!errander) {
-      await this.getOrCreateErrander(userId);
-      return this.getProfile(userId);
-    }
-    return errander;
+    return this.withRetry(async () => {
+      let errander = await this.erranderModel
+        .findOne({ user: new Types.ObjectId(userId) })
+        .populate('user', 'firstName lastName email phone avatar')
+        .maxTimeMS(10000)
+        .lean();
+
+      if (!errander) {
+        await this.getOrCreateErrander(userId);
+        errander = await this.erranderModel
+          .findOne({ user: new Types.ObjectId(userId) })
+          .populate('user', 'firstName lastName email phone avatar')
+          .maxTimeMS(10000)
+          .lean();
+      }
+      return errander as unknown as Errander;
+    }, 'getProfile');
   }
 
   async updateLocation(
@@ -116,12 +152,14 @@ export class ErrandersService {
   }
 
   async getEarnings(userId: string) {
-    const errander = await this.getOrCreateErrander(userId);
-    return {
-      totalDeliveries: errander.totalDeliveries,
-      totalEarnings: errander.totalEarnings,
-      rating: errander.rating,
-    };
+    return this.withRetry(async () => {
+      const errander = await this.getOrCreateErrander(userId);
+      return {
+        totalDeliveries: errander.totalDeliveries || 0,
+        totalEarnings: errander.totalEarnings || 0,
+        rating: errander.rating || 0,
+      };
+    }, 'getEarnings');
   }
 
   async getAll(page = 1, limit = 20) {

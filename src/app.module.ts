@@ -54,6 +54,9 @@ import { ExamModeModule } from './modules/exam-mode/exam-mode.module';
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
         uri: configService.get<string>('MONGODB_URI'),
+        retryReads: true,
+        retryWrites: true,
+        serverSelectionTimeoutMS: 30000, // Wait up to 30s for server selection if network is slow
       }),
       inject: [ConfigService],
     }),
@@ -67,6 +70,8 @@ import { ExamModeModule } from './modules/exam-mode/exam-mode.module';
           port: configService.get('REDIS_PORT', 6379),
           username: configService.get('REDIS_USER'),
           password: configService.get('REDIS_PASSWORD'),
+          maxRetriesPerRequest: 3,
+          connectTimeout: 5000,
         },
       }),
       inject: [ConfigService],
