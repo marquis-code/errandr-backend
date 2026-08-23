@@ -666,7 +666,7 @@ export class WalletsService {
     };
   }
 
-  async fundWalletByAdmin(userId: string, amount: number, description: string): Promise<{ wallet: WalletDocument, transaction: TransactionDocument }> {
+  async fundWalletByAdmin(userId: string, amount: number, description?: string): Promise<{ wallet: WalletDocument, transaction: TransactionDocument }> {
     const user = await this.userModel.findById(userId);
     if (!user) throw new NotFoundException('User not found');
 
