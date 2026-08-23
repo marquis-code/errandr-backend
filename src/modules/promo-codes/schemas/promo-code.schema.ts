@@ -43,6 +43,12 @@ export class PromoCode extends Document {
 
   @Prop({ default: false })
   onlyForNewUsers: boolean; // If true, only users with 0 completed orders can use this
+
+  @Prop({ type: [String] })
+  applicableOrderTypes: string[]; // e.g., 'inside_campus', 'outside_campus', 'custom_errand', 'group_order'
+
+  @Prop({ default: false })
+  appliesToDeliveryFeeOnly: boolean; // If true, discount only affects delivery fee, not item subtotal
 }
 
 export const PromoCodeSchema = SchemaFactory.createForClass(PromoCode);

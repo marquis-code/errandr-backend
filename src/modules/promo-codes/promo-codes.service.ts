@@ -33,7 +33,14 @@ export class PromoCodesService {
     return promo;
   }
 
-  async validateCode(code: string, subtotal: number, userId?: string, vendorId?: string, userOrdersCount?: number): Promise<PromoCode> {
+  async validateCode(
+    code: string, 
+    subtotal: number, 
+    userId?: string, 
+    vendorId?: string, 
+    userOrdersCount?: number,
+    orderContext?: { isGroupOrder?: boolean; locationType?: string; isCustomErrand?: boolean }
+  ): Promise<PromoCode> {
     const promo = await this.promoCodeModel.findOne({ code: code.toUpperCase() });
     if (!promo) {
       throw new BadRequestException('Invalid promo code');
@@ -45,7 +52,7 @@ export class PromoCodesService {
       throw new BadRequestException('Promo code has expired');
     }
     if (promo.minOrderAmount && subtotal < promo.minOrderAmount) {
-      throw new BadRequestException(`Order subtotal must be at least ₦${promo.minOrderAmount} to use this code`);
+      throw new BadRequestException(`Order amount must be at least ₦${promo.minOrderAmount} to use this code`);
     }
     if (promo.maxUsageCount && promo.usageCount >= promo.maxUsageCount) {
       throw new BadRequestException('Promo code usage limit reached');
@@ -68,6 +75,23 @@ export class PromoCodesService {
 
     if (promo.onlyForNewUsers && userOrdersCount !== undefined && userOrdersCount > 0) {
       throw new BadRequestException('Promo code is only valid for new users on their first order');
+    }
+
+    // Order Type Restrictions
+    if (promo.applicableOrderTypes && promo.applicableOrderTypes.length > 0 && orderContext) {
+      const { isGroupOrder, locationType, isCustomErrand } = orderContext;
+      const currentTypes: string[] = [];
+      if (isGroupOrder) currentTypes.push('group_order');
+      if (isCustomErrand) currentTypes.push('custom_errand');
+      if (locationType === 'outside_campus') currentTypes.push('outside_campus');
+      if (locationType === 'inside_campus') currentTypes.push('inside_campus');
+
+      // Check if there is an intersection between allowed types and current types
+      const isAllowed = promo.applicableOrderTypes.some(allowedType => currentTypes.includes(allowedType));
+      
+      if (!isAllowed) {
+        throw new BadRequestException('Promo code is not applicable for this type of order');
+      }
     }
 
     return promo;

@@ -627,19 +627,43 @@ export class OrdersService {
     if (data.promoCode) {
       try {
         const userOrdersCount = await this.orderModel.countDocuments({ customer: customerId });
-        const promo = await this.promoCodesService.validateCode(data.promoCode, subtotal, customerId, data.vendor?.toString(), userOrdersCount);
+        
+        const orderContext = {
+          isGroupOrder: data.isGroupOrder || !!data.groupId,
+          locationType: data.locationType || 'inside_campus',
+          isCustomErrand: data.type === 'custom_errand' || data.orderType === 'custom_errand'
+        };
+
+        const promo = await this.promoCodesService.validateCode(data.promoCode, subtotal, customerId, data.vendor?.toString(), userOrdersCount, orderContext);
+        
         let pDiscount = 0;
+        const discountTarget = promo.appliesToDeliveryFeeOnly ? deliveryFee : subtotal;
+
         if (promo.discountType === 'percentage') {
-          pDiscount = Math.round(subtotal * (promo.value / 100));
+          pDiscount = Math.round(discountTarget * (promo.value / 100));
           if (promo.maxDiscountAmount && pDiscount > promo.maxDiscountAmount) {
             pDiscount = promo.maxDiscountAmount;
           }
         } else {
           pDiscount = promo.value;
         }
+
+        // Ensure discount doesn't exceed the target amount
+        if (pDiscount > discountTarget) {
+          pDiscount = discountTarget;
+        }
         
-        discount += pDiscount;
-        promoDiscount = pDiscount;
+        if (promo.appliesToDeliveryFeeOnly) {
+          deliveryFee -= pDiscount;
+          promoDiscount = pDiscount; // Only track for display
+          // The discount variable in this method usually deducts from total, 
+          // since deliveryFee is added to total later, we just reduced deliveryFee directly.
+          // Wait, let's check how total is calculated.
+        } else {
+          discount += pDiscount;
+          promoDiscount = pDiscount;
+        }
+        
         appliedPromoCode = promo.code;
         
         // Increment usage

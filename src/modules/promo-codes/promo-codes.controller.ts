@@ -40,12 +40,21 @@ export class PromoCodesController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Validate a promo code for a checkout' })
-  validate(@Query('code') code: string, @Query('subtotal') subtotal: string, @Query('vendorId') vendorId: string, @Req() req: any) {
+  validate(
+    @Query('code') code: string, 
+    @Query('subtotal') subtotal: string, 
+    @Query('vendorId') vendorId: string, 
+    @Query('isGroupOrder') isGroupOrder: string,
+    @Query('locationType') locationType: string,
+    @Query('isCustomErrand') isCustomErrand: string,
+    @Req() req: any
+  ) {
     // In erranders, req.user typically holds the authenticated user object.
-    // However, to check orders count, we would ideally need orders service, but we can just pass the user ID and let the service handle it,
-    // OR we just pass user orders count if we have it in user. Let's just pass userId and vendorId for now. 
-    // The service might need to query the orders collection if we want `userOrdersCount`, but to avoid circular deps we can pass 0 for now or fetch it.
-    // We'll pass the user ID and vendor ID.
-    return this.promoCodesService.validateCode(code, Number(subtotal) || 0, req.user?._id?.toString(), vendorId);
+    const orderContext = {
+      isGroupOrder: isGroupOrder === 'true',
+      locationType: locationType,
+      isCustomErrand: isCustomErrand === 'true'
+    };
+    return this.promoCodesService.validateCode(code, Number(subtotal) || 0, req.user?._id?.toString(), vendorId, undefined, orderContext);
   }
 }
