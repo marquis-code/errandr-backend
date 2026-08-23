@@ -665,4 +665,54 @@ export class WalletsService {
       yesterdaysRevenue: yesterdaysVol[0]?.total || 0,
     };
   }
+
+  async fundWalletByAdmin(userId: string, amount: number, description: string): Promise<{ wallet: WalletDocument, transaction: TransactionDocument }> {
+    const user = await this.userModel.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+
+    // Make sure wallet exists
+    const wallet = await this.getOrCreateWallet(userId);
+
+    // Create a new transaction for the credit
+    const transaction = await this.transactionModel.create({
+      wallet: wallet._id,
+      amount,
+      type: TransactionType.CREDIT,
+      status: TransactionStatus.COMPLETED,
+      description: description || 'Funded by Admin',
+      reference: `admin_fund_${uuidv4()}`,
+    });
+
+    // Update wallet balance safely
+    const updatedWallet = await this.walletModel.findByIdAndUpdate(
+      wallet._id,
+      { $inc: { balance: amount, totalEarned: amount } },
+      { new: true }
+    );
+
+    // Send email notification to user
+    if (user.email) {
+      const emailHtml = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #eee; border-radius: 8px; overflow: hidden;">
+          <div style="background-color: #FF5C1A; padding: 20px; text-align: center;">
+            <h2 style="color: white; margin: 0;">Wallet Funded 💰</h2>
+          </div>
+          <div style="padding: 30px;">
+            <p>Hi ${user.firstName || user.lastName || 'User'},</p>
+            <p>Your Erranders wallet has been credited with <strong>₦${amount.toLocaleString()}</strong>.</p>
+            <p><strong>Description:</strong> ${description || 'Funded by Admin'}</p>
+            <p>You can use this balance immediately for your next orders.</p>
+            <a href="https://student.erranders.org/wallet" style="display: inline-block; padding: 12px 24px; background-color: #FF5C1A; color: white; text-decoration: none; border-radius: 6px; font-weight: bold; margin-top: 20px;">View Wallet</a>
+          </div>
+        </div>
+      `;
+      await this.emailService.sendEmail(
+        user.email,
+        `Wallet Credited — ₦${amount.toLocaleString()}`,
+        emailHtml
+      );
+    }
+
+    return { wallet: updatedWallet as WalletDocument, transaction };
+  }
 }

@@ -2,9 +2,10 @@ import { Controller, Get, Post, Put, Body, UseGuards, Param, Res, StreamableFile
 import { Response } from 'express';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { WalletsService } from './wallets.service';
-import { JwtAuthGuard, CurrentUser } from '../../common/decorators';
-import { User } from '../users/schemas/user.schema';
+import { JwtAuthGuard, CurrentUser, Roles, RolesGuard } from '../../common/decorators';
+import { User, UserRole } from '../users/schemas/user.schema';
 import { UpdatePreferencesDto } from './dto/update-preferences.dto';
+import { FundWalletDto } from './dto/fund-wallet.dto';
 
 @ApiTags('Wallets')
 @Controller('wallets')
@@ -132,5 +133,17 @@ export class WalletsController {
       'Content-Disposition': `attachment; filename="receipt-${id}.pdf"`,
     });
     return new StreamableFile(buffer);
+  }
+
+  @Post('admin/fund/:userId')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({ summary: 'Manually fund a user wallet (Admin)' })
+  async fundWalletByAdmin(
+    @Param('userId') userId: string,
+    @Body() body: FundWalletDto
+  ) {
+    await this.walletsService.fundWalletByAdmin(userId, body.amount, body.description);
+    return { success: true, message: 'Wallet funded successfully' };
   }
 }
