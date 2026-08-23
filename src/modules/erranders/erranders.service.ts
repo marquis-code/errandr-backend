@@ -97,7 +97,7 @@ export class ErrandersService {
     return errander;
   }
 
-  async getProfile(userId: string): Promise<Errander> {
+  async getProfile(userId: string): Promise<any> {
     return this.withRetry(async () => {
       let errander = await this.erranderModel
         .findOne({ user: new Types.ObjectId(userId) })
@@ -113,7 +113,15 @@ export class ErrandersService {
           .maxTimeMS(10000)
           .lean();
       }
-      return errander as unknown as Errander;
+
+      if (errander && errander.user) {
+        const WalletModel = this.userModel.db.model('Wallet');
+        const wallet = await WalletModel.findOne({ owner: errander.user._id }).lean();
+        (errander.user as any).walletBalance = wallet?.balance || 0;
+        (errander.user as any).bankDetails = wallet?.bankDetails || null;
+      }
+
+      return errander;
     }, 'getProfile');
   }
 
@@ -164,15 +172,31 @@ export class ErrandersService {
 
   async getAll(page = 1, limit = 20) {
     const skip = (page - 1) * limit;
-    const [erranders, total] = await Promise.all([
+    const [errandersRaw, total] = await Promise.all([
       this.erranderModel
         .find()
         .populate('user', 'firstName lastName email phone avatar')
         .skip(skip)
         .limit(limit)
-        .sort({ totalDeliveries: -1 }),
+        .sort({ totalDeliveries: -1 })
+        .lean(),
       this.erranderModel.countDocuments(),
     ]);
+
+    // Attach wallet balances and bank details
+    const userIds = errandersRaw.map((e: any) => e.user?._id).filter(Boolean);
+    const WalletModel = this.userModel.db.model('Wallet');
+    const wallets = await WalletModel.find({ owner: { $in: userIds } }).lean();
+
+    const erranders = errandersRaw.map((errander: any) => {
+      const wallet = wallets.find((w: any) => w.owner.toString() === errander.user?._id?.toString());
+      if (errander.user) {
+        errander.user.walletBalance = wallet?.balance || 0;
+        errander.user.bankDetails = wallet?.bankDetails || null;
+      }
+      return errander;
+    });
+
     return { erranders, total };
   }
 
