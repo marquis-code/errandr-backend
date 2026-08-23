@@ -33,7 +33,7 @@ export class PromoCodesService {
     return promo;
   }
 
-  async validateCode(code: string, subtotal: number): Promise<PromoCode> {
+  async validateCode(code: string, subtotal: number, userId?: string, vendorId?: string, userOrdersCount?: number): Promise<PromoCode> {
     const promo = await this.promoCodeModel.findOne({ code: code.toUpperCase() });
     if (!promo) {
       throw new BadRequestException('Invalid promo code');
@@ -50,6 +50,26 @@ export class PromoCodesService {
     if (promo.maxUsageCount && promo.usageCount >= promo.maxUsageCount) {
       throw new BadRequestException('Promo code usage limit reached');
     }
+    
+    // Robust restrictions
+    if (promo.applicableVendors && promo.applicableVendors.length > 0 && vendorId) {
+      const vendorStringIds = promo.applicableVendors.map(v => v.toString());
+      if (!vendorStringIds.includes(vendorId.toString())) {
+        throw new BadRequestException('Promo code is not applicable to this vendor');
+      }
+    }
+
+    if (promo.applicableUsers && promo.applicableUsers.length > 0 && userId) {
+      const userStringIds = promo.applicableUsers.map(u => u.toString());
+      if (!userStringIds.includes(userId.toString())) {
+        throw new BadRequestException('Promo code is not applicable to your account');
+      }
+    }
+
+    if (promo.onlyForNewUsers && userOrdersCount !== undefined && userOrdersCount > 0) {
+      throw new BadRequestException('Promo code is only valid for new users on their first order');
+    }
+
     return promo;
   }
 

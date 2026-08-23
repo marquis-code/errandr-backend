@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Put, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Put, UseGuards, Query, Req } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PromoCodesService } from './promo-codes.service';
 import { JwtAuthGuard, Roles, RolesGuard } from '../../common/decorators';
@@ -40,7 +40,12 @@ export class PromoCodesController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Validate a promo code for a checkout' })
-  validate(@Query('code') code: string, @Query('subtotal') subtotal: string) {
-    return this.promoCodesService.validateCode(code, Number(subtotal) || 0);
+  validate(@Query('code') code: string, @Query('subtotal') subtotal: string, @Query('vendorId') vendorId: string, @Req() req: any) {
+    // In erranders, req.user typically holds the authenticated user object.
+    // However, to check orders count, we would ideally need orders service, but we can just pass the user ID and let the service handle it,
+    // OR we just pass user orders count if we have it in user. Let's just pass userId and vendorId for now. 
+    // The service might need to query the orders collection if we want `userOrdersCount`, but to avoid circular deps we can pass 0 for now or fetch it.
+    // We'll pass the user ID and vendor ID.
+    return this.promoCodesService.validateCode(code, Number(subtotal) || 0, req.user?._id?.toString(), vendorId);
   }
 }

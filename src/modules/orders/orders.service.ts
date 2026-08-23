@@ -626,7 +626,8 @@ export class OrdersService {
     // Promo Code Logic
     if (data.promoCode) {
       try {
-        const promo = await this.promoCodesService.validateCode(data.promoCode, subtotal);
+        const userOrdersCount = await this.orderModel.countDocuments({ customer: customerId });
+        const promo = await this.promoCodesService.validateCode(data.promoCode, subtotal, customerId, data.vendor?.toString(), userOrdersCount);
         let pDiscount = 0;
         if (promo.discountType === 'percentage') {
           pDiscount = Math.round(subtotal * (promo.value / 100));

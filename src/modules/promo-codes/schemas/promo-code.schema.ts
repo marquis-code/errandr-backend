@@ -34,6 +34,15 @@ export class PromoCode extends Document {
 
   @Prop()
   maxUsageCount: number; // Optional limit on how many times the code can be used globally
+
+  @Prop({ type: [{ type: Types.ObjectId, ref: 'Vendor' }] })
+  applicableVendors: Types.ObjectId[]; // If empty, applies to all vendors
+
+  @Prop({ type: [{ type: Types.ObjectId, ref: 'User' }] })
+  applicableUsers: Types.ObjectId[]; // If empty, applies to all users
+
+  @Prop({ default: false })
+  onlyForNewUsers: boolean; // If true, only users with 0 completed orders can use this
 }
 
 export const PromoCodeSchema = SchemaFactory.createForClass(PromoCode);
