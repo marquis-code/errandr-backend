@@ -244,15 +244,15 @@ export class AdminService {
     }
     
     if (customerId) {
-      query.$or = [{ customer: customerId }, { user: customerId }];
+      query.$or = [{ customer: new Types.ObjectId(customerId) }, { user: new Types.ObjectId(customerId) }];
     }
 
     if (vendorId) {
-      query.vendor = vendorId;
+      query.vendor = new Types.ObjectId(vendorId);
     }
     
     if (erranderId) {
-      query.errander = erranderId;
+      query.errander = new Types.ObjectId(erranderId);
     }
     
     if (startDate || endDate) {
