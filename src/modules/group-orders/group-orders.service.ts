@@ -218,7 +218,7 @@ export class GroupOrdersService {
   }
 
   async checkout(userId: string, inviteCode: string, paymentReference?: string, guestId?: string): Promise<GroupOrder> {
-    const rawOrder = await this.groupOrderModel.findOne({ inviteCode });
+    const rawOrder = await this.groupOrderModel.findOne({ inviteCode }).populate('participants.user', 'firstName lastName');
     if (!rawOrder) throw new NotFoundException('Group order not found');
     
     if (rawOrder.status !== 'locked' && rawOrder.status !== 'open') {
@@ -286,9 +286,15 @@ export class GroupOrdersService {
     const readyParticipants = rawOrder.participants.filter(p => p.items.length > 0);
     const createdOrderIds: Types.ObjectId[] = [];
     
-    for (const participant of readyParticipants) {
-      const orderData = {
-        vendorId: rawOrder.vendor.toString(),
+    // Map each participant's cart to a distinct Pack
+    const allPacks = readyParticipants.map((participant, index) => {
+      let name = `Participant ${index + 1}`;
+      if (participant.user && (participant.user as any).firstName) {
+         name = `${(participant.user as any).firstName} ${(participant.user as any).lastName || ''}`.trim();
+      }
+      return {
+        packId: `group_pack_${index + 1}`,
+        name: name,
         items: participant.items.map(item => ({
           productId: item.productId,
           name: item.name,
@@ -296,14 +302,22 @@ export class GroupOrdersService {
           quantity: item.quantity,
           customizations: item.customizations,
           subtotal: item.price * item.quantity
-        })),
+        }))
+      };
+    });
+
+    if (allPacks.length > 0) {
+      const orderData = {
+        vendorId: rawOrder.vendor.toString(),
+        packs: allPacks,
         deliveryOption: 'use_an_errander',
-        paymentReference, // In split_bill, each would theoretically have their own. For simplicity, we might just pass the last one or save it elsewhere.
+        paymentReference, 
         groupId: rawOrder._id.toString(),
         isGroupOrder: true,
       };
 
-      const order = await this.ordersService.create(participant.user.toString(), orderData);
+      // Create ONE order, assigned to the Host
+      const order = await this.ordersService.create(rawOrder.host.toString(), orderData);
       createdOrderIds.push(order._id as Types.ObjectId);
     }
 

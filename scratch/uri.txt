@@ -1,0 +1,1 @@
+"mongodb+srv://errandr:errandr@errandr.eknah3x.mongodb.net/?appName=errandr"

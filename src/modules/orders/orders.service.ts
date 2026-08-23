@@ -172,7 +172,7 @@ export class OrdersService {
   async broadcastNewOrderToErranders(order: any): Promise<void> {
     const populated = await this.orderModel.findById(order._id)
       .populate('vendor', 'storeName logo address location')
-      .populate('customer', 'firstName lastName deliveryAddress erranderGenderPreference');
+      .populate('customer', 'firstName lastName deliveryAddress erranderGenderPreference gender');
     
     if (!populated) return;
 
@@ -194,8 +194,14 @@ export class OrdersService {
       vendorLogo: (populated.vendor as any)?.logo,
       vendorAddress,
       customerName: `${(populated.customer as any)?.firstName || ''} ${(populated.customer as any)?.lastName || ''}`.trim(),
+      customerGender: (populated.customer as any)?.gender,
+      isGroupOrder: populated.isGroupOrder || false,
       deliveryAddress: populated.deliveryAddress || (populated.customer as any)?.deliveryAddress || 'N/A',
       items: populated.items?.map(i => ({ name: i.name, qty: i.quantity, price: i.price })) || [],
+      packs: populated.packs?.map(p => ({
+        name: p.name,
+        items: p.items?.map(i => ({ name: i.name, qty: i.quantity, price: i.price })) || []
+      })) || [],
       itemCount: populated.items?.length || 0,
       subtotal: populated.subtotal,
       deliveryFee: populated.deliveryFee,
@@ -258,8 +264,14 @@ export class OrdersService {
   async create(customerId: string, data: any): Promise<Order> {
     if (data.type === 'custom_errand') {
       const runnerFee = Number(data.runnerFee);
-      if (!runnerFee || runnerFee <= 0) {
-        throw new BadRequestException('Runner fee must be greater than 0');
+
+      // Fetch minimum runner fee from admin settings
+      const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
+      const minCustomErrandFee = errandSetting?.value?.minCustomErrandFee ?? 400;
+      const commissionPercent = errandSetting?.value?.customErrandCommissionPercentage ?? 20;
+
+      if (!runnerFee || runnerFee < minCustomErrandFee) {
+        throw new BadRequestException(`Runner fee must be at least ₦${minCustomErrandFee}`);
       }
 
       const itemCost = Number(data.estimatedItemCost) || 0;
@@ -271,8 +283,6 @@ export class OrdersService {
       const total = itemCost + runnerFee + serviceFee + transferFee;
 
       // Commission from Runner (Primary Model)
-      const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
-      const commissionPercent = errandSetting?.value?.customErrandCommissionPercentage ?? 20;
       const commissionAmount = Math.round(runnerFee * (commissionPercent / 100));
       const erranderShare = runnerFee - commissionAmount;
       const platformShare = serviceFee + commissionAmount;
@@ -1593,7 +1603,7 @@ export class OrdersService {
     return { orders: augmentedOrders, total };
   }
 
-  async getVendorOrders(vendorId: string, status?: OrderStatus, page: any = 1, limit: any = 20) {
+  async getVendorOrders(vendorId: string, status?: OrderStatus, page: any = 1, limit: any = 50) {
     if (!Types.ObjectId.isValid(vendorId)) {
       return { orders: [], total: 0 };
     }
@@ -1649,7 +1659,7 @@ export class OrdersService {
         filter.status = { $nin: [OrderStatus.PENDING, OrderStatus.AWAITING_PAYMENT] };
       }
       const p = Math.max(1, Number(page) || 1);
-      const l = Math.max(1, Number(limit) || 10);
+      const l = Math.max(1, Number(limit) || 50);
       const skip = (p - 1) * l;
 
       const [orders, total] = await Promise.all([
@@ -1688,7 +1698,7 @@ export class OrdersService {
     return this.orderModel
       .find({ errander: new Types.ObjectId(erranderId) })
       .populate('vendor', 'storeName logo address location')
-      .populate('customer', 'firstName lastName phone avatar deliveryAddress location')
+      .populate('customer', 'firstName lastName phone avatar deliveryAddress location gender')
       .sort({ createdAt: -1 });
   }
 
@@ -1704,7 +1714,7 @@ export class OrdersService {
         ]
       })
       .populate('vendor', 'storeName logo address location')
-      .populate('customer', 'firstName lastName deliveryAddress location')
+      .populate('customer', 'firstName lastName deliveryAddress location gender')
       .sort({ createdAt: -1 });
   }
 
@@ -1712,7 +1722,7 @@ export class OrdersService {
     return this.withRetry(async () => {
       const order = await this.orderModel
         .findById(id)
-        .populate('customer', 'firstName lastName phone avatar deliveryAddress location')
+        .populate('customer', 'firstName lastName phone avatar deliveryAddress location gender')
         .populate({
           path: 'vendor',
           select: 'storeName logo phone address location user owner',
@@ -2100,7 +2110,7 @@ export class OrdersService {
 
 //   return this.getVendorOrders(vendor._id.toString(), status, page, limit);
 // }
-async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, limit = 10) {
+async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, limit = 50) {
   this.logger.log(`getOrdersForVendorOwner() ownerId=${ownerId}`);
 
   const vendor = await this.vendorModel.findOne({ owner: new Types.ObjectId(ownerId) });

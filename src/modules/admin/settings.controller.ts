@@ -23,7 +23,7 @@ export class SettingsController {
       // Seed default settings if not exists
       setting = await this.settingModel.create({
         key: 'custom_errand',
-        value: { baseFee: 450, expressFee: 850, convenienceFee: 50, commissionFlatFee: 50, customErrandCommissionPercentage: 20, platformProcessingFee: 500, platformServiceFeePercentage: 5, foodMarkupPercentage: 5, minOutsideCampusFee: 450 },
+        value: { baseFee: 450, expressFee: 850, convenienceFee: 50, commissionFlatFee: 50, customErrandCommissionPercentage: 20, platformProcessingFee: 500, platformServiceFeePercentage: 5, foodMarkupPercentage: 5, minOutsideCampusFee: 450, minCustomErrandFee: 400 },
       });
     }
     return setting.value;
@@ -34,7 +34,7 @@ export class SettingsController {
   @Roles(UserRole.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update custom errand pricing settings (admin only)' })
-  async updateCustomErrandSettings(@Body() body: { baseFee: number; expressFee: number; convenienceFee?: number; commissionFlatFee?: number; customErrandCommissionPercentage?: number; platformProcessingFee?: number; platformServiceFeePercentage?: number; foodMarkupPercentage?: number; minOutsideCampusFee?: number }) {
+  async updateCustomErrandSettings(@Body() body: { baseFee: number; expressFee: number; convenienceFee?: number; commissionFlatFee?: number; customErrandCommissionPercentage?: number; platformProcessingFee?: number; platformServiceFeePercentage?: number; foodMarkupPercentage?: number; minOutsideCampusFee?: number; minCustomErrandFee?: number }) {
     let setting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
     if (!setting) {
       setting = new this.settingModel({ key: 'custom_errand' });
@@ -49,7 +49,41 @@ export class SettingsController {
       platformServiceFeePercentage: Number(body.platformServiceFeePercentage ?? 5),
       foodMarkupPercentage: Number(body.foodMarkupPercentage ?? 5),
       minOutsideCampusFee: Number(body.minOutsideCampusFee ?? 450),
+      minCustomErrandFee: Number(body.minCustomErrandFee ?? 400),
     };
+    await setting.save();
+    return setting.value;
+  }
+  @Get('negotiation')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get negotiation platform fee settings' })
+  async getNegotiationSettings() {
+    let setting = await this.settingModel.findOne({ key: 'negotiation_settings' }).exec();
+    if (!setting) {
+      setting = await this.settingModel.create({
+        key: 'negotiation_settings',
+        value: { feeType: 'flat', amount: 50 },
+      });
+    }
+    return setting.value;
+  }
+
+  @Put('negotiation')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update negotiation platform fee settings (admin only)' })
+  async updateNegotiationSettings(@Body() body: { feeType: 'flat' | 'percentage'; amount: number }) {
+    let setting = await this.settingModel.findOne({ key: 'negotiation_settings' }).exec();
+    if (!setting) {
+      setting = new this.settingModel({ key: 'negotiation_settings' });
+    }
+    setting.value = {
+      feeType: body.feeType || 'flat',
+      amount: Number(body.amount ?? 50),
+    };
+    setting.markModified('value');
     await setting.save();
     return setting.value;
   }

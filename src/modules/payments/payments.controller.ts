@@ -9,7 +9,7 @@ import { OrdersService } from '../orders/orders.service';
 import { AppointmentsService } from '../appointments/appointments.service';
 import { WalletsService } from '../wallets/wallets.service';
 import { TransactionStatus } from '../wallets/schemas/transaction.schema';
-import { OrderStatus, PaymentStatus } from '../orders/schemas/order.schema';
+import { OrderStatus, PaymentStatus, OrderType } from '../orders/schemas/order.schema';
 import { User } from '../users/schemas/user.schema';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -64,11 +64,41 @@ export class PaymentsController {
       } else {
         const orderId = data.metadata?.orderId;
         const orderIds = data.metadata?.orderIds;
+        const isCustomErrand = data.metadata?.type === 'custom_errand' || data.metadata?.isCustomErrand;
         const idsToProcess = orderIds || (orderId ? [orderId] : []);
 
         for (const id of idsToProcess) {
           const order = await this.ordersService.findById(id);
-          if (order && (order.status !== OrderStatus.CONFIRMED || order.paymentStatus !== PaymentStatus.PAID)) {
+          if (!order) continue;
+
+          // Custom errand initial payment: mark PAID but keep status as PENDING (awaiting rider)
+          // Also handle awaiting_payment status for custom errand bid acceptance payment
+          if (order.type === OrderType.CUSTOM_ERRAND || isCustomErrand) {
+            if (order.paymentStatus !== PaymentStatus.PAID) {
+              await (this.ordersService as any).orderModel.updateOne(
+                { _id: id },
+                { $set: { paymentStatus: PaymentStatus.PAID, paymentReference: reference } }
+              );
+              this.logger.log(`Custom errand ${id}: payment marked PAID, status stays ${order.status}`);
+            }
+
+            // If the order was awaiting_payment (bid accepted), confirm it via payForCustomErrand logic
+            if (order.status === OrderStatus.AWAITING_PAYMENT) {
+              try {
+                await this.ordersService.payForCustomErrand(id, order.customer.toString(), reference);
+                this.logger.log(`Custom errand ${id}: awaiting_payment → confirmed via verify`);
+              } catch (e: any) {
+                this.logger.warn(`Custom errand ${id} payForCustomErrand failed (may already be processed): ${e.message}`);
+              }
+            } else if (order.status === OrderStatus.PENDING) {
+              // Initial creation payment — broadcast to erranders so riders can see it
+              await this.ordersService.broadcastNewOrderToErranders(order);
+              this.logger.log(`Custom errand ${id}: broadcasted to erranders after payment verification`);
+            }
+            continue;
+          }
+
+          if (order.status !== OrderStatus.CONFIRMED || order.paymentStatus !== PaymentStatus.PAID) {
             // Set payment status to PAID
             await (this.ordersService as any).orderModel.updateOne({ _id: id }, { $set: { paymentStatus: PaymentStatus.PAID } });
 
@@ -202,6 +232,7 @@ export class PaymentsController {
           } else {
             const orderId = data.metadata?.orderId;
             const orderIds = data.metadata?.orderIds; // New: support for multi-vendor checkout
+            const isCustomErrand = data.metadata?.type === 'custom_errand' || data.metadata?.isCustomErrand;
             
             const idsToProcess = orderIds || (orderId ? [orderId] : []);
 
@@ -225,6 +256,29 @@ export class PaymentsController {
             for (const order of ordersToProcess) {
               const id = order._id.toString();
               try {
+                // Custom errand: mark payment, handle status appropriately
+                if (order.type === OrderType.CUSTOM_ERRAND || isCustomErrand) {
+                  if (order.paymentStatus !== PaymentStatus.PAID) {
+                    await (this.ordersService as any).orderModel.updateOne(
+                      { _id: id },
+                      { $set: { paymentStatus: PaymentStatus.PAID, paymentReference: reference } }
+                    );
+                    this.logger.log(`Webhook: Custom errand ${id} payment marked PAID, status stays ${order.status}`);
+                  }
+                  if (order.status === OrderStatus.AWAITING_PAYMENT) {
+                    try {
+                      await this.ordersService.payForCustomErrand(id, order.customer.toString(), reference);
+                      this.logger.log(`Webhook: Custom errand ${id}: awaiting_payment → confirmed`);
+                    } catch (e: any) {
+                      this.logger.warn(`Webhook: Custom errand ${id} payForCustomErrand skipped: ${e.message}`);
+                    }
+                  } else if (order.status === OrderStatus.PENDING) {
+                    await this.ordersService.broadcastNewOrderToErranders(order);
+                    this.logger.log(`Webhook: Custom errand ${id} broadcasted to erranders`);
+                  }
+                  continue;
+                }
+
                 // Idempotency: Check if order is already confirmed
                 if (order.status === OrderStatus.CONFIRMED && order.paymentStatus === PaymentStatus.PAID) {
                   this.logger.log(`Order ${id} already confirmed and paid, skipping webhook logic.`);
