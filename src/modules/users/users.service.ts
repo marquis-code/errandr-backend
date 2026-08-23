@@ -8,10 +8,28 @@ import { augmentVendor } from '../../utils/vendor-helpers';
 export class UsersService {
   constructor(@InjectModel(User.name) private userModel: Model<User>) {}
 
-  async findById(id: string): Promise<User> {
-    const user = await this.userModel.findById(id).select('-password');
-    if (!user) throw new NotFoundException('User not found');
-    return user;
+  async findById(id: string): Promise<any> {
+    const user = await this.userModel.aggregate([
+      { $match: { _id: new Types.ObjectId(id) } },
+      {
+        $lookup: {
+          from: 'wallets',
+          localField: '_id',
+          foreignField: 'owner',
+          as: 'walletInfo'
+        }
+      },
+      {
+        $addFields: {
+          walletBalance: { 
+            $ifNull: [ { $arrayElemAt: ['$walletInfo.balance', 0] }, 0 ] 
+          }
+        }
+      },
+      { $project: { password: 0, walletInfo: 0 } }
+    ]);
+    if (!user || user.length === 0) throw new NotFoundException('User not found');
+    return user[0];
   }
 
   async findByEmail(email: string): Promise<User | null> {
@@ -36,10 +54,30 @@ export class UsersService {
       .select('-password');
   }
 
-  async findAll(page = 1, limit = 20): Promise<{ users: User[]; total: number }> {
+  async findAll(page = 1, limit = 20): Promise<{ users: any[]; total: number }> {
     const skip = (page - 1) * limit;
     const [users, total] = await Promise.all([
-      this.userModel.find().select('-password').skip(skip).limit(limit).sort({ createdAt: -1 }),
+      this.userModel.aggregate([
+        { $sort: { createdAt: -1 } },
+        { $skip: skip },
+        { $limit: limit },
+        {
+          $lookup: {
+            from: 'wallets',
+            localField: '_id',
+            foreignField: 'owner',
+            as: 'walletInfo'
+          }
+        },
+        {
+          $addFields: {
+            walletBalance: { 
+              $ifNull: [ { $arrayElemAt: ['$walletInfo.balance', 0] }, 0 ] 
+            }
+          }
+        },
+        { $project: { password: 0, walletInfo: 0 } }
+      ]),
       this.userModel.countDocuments(),
     ]);
     return { users, total };
