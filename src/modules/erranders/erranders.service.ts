@@ -116,7 +116,7 @@ export class ErrandersService {
 
       if (errander && errander.user) {
         const WalletModel = this.userModel.db.model('Wallet');
-        const wallet = await WalletModel.findOne({ owner: errander.user._id }).lean();
+        const wallet: any = await WalletModel.findOne({ owner: errander.user._id }).lean();
         (errander.user as any).walletBalance = wallet?.balance || 0;
         (errander.user as any).bankDetails = wallet?.bankDetails || null;
       }
@@ -186,7 +186,7 @@ export class ErrandersService {
     // Attach wallet balances and bank details
     const userIds = errandersRaw.map((e: any) => e.user?._id).filter(Boolean);
     const WalletModel = this.userModel.db.model('Wallet');
-    const wallets = await WalletModel.find({ owner: { $in: userIds } }).lean();
+    const wallets: any[] = await WalletModel.find({ owner: { $in: userIds } }).lean();
 
     const erranders = errandersRaw.map((errander: any) => {
       const wallet = wallets.find((w: any) => w.owner.toString() === errander.user?._id?.toString());

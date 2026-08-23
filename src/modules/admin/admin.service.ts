@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { User } from '../users/schemas/user.schema';
 import { Vendor, VendorStatus } from '../vendors/schemas/vendor.schema';
 import { Order, OrderStatus } from '../orders/schemas/order.schema';
@@ -126,7 +126,7 @@ export class AdminService {
 
   async getUser(id: string) {
     const user = await this.userModel.aggregate([
-      { $match: { _id: new import('mongoose').Types.ObjectId(id) } },
+      { $match: { _id: new Types.ObjectId(id) } },
       {
         $lookup: {
           from: 'wallets',
