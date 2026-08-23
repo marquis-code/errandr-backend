@@ -105,4 +105,8 @@ export class CreateMenuItemDto {
   @IsOptional()
   @IsBoolean()
   isPackagingFeeIncluded?: boolean = false;
+
+  @IsOptional()
+  @IsBoolean()
+  isPrepaidByPlatform?: boolean;
 }
