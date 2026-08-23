@@ -103,11 +103,48 @@ export class AdminService {
   }
 
   async getUsers() {
-    return this.userModel.find().sort({ createdAt: -1 });
+    return this.userModel.aggregate([
+      { $sort: { createdAt: -1 } },
+      {
+        $lookup: {
+          from: 'wallets',
+          localField: '_id',
+          foreignField: 'owner',
+          as: 'walletInfo'
+        }
+      },
+      {
+        $addFields: {
+          walletBalance: { 
+            $ifNull: [ { $arrayElemAt: ['$walletInfo.balance', 0] }, 0 ] 
+          }
+        }
+      },
+      { $project: { password: 0, walletInfo: 0 } }
+    ]);
   }
 
   async getUser(id: string) {
-    return this.userModel.findById(id);
+    const user = await this.userModel.aggregate([
+      { $match: { _id: new import('mongoose').Types.ObjectId(id) } },
+      {
+        $lookup: {
+          from: 'wallets',
+          localField: '_id',
+          foreignField: 'owner',
+          as: 'walletInfo'
+        }
+      },
+      {
+        $addFields: {
+          walletBalance: { 
+            $ifNull: [ { $arrayElemAt: ['$walletInfo.balance', 0] }, 0 ] 
+          }
+        }
+      },
+      { $project: { password: 0, walletInfo: 0 } }
+    ]);
+    return user[0];
   }
 
   async getVendors() {
