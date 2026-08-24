@@ -273,6 +273,10 @@ export class VendorsService {
     const vendor = await this.vendorModel.findById(id);
     if (!vendor) throw new NotFoundException('Vendor not found');
     
+    if (!user) {
+      throw new ForbiddenException('User is required to toggle online status');
+    }
+    
     const vOwnerId = ((vendor.owner as any)?._id || vendor.owner).toString();
     const reqOwnerId = ((user as any)?._id || user).toString();
 
@@ -281,7 +285,7 @@ export class VendorsService {
     }
 
     vendor.isOnline = !vendor.isOnline;
-    await vendor.save();
+    await this.vendorModel.updateOne({ _id: vendor._id }, { $set: { isOnline: vendor.isOnline } }, { runValidators: false });
 
     // Cache vendor status in Redis for fast lookups
     await this.redisService.set(
