@@ -269,14 +269,14 @@ export class VendorsService {
     return vendor;
   }
 
-  async toggleOnline(id: string, ownerId: string): Promise<Vendor> {
+  async toggleOnline(id: string, user: User): Promise<Vendor> {
     const vendor = await this.vendorModel.findById(id);
     if (!vendor) throw new NotFoundException('Vendor not found');
     
     const vOwnerId = ((vendor.owner as any)?._id || vendor.owner).toString();
-    const reqOwnerId = ((ownerId as any)?._id || ownerId).toString();
+    const reqOwnerId = ((user as any)?._id || user).toString();
 
-    if (vOwnerId !== reqOwnerId) {
+    if (vOwnerId !== reqOwnerId && (user.role as string) !== 'admin') {
       throw new ForbiddenException('You do not have permission to modify this vendor');
     }
 

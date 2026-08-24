@@ -181,7 +181,7 @@ export class VendorsController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Toggle vendor online/offline status' })
   toggleOnline(@Param('id') id: string, @CurrentUser() user: User) {
-    return this.vendorsService.toggleOnline(id, (user._id as unknown) as string);
+    return this.vendorsService.toggleOnline(id, user);
   }
 
   @Get(':id/reviews')
