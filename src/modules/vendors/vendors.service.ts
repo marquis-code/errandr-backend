@@ -241,9 +241,11 @@ export class VendorsService {
     delete (data as any).updatedAt;
     delete data.owner;
 
-    Object.assign(vendor, data);
-    await vendor.save();
-    return vendor;
+    await this.vendorModel.updateOne({ _id: vendor._id }, { $set: data }, { runValidators: false });
+    
+    // Fetch updated vendor to return
+    const updatedVendor = await this.vendorModel.findById(vendor._id);
+    return augmentVendor(updatedVendor);
   }
 
   async adminUpdate(id: string, data: Partial<Vendor>): Promise<Vendor> {
@@ -293,8 +295,7 @@ export class VendorsService {
       vendor.isOnline ? 'online' : 'offline',
       300,
     );
-
-    return vendor;
+    return augmentVendor(vendor);
   }
 
   async getVendorStats(ownerId: string) {
