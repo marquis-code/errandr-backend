@@ -2075,9 +2075,14 @@ export class OrdersService {
     const order = await this.orderModel.findById(orderId);
     if (!order) throw new NotFoundException('Order not found');
 
-    const allowedStatuses = [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.NEGOTIATING, OrderStatus.AWAITING_PAYMENT];
+    const allowedStatuses = [
+      OrderStatus.PENDING, 
+      OrderStatus.AWAITING_PAYMENT, 
+      OrderStatus.NEGOTIATING, 
+      OrderStatus.SCHEDULED
+    ];
     if (!allowedStatuses.includes(order.status)) {
-      throw new BadRequestException('Order cannot be cancelled at this stage');
+      throw new BadRequestException('Order cannot be cancelled at this stage. It has already been accepted.');
     }
 
     order.status = OrderStatus.CANCELLED;
