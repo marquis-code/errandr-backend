@@ -120,9 +120,13 @@ export class NegotiationGateway
         agreedDeliveryFee: result.bid.bidAmount,
         total: result.order.total
       });
-      return { success: true };
+      return { success: true, total: result.order.total };
     } catch (e) {
       return { success: false, error: e.message };
     }
+  }
+
+  sendOrderAcceptedDirectly(orderId: string, payload: any) {
+    this.server.to(`negotiation:${orderId}`).emit('orderAcceptedDirectly', payload);
   }
 }

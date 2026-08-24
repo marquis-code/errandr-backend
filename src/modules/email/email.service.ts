@@ -41,7 +41,7 @@ export class EmailService {
     this.fromEmail = from.replace(/['"]+/g, '');
   }
 
-  async sendEmail(to: string, subject: string, html: string) {
+  async sendEmail(to: string, subject: string, html: string, attachments?: any[]) {
     console.log(`\x1b[35m[EMAIL_AGENT]\x1b[0m 🚀 Triggering email to: \x1b[36m${to}\x1b[0m`);
     console.log(`\x1b[35m[EMAIL_AGENT]\x1b[0m 📎 Subject: \x1b[33m${subject}\x1b[0m`);
 
@@ -70,13 +70,19 @@ export class EmailService {
         return { error: 'Invalid recipient address' };
       }
 
-      const { data, error } = await this.resend.emails.send({
+      const payload: any = {
         from: this.fromEmail,
         to: Array.isArray(to) ? to : [to],
         subject,
         html: html,
         replyTo: 'hello@erranders.org',
-      });
+      };
+      
+      if (attachments && attachments.length > 0) {
+        payload.attachments = attachments;
+      }
+
+      const { data, error } = await this.resend.emails.send(payload);
 
       if (error) {
         console.error(`\x1b[31m[EMAIL_AGENT] ❌ Delivery Error: ${error.message}\x1b[0m`);
@@ -156,14 +162,14 @@ export class EmailService {
         .ecosystem-title { font-size: 11px; font-weight: 800; color: #a1a1aa; text-transform: uppercase; letter-spacing: 1.5px; margin: 0 0 6px; }
         .ecosystem-subtitle { font-size: 13px; color: #71717a; margin: 0 0 24px; font-weight: 500; }
         
-        .footer { padding: 40px 32px; text-align: center; background-color: #171721; color: #a1a1aa; }
+        .footer { padding: 40px 32px; text-align: center; background-color: #ffffff; color: #71717a; border-top: 1px solid #f4f4f5; }
         .footer-logo { display: inline-flex; align-items: center; justify-content: center; margin-bottom: 20px; }
         .footer-logo img { height: 24px; }
-        .footer-tagline { color: #ffffff; font-weight: 700; font-size: 15px; margin: 0 0 8px; }
+        .footer-tagline { color: #171721; font-weight: 700; font-size: 15px; margin: 0 0 8px; }
         .footer-desc { margin: 0 0 24px; line-height: 1.6; font-size: 13px; max-width: 400px; margin-left: auto; margin-right: auto; }
         .footer-links { margin-bottom: 24px; }
         .footer-links a { color: #FF5C1A; text-decoration: none; font-size: 13px; margin: 0 12px; font-weight: 600; }
-        .footer-copy { margin: 0; font-size: 11px; color: #71717a; }
+        .footer-copy { margin: 0; font-size: 11px; color: #a1a1aa; }
         
         .outer-footer { text-align: center; margin-top: 24px; color: #a1a1aa; font-size: 11px; font-weight: 500; }
         
@@ -216,9 +222,7 @@ export class EmailService {
               <table style="width: 100%; border-collapse: collapse;">
                 <tr>
                   <td style="width: 40px; vertical-align: top;">
-                    <div style="width: 32px; height: 32px; background: #171721; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; text-align: center; line-height: 32px;">
-                       🛍️
-                    </div>
+                    <div style="width: 32px; height: 32px; background: #171721; border-radius: 8px; text-align: center; line-height: 32px; font-size: 16px;">🛍️</div>
                   </td>
                   <td style="padding-left: 12px; vertical-align: top;">
                     <p style="margin: 0 0 4px; font-size: 13px; font-weight: 700; color: #27272a;">Order on Erranders</p>
@@ -238,9 +242,7 @@ export class EmailService {
               <table style="width: 100%; border-collapse: collapse;">
                 <tr>
                   <td style="width: 40px; vertical-align: top;">
-                    <div style="width: 32px; height: 32px; background: #171721; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; text-align: center; line-height: 32px;">
-                       🏪
-                    </div>
+                    <div style="width: 32px; height: 32px; background: #171721; border-radius: 8px; text-align: center; line-height: 32px; font-size: 16px;">🏪</div>
                   </td>
                   <td style="padding-left: 12px; vertical-align: top;">
                     <p style="margin: 0 0 4px; font-size: 13px; font-weight: 700; color: #27272a;">Sell on Erranders</p>
@@ -260,9 +262,7 @@ export class EmailService {
               <table style="width: 100%; border-collapse: collapse;">
                 <tr>
                   <td style="width: 40px; vertical-align: top;">
-                    <div style="width: 32px; height: 32px; background: #EA580C; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; text-align: center; line-height: 32px;">
-                       🛵
-                    </div>
+                    <div style="width: 32px; height: 32px; background: #EA580C; border-radius: 8px; text-align: center; line-height: 32px; font-size: 16px;">🛵</div>
                   </td>
                   <td style="padding-left: 12px; vertical-align: top;">
                     <p style="margin: 0 0 4px; font-size: 13px; font-weight: 700; color: #27272a;">Become a Dispatch Rider <span style="background: #FF5C1A; color: #ffffff; padding: 2px 6px; border-radius: 4px; font-size: 9px; margin-left: 4px; vertical-align: middle;">EARN</span></p>
@@ -477,29 +477,38 @@ export class EmailService {
       </tr>
     `).join('') || '';
 
+    const customerName = (order.customer && order.customer.firstName) ? order.customer.firstName : 'Student';
+    const securityPin = order.securityPin || 'N/A';
+
     const html = this.wrap({
-      preheader: `Order #${order.orderNumber} confirmed!`,
-      badge: { text: 'ORDER CONFIRMED', color: 'orange' },
-      title: 'Your order is being prepared!',
-      subtitle: `Order <b>#${order.orderNumber}</b> is confirmed and the vendor is preparing it now.`,
+      preheader: `Payment confirmed for Order #${order.orderNumber}!`,
+      badge: { text: 'PAYMENT CONFIRMED', color: 'green' },
+      title: `Thank you for your order, ${customerName}!`,
+      subtitle: `We've received your payment for order <b>#${order.orderNumber}</b>. The vendor is preparing it right now!`,
       content: `
+        <div class="card" style="background: #FFF4F0; text-align: center; border-color: #ffedd5; margin-bottom: 24px;">
+          <p class="card-label" style="color: #EA580C; margin-bottom: 8px;">Your Delivery Security PIN</p>
+          <p style="font-size: 32px; font-weight: 800; color: #FF5C1A; letter-spacing: 4px; margin: 0;">${securityPin}</p>
+          <p style="font-size: 13px; color: #9a3412; margin: 12px 0 0;">Please provide this PIN to your Errander upon delivery. Keep it safe!</p>
+        </div>
+
         <div class="card" style="text-align: left;">
-          <p class="card-label" style="margin-bottom: 12px;">Order Summary</p>
+          <p class="card-label" style="margin-bottom: 12px;">Order Details</p>
           <table class="data-table">
             ${itemsHtml}
             <tr>
-              <td style="padding: 16px 0 0; font-size: 14px; font-weight: 600; color: #27272a; border-top: 1px solid #e4e4e7; margin-top: 8px;">Total</td>
-              <td style="padding: 16px 0 0; font-size: 16px; font-weight: 700; color: #FF5C1A; text-align: right; border-top: 1px solid #e4e4e7; margin-top: 8px;">₦${order.total?.toLocaleString()}</td>
+              <td style="padding: 16px 0 0; font-size: 14px; font-weight: 600; color: #27272a; border-top: 1px solid #e4e4e7; margin-top: 8px;">Total Paid</td>
+              <td style="padding: 16px 0 0; font-size: 16px; font-weight: 700; color: #10B981; text-align: right; border-top: 1px solid #e4e4e7; margin-top: 8px;">₦${order.total?.toLocaleString()}</td>
             </tr>
           </table>
         </div>
 
         <div style="text-align: center;">
-          <a href="https://www.erranders.org/dashboard/orders/${order._id}" class="btn">Track Order</a>
+          <a href="https://www.erranders.org/dashboard/orders/${order._id}" class="btn">Track Order Progress</a>
         </div>
       `
     });
-    return this.sendEmail(to, `🚀 Order Confirmed: #${order.orderNumber}`, html);
+    return this.sendEmail(to, `🚀 Payment Confirmed: Order #${order.orderNumber}`, html);
   }
 
   async sendPaymentReceipt(to: string, amount: number, reference: string, method: string = 'Card', senderName: string = 'Erranders User', dateStr?: string) {
@@ -641,21 +650,142 @@ export class EmailService {
   }
 
   async sendOrderDelivered(to: string, order: any) {
+    const itemsHtml = order.items?.map((item: any) => `
+      <tr>
+        <td align="left" style="padding-bottom: 12px; color: #71717a; width: 60%;">${item.name} × ${item.quantity}</td>
+        <td align="right" style="padding-bottom: 12px; font-weight: 700; color: #27272a; width: 40%;">₦${(item.price * item.quantity).toLocaleString()}</td>
+      </tr>
+    `).join('') || '';
+
     const html = this.wrap({
       preheader: `Order #${order.orderNumber} delivered!`,
       badge: { text: 'DELIVERED', color: 'green' },
-      title: 'Order Delivered!',
-      subtitle: `Order <b>#${order.orderNumber}</b> has been delivered. Enjoy!`,
+      title: 'Order Delivered! 🎉',
+      subtitle: `Your order <b>#${order.orderNumber}</b> has been successfully delivered. Enjoy!`,
       content: `
-        <span style="font-size: 64px; display: block; margin: 0 0 24px;">🏁</span>
-        <div class="card" style="background: #FFF7ED; border-color: #ffedd5; text-align: left;">
+        <div style="border: 1px dashed #e4e4e7; border-radius: 12px; padding: 24px; margin-bottom: 32px; background: #fafafa;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="font-size: 14px;">
+            <tr>
+              <td align="left" style="padding-bottom: 16px; color: #71717a; width: 60%;">Order ID</td>
+              <td align="right" style="padding-bottom: 16px; font-weight: 700; color: #27272a; width: 40%;">#${order.orderNumber}</td>
+            </tr>
+            ${itemsHtml}
+            <tr>
+              <td align="left" style="padding-bottom: 16px; color: #71717a; border-top: 1px dashed #e4e4e7; padding-top: 16px; width: 60%;">Total Paid</td>
+              <td align="right" style="padding-bottom: 16px; color: #10B981; font-weight: 700; font-size: 16px; border-top: 1px dashed #e4e4e7; padding-top: 16px; width: 40%;">₦${order.total?.toLocaleString()}</td>
+            </tr>
+            <tr>
+              <td align="left" style="color: #71717a; width: 60%;">Status</td>
+              <td align="right" style="font-weight: 700; color: #27272a; width: 40%;">Delivered ✅</td>
+            </tr>
+          </table>
+        </div>
+
+        <div style="background: #FFF4F0; border-radius: 12px; padding: 24px; margin-bottom: 32px; text-align: center;">
+          <h3 style="color: #FF5C1A; margin: 0 0 8px 0; font-size: 18px;">Erranders is everywhere you are! 🧡</h3>
+          <p style="color: #3f3f46; font-size: 14px; margin: 0 0 16px 0; line-height: 1.5;">Want food, groceries, or need to send a package? Get the <strong>Student App</strong>. Want to earn? Join the <strong>Vendor App</strong> or ride with the <strong>Dispatch App</strong>!</p>
+          <a href="https://www.erranders.org" class="btn" style="width: auto !important; display: inline-block !important;">Explore Our Apps</a>
+        </div>
+
+        <div class="card" style="background: #FFF7ED; border-color: #ffedd5; text-align: left; padding: 24px; margin-bottom: 0;">
           <p style="font-size: 14px; font-weight: 700; color: #EA580C; margin: 0 0 6px;">Rate your experience ⭐</p>
           <p style="font-size: 13px; color: #9a3412; margin: 0 0 16px; line-height: 1.5;">Ratings help us maintain quality and reward top riders.</p>
-          <a href="https://www.erranders.org/dashboard/orders/${order._id}" class="btn" style="padding: 8px 16px; font-size: 12px;">Tap to Rate</a>
+          <a href="https://www.erranders.org/dashboard/orders/${order._id}" class="btn" style="padding: 10px 20px; font-size: 13px; display: inline-block !important; width: auto !important;">Tap to Rate</a>
         </div>
       `
     });
-    return this.sendEmail(to, `Order Delivered! 🍽️ #${order.orderNumber}`, html);
+
+    let attachments: any[] = [];
+    try {
+      const pdfBuffer = await this.generateOrderReceiptPDF(order);
+      attachments.push({
+        filename: `Order_Receipt_${order.orderNumber}.pdf`,
+        content: pdfBuffer,
+      });
+    } catch (err) {
+      console.error('Failed to attach order receipt PDF:', err);
+    }
+
+    return this.sendEmail(to, `Order Delivered! 🍽️ #${order.orderNumber}`, html, attachments);
+  }
+
+  private async generateOrderReceiptPDF(order: any): Promise<Buffer> {
+    const PDFDocument = require('pdfkit');
+    
+    return new Promise((resolve, reject) => {
+      try {
+        const doc = new PDFDocument({ margin: 0, size: 'A4' });
+        const buffers: Buffer[] = [];
+        
+        doc.on('data', buffers.push.bind(buffers));
+        doc.on('end', () => resolve(Buffer.concat(buffers)));
+
+        const pageWidth = doc.page.width;
+        const pageHeight = doc.page.height;
+        
+        // Background
+        doc.rect(0, 0, pageWidth, pageHeight).fill('#F4F4F5'); // Light gray background
+        
+        // Ticket shape
+        const ticketWidth = 380;
+        const ticketHeight = 520;
+        const startX = (pageWidth - ticketWidth) / 2;
+        const startY = 80;
+        
+        doc.roundedRect(startX, startY, ticketWidth, ticketHeight, 16).fill('#FFFFFF');
+        
+        // Title
+        doc.fillColor('#171721').fontSize(18).font('Helvetica-Bold').text('Order Receipt', startX, startY + 40, { align: 'center', width: ticketWidth });
+        doc.fillColor('#71717A').fontSize(11).font('Helvetica').text('Thank you for ordering with Erranders.', startX, startY + 65, { align: 'center', width: ticketWidth });
+        
+        const contentY = startY + 120;
+        
+        // Two columns for ID and Status
+        doc.fillColor('#A1A1AA').fontSize(9).font('Helvetica').text('ORDER ID', startX + 32, contentY);
+        doc.text('STATUS', startX + ticketWidth - 120, contentY, { align: 'right', width: 88 });
+        
+        doc.fillColor('#171721').fontSize(12).font('Helvetica-Bold').text('#' + order.orderNumber, startX + 32, contentY + 14);
+        doc.fillColor('#10B981').fontSize(12).font('Helvetica-Bold').text('Delivered ✅', startX + ticketWidth - 160, contentY + 14, { align: 'right', width: 128 });
+        
+        // Date & Time
+        doc.fillColor('#A1A1AA').fontSize(9).font('Helvetica').text('DATE & TIME', startX + 32, contentY + 50);
+        doc.fillColor('#171721').fontSize(11).font('Helvetica-Bold').text(new Date().toLocaleString('en-US', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }), startX + 32, contentY + 64);
+        
+        // Items Box
+        const boxY = contentY + 105;
+        doc.roundedRect(startX + 32, boxY, ticketWidth - 64, order.items?.length * 25 + 60, 8).fill('#F8FAFC');
+        
+        let itemY = boxY + 16;
+        order.items?.forEach((item: any) => {
+          doc.fillColor('#171721').fontSize(11).font('Helvetica-Bold').text(item.name + ' x ' + item.quantity, startX + 48, itemY, { width: 200 });
+          doc.fillColor('#171721').fontSize(11).font('Helvetica-Bold').text('NGN ' + (item.price * item.quantity).toLocaleString(), startX + ticketWidth - 148, itemY, { align: 'right', width: 100 });
+          itemY += 25;
+        });
+
+        // Total
+        doc.moveTo(startX + 48, itemY).lineTo(startX + ticketWidth - 48, itemY).lineWidth(1).strokeColor('#E2E8F0').stroke();
+        itemY += 16;
+        doc.fillColor('#171721').fontSize(12).font('Helvetica-Bold').text('Total', startX + 48, itemY);
+        doc.fillColor('#FF5C1A').fontSize(14).font('Helvetica-Bold').text('NGN ' + (order.total || 0).toLocaleString(), startX + ticketWidth - 148, itemY - 2, { align: 'right', width: 100 });
+        
+        // Barcode simulation at the bottom
+        const barcodeY = ticketHeight + startY - 70;
+        const barcodeStartX = startX + 60;
+        const barcodeWidth = ticketWidth - 120;
+        doc.rect(barcodeStartX, barcodeY, barcodeWidth, 30).fill('#000000');
+        for (let i = 0; i < 40; i++) {
+          const w = Math.random() * 4 + 1;
+          const x = barcodeStartX + (i * (barcodeWidth / 40));
+          doc.rect(x, barcodeY, w, 30).fill('#FFFFFF');
+        }
+        
+        doc.fillColor('#A1A1AA').fontSize(8).font('Helvetica').text('Erranders is everywhere you are 🧡', startX, ticketHeight + startY + 20, { align: 'center', width: ticketWidth });
+        
+        doc.end();
+      } catch (err) {
+        reject(err);
+      }
+    });
   }
 
   // ─── SUPPORT ─────────────────────────────────────────────────────
@@ -697,6 +827,110 @@ export class EmailService {
     return this.sendEmail(to, `Wallet Credited — ₦${amount.toLocaleString()}`, html);
   }
 
+  async sendManualPayoutReceipt(to: string, amount: number, description: string, proofUrl?: string) {
+    const html = this.wrap({
+      preheader: `Your payout of ₦${amount.toLocaleString()} is complete!`,
+      badge: { text: 'PAYOUT SUCCESSFUL', color: 'blue' },
+      title: 'Funds Sent!',
+      subtitle: 'We have manually transferred your earnings to your registered bank account.',
+      content: `
+        <span style="font-size: 64px; display: block; margin: 0 0 24px;">💸</span>
+        <div class="card" style="background: #eff6ff; border-color: #dbeafe; text-align: left;">
+          <p class="card-label" style="color: #2563eb;">Payout Amount</p>
+          <p class="card-value" style="color: #1d4ed8;">₦${amount.toLocaleString()}</p>
+          <p style="font-size: 13px; color: #3b82f6; margin: 0 0 8px 0; font-weight: 500;">${description || 'Manual Payout / Adjustment'}</p>
+          ${proofUrl ? `<a href="${proofUrl}" style="font-size: 11px; text-decoration: underline; color: #2563eb; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;">View Proof of Payment ↗</a>` : ''}
+        </div>
+        <p style="color: #64748b; font-size: 14px; line-height: 1.6; margin-bottom: 24px;">Your Erranders wallet has been debited to reflect this transfer. Depending on your bank, it may take a few minutes for the funds to reflect.</p>
+        <a href="https://www.erranders.org/dispatch/wallet" class="btn btn-blue" style="background-color: #2563eb; color: #fff;">Check Wallet Balance</a>
+      `
+    });
+    return this.sendEmail(to, `Payout Successful: ₦${amount.toLocaleString()} sent to your bank`, html);
+  }
+
+  async sendWalletFundingSuccess(to: string, amount: number, description: string) {
+    const html = this.wrap({
+      preheader: `Wallet Funded: ₦${amount.toLocaleString()}`,
+      badge: { text: 'WALLET FUNDED', color: 'green' },
+      title: 'Funds Added! 💰',
+      subtitle: 'Your Erranders wallet has been successfully credited.',
+      content: `
+        <div class="card" style="background: #f0fdf4; border-color: #d1fae5; text-align: center;">
+          <p class="card-label" style="color: #059669;">Amount Credited</p>
+          <p class="card-value" style="color: #059669;">+₦${amount.toLocaleString()}</p>
+          <p style="font-size: 13px; color: #047857; margin: 0 0 8px 0; font-weight: 500;">${description}</p>
+        </div>
+        <p style="color: #64748b; font-size: 14px; line-height: 1.6; margin-bottom: 24px; text-align: center;">You can use this balance immediately for your next orders.</p>
+        <a href="https://www.erranders.org/dashboard/wallet" class="btn btn-green">View Wallet</a>
+      `
+    });
+    return this.sendEmail(to, `Wallet Credited — ₦${amount.toLocaleString()}`, html);
+  }
+
+  async sendWithdrawalRequested(to: string, amount: number, reference: string) {
+    const html = this.wrap({
+      preheader: `Withdrawal Initiated: ₦${amount.toLocaleString()}`,
+      badge: { text: 'WITHDRAWAL INITIATED', color: 'blue' },
+      title: 'Processing Payout ⏳',
+      subtitle: 'Your request to withdraw funds is being processed.',
+      content: `
+        <div class="card" style="background: #eff6ff; border-color: #dbeafe; text-align: left;">
+          <p class="card-label" style="color: #2563eb;">Amount</p>
+          <p class="card-value" style="color: #1d4ed8;">₦${amount.toLocaleString()}</p>
+          <table class="data-table">
+            <tr><td class="label">Reference</td><td class="value" style="color: #1d4ed8; font-family: monospace;">${reference}</td></tr>
+            <tr><td class="label">Status</td><td class="value" style="color: #2563eb;">Processing</td></tr>
+          </table>
+        </div>
+        <p style="color: #64748b; font-size: 14px; line-height: 1.6; margin-bottom: 24px;">We'll notify you as soon as the funds hit your bank account. This usually takes a few minutes.</p>
+      `
+    });
+    return this.sendEmail(to, `Withdrawal Initiated: ₦${amount.toLocaleString()}`, html);
+  }
+
+  async sendPayoutSuccessful(to: string, amount: number, reference: string) {
+    const html = this.wrap({
+      preheader: `Payout Successful: ₦${amount.toLocaleString()}`,
+      badge: { text: 'PAYOUT SUCCESSFUL', color: 'green' },
+      title: 'Funds Sent! 🎉',
+      subtitle: 'Your earnings have been successfully sent to your bank account.',
+      content: `
+        <div class="card" style="background: #f0fdf4; border-color: #d1fae5; text-align: left;">
+          <p class="card-label" style="color: #059669;">Amount Transferred</p>
+          <p class="card-value" style="color: #059669;">₦${amount.toLocaleString()}</p>
+          <table class="data-table">
+            <tr><td class="label">Reference</td><td class="value" style="color: #059669; font-family: monospace;">${reference}</td></tr>
+            <tr><td class="label">Status</td><td class="value" style="color: #059669;">Completed</td></tr>
+          </table>
+        </div>
+        <p style="color: #64748b; font-size: 14px; line-height: 1.6; margin-bottom: 24px;">Your Erranders wallet has been debited. Depending on your bank, it may take a few minutes for the funds to reflect.</p>
+        <a href="https://www.erranders.org/dashboard/wallet" class="btn btn-green">Go to Dashboard</a>
+      `
+    });
+    return this.sendEmail(to, `Payout Successful: ₦${amount.toLocaleString()}`, html);
+  }
+
+  async sendPayoutFailed(to: string, amount: number, reason: string) {
+    const html = this.wrap({
+      preheader: `Payout Failed: ₦${amount.toLocaleString()}`,
+      badge: { text: 'PAYOUT FAILED', color: 'orange' },
+      title: 'Transfer Failed ❌',
+      subtitle: 'We could not complete your withdrawal request.',
+      content: `
+        <div class="card" style="background: #FEF2F2; border-color: #FEE2E2; text-align: left;">
+          <p class="card-label" style="color: #DC2626;">Amount</p>
+          <p class="card-value" style="color: #B91C1C;">₦${amount.toLocaleString()}</p>
+          <table class="data-table">
+            <tr><td class="label">Reason</td><td class="value" style="color: #DC2626;">${reason}</td></tr>
+          </table>
+        </div>
+        <p style="color: #64748b; font-size: 14px; line-height: 1.6; margin-bottom: 24px;">Don't worry, your funds are safe! The amount has been completely refunded back to your Erranders wallet. You can try withdrawing again or contact support.</p>
+        <a href="https://www.erranders.org/dashboard/wallet" class="btn" style="background-color: #DC2626; color: #fff;">Check Wallet Balance</a>
+      `
+    });
+    return this.sendEmail(to, `Action Required: Payout Failed (₦${amount.toLocaleString()})`, html);
+  }
+
   // ─── PROMOTIONAL ────────────────────────────────────────────────
 
   async sendPromotionalEmail(to: string, subject: string, title: string, content: string, ctaText: string, ctaLink: string, image?: string) {
@@ -713,6 +947,63 @@ export class EmailService {
       `
     });
     return this.sendEmail(to, subject, html);
+  }
+
+
+  async sendCuteDailyEmail(to: string, name: string, points: number, orderCount: number) {
+    const formatName = (str: string) => {
+      if (!str) return 'there';
+      return str.split(' ')
+        .filter(part => part.trim().length > 0)
+        .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+        .join(' ')
+        .trim();
+    };
+    
+    const formattedName = formatName(name);
+    
+    let personalizedMessage = '';
+    let ctaText = 'ORDER YOUR MEALS TODAY';
+    let title = 'Fuel your entire day with Erranders 🍳';
+    
+    if (orderCount === 0) {
+      personalizedMessage = `We noticed you haven't made your first purchase with Erranders yet! We are all about delivering joy and happiness in every errand. Why not give us a try today and enjoy your favorite African dishes delivered straight to you?`;
+      title = `Hi ${formattedName}, let's get you started! 🚀`;
+      ctaText = 'MAKE YOUR FIRST ORDER';
+    } else {
+      personalizedMessage = `Wow ${formattedName}, you've already made <b>${orderCount} orders</b> with us! Thank you for letting us deliver joy and happiness to your doorstep. Keep the streak going with some delicious local dishes today!`;
+      title = `Hi ${formattedName}, ready for your next meal? 🥘`;
+    }
+
+    const africanDishes = [
+      'https://images.unsplash.com/photo-1604329760661-e71dc83f8f26?q=80&w=800&auto=format&fit=crop',
+      'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?q=80&w=800&auto=format&fit=crop',
+      'https://images.unsplash.com/photo-1588123190131-1c3fac394f4b?q=80&w=800&auto=format&fit=crop',
+      'https://images.unsplash.com/photo-1504674900247-0877df9cc836?q=80&w=800&auto=format&fit=crop',
+      'https://images.unsplash.com/photo-1628294895950-9805252327bc?q=80&w=800&auto=format&fit=crop',
+      'https://images.unsplash.com/photo-1574484284002-952d92456975?q=80&w=800&auto=format&fit=crop'
+    ];
+    
+    const imageIndex = to.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % africanDishes.length;
+    const selectedImage = africanDishes[imageIndex];
+
+    const html = this.wrap({
+      preheader: 'Your Daily Craving Guide! 🍽️',
+      badge: { text: points > 0 ? `YOU HAVE ${points} POINTS 🌟` : 'DELIVERING JOY', color: 'orange' },
+      title: title,
+      subtitle: personalizedMessage,
+      content: `
+        <img src="${selectedImage}" style="width: 100%; border-radius: 16px; margin: 0 0 24px; display: block; border: 1px solid #e4e4e7; box-shadow: 0 4px 12px rgba(0,0,0,0.05);" alt="Delicious African Dish">
+        <div style="background: #fff8f5; border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 24px; border: 1px dashed #ffb399;">
+          <h3 style="margin: 0 0 8px 0; color: #ff5c1a; font-size: 18px;">Did you know?</h3>
+          <p style="margin: 0; color: #4a4a4a; font-size: 14px; line-height: 1.5;">You can use your <b>${points} points</b> to get discounts on your orders! Erranders is dedicated to delivering happiness in every single errand.</p>
+        </div>
+        <div style="text-align: center;">
+          <a href="https://erranders.org/vendors" class="btn" style="background-color: #ff5c1a; color: white; font-weight: bold; border-radius: 30px; padding: 14px 28px; text-decoration: none; display: inline-block;">${ctaText}</a>
+        </div>
+      `
+    });
+    return this.sendEmail(to, 'Your Daily Craving Guide! 🍽️', html);
   }
 
   // ─── AMBASSADOR ─────────────────────────────────────────────────

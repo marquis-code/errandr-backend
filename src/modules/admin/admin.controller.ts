@@ -179,6 +179,12 @@ export class AdminController {
     return this.adminService.suspendDispatcher(id);
   }
 
+  @Post('dispatchers/:id/debit-earnings')
+  @ApiOperation({ summary: 'Manually debit dispatcher earnings' })
+  debitDispatcherEarnings(@Param('id') id: string, @Body() body: { amount: number, description?: string }) {
+    return this.adminService.debitDispatcherEarnings(id, body.amount, body.description);
+  }
+
   @Put('dispatchers/:id/activate')
   @ApiOperation({ summary: 'Activate a dispatcher' })
   activateDispatcher(@Param('id') id: string) {

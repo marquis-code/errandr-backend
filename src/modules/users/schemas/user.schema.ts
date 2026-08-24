@@ -74,7 +74,7 @@ export class User extends Document {
   @Prop()
   gender: string;
 
-  @Prop({ type: String, enum: ['Male', 'Female', 'Both'], default: 'Both' })
+  @Prop({ type: String, enum: ['Male', 'Female', 'Both', 'Any'], default: 'Both' })
   erranderGenderPreference: string;
 
   @Prop({ default: true })

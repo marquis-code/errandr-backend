@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Body, UseGuards, Param, Res, StreamableFile, Query } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, UseGuards, Param, Res, StreamableFile, Query, Req } from '@nestjs/common';
 import { Response } from 'express';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { WalletsService } from './wallets.service';
@@ -72,6 +72,8 @@ export class WalletsController {
     @Query('sortBy') sortBy?: string,
     @Query('sortOrder') sortOrder?: string,
     @Query('exportAsCsv') exportAsCsv?: string,
+    @Query('type') type?: string,
+    @Query('category') category?: string,
     @Res({ passthrough: true }) res?: Response
   ) {
     const isExport = exportAsCsv === 'true';
@@ -84,7 +86,9 @@ export class WalletsController {
       search,
       sortBy,
       sortOrder,
-      isExport
+      isExport,
+      type,
+      category
     );
 
     if (isExport && res) {
@@ -145,5 +149,25 @@ export class WalletsController {
   ) {
     await this.walletsService.fundWalletByAdmin(userId, body.amount, body.description);
     return { success: true, message: 'Wallet funded successfully' };
+  }
+
+  @Post('admin/debit/:userId')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({ summary: 'Manually debit a user wallet (Admin)' })
+  async debitWalletByAdmin(
+    @Param('userId') userId: string,
+    @Body() body: any,
+    @Req() req: any
+  ) {
+    await this.walletsService.debitWallet(
+      userId, 
+      body.amount, 
+      body.description || 'Manual Payout Adjustment',
+      'manual',
+      req.user?._id?.toString() || req.user?.id,
+      body.proofOfTransaction
+    );
+    return { success: true, message: 'Wallet debited successfully' };
   }
 }

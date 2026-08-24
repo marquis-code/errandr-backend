@@ -5,6 +5,7 @@ import { Model } from 'mongoose';
 import { User } from '../users/schemas/user.schema';
 import { EmailService } from '../email/email.service';
 import { Vendor } from '../vendors/schemas/vendor.schema';
+import { Order } from '../orders/schemas/order.schema';
 
 @Injectable()
 export class MarketingService {
@@ -13,6 +14,7 @@ export class MarketingService {
   constructor(
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(Vendor.name) private vendorModel: Model<Vendor>,
+    @InjectModel(Order.name) private orderModel: Model<Order>,
     private emailService: EmailService,
   ) {}
 
@@ -26,14 +28,12 @@ export class MarketingService {
     const vendors = await this.vendorModel.find({ isOnline: true }).limit(2);
     
     for (const user of users) {
-      await this.emailService.sendPromotionalEmail(
+      const orderCount = await this.orderModel.countDocuments({ customer: user._id });
+      await this.emailService.sendCuteDailyEmail(
         user.email,
-        "Your Daily Craving Guide! 🍽️ Breakfast, Lunch & Dinner",
-        "Fuel your entire day with Erranders",
-        "Whether it's a hot coffee to kickstart your morning, a quick lunch between lectures, or a hearty dinner after a long day of study, Erranders has got you covered! Order from your favorite campus eateries without stepping out. Best prices, fast delivery, zero stress all day long.",
-        "ORDER YOUR MEALS TODAY",
-        "https://erranders.org/vendors",
-        "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=800&q=80"
+        `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+        user.points || 0,
+        orderCount
       );
     }
   }

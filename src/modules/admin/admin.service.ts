@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { User } from '../users/schemas/user.schema';
@@ -452,6 +452,22 @@ export class AdminService {
       { isApproved: false },
       { new: true }
     );
+  }
+
+  async debitDispatcherEarnings(id: string, amount: number, description?: string) {
+    const dispatcher = await this.erranderModel.findById(id);
+    if (!dispatcher) throw new NotFoundException('Dispatcher not found');
+    if ((dispatcher.totalEarnings || 0) < amount) {
+      throw new BadRequestException('Insufficient earnings balance');
+    }
+    
+    const updated = await this.erranderModel.findByIdAndUpdate(
+      id,
+      { $inc: { totalEarnings: -amount } },
+      { new: true }
+    );
+    
+    return updated;
   }
 
   async activateDispatcher(id: string) {

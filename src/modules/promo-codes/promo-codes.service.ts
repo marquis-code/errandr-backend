@@ -21,6 +21,23 @@ export class PromoCodesService {
     return promo.save();
   }
 
+  async update(id: string, data: any): Promise<PromoCode> {
+    const promo = await this.promoCodeModel.findById(id);
+    if (!promo) {
+      throw new NotFoundException('Promo code not found');
+    }
+    if (data.code) {
+      const existing = await this.promoCodeModel.findOne({ code: data.code.toUpperCase(), _id: { $ne: id } });
+      if (existing) {
+        throw new BadRequestException('Another promo code with this code already exists');
+      }
+      data.code = data.code.toUpperCase();
+    }
+    
+    Object.assign(promo, data);
+    return promo.save();
+  }
+
   async findAll(): Promise<PromoCode[]> {
     return this.promoCodeModel.find().sort({ createdAt: -1 });
   }
@@ -95,6 +112,70 @@ export class PromoCodesService {
     }
 
     return promo;
+  }
+
+  async previewCode(
+    code: string, 
+    subtotal: number, 
+    userId?: string, 
+    vendorId?: string, 
+    userOrdersCount?: number,
+    orderContext?: { isGroupOrder?: boolean; locationType?: string; isCustomErrand?: boolean }
+  ): Promise<any> {
+    const promo = await this.promoCodeModel.findOne({ code: code.toUpperCase() });
+    
+    if (!promo) {
+      return { found: false, promo: null, eligibility: null };
+    }
+
+    const eligibility = {
+      isActive: promo.isActive,
+      isExpired: promo.expiresAt ? promo.expiresAt < new Date() : false,
+      minAmountMet: !promo.minOrderAmount || subtotal >= promo.minOrderAmount,
+      usageLimitReached: promo.maxUsageCount ? promo.usageCount >= promo.maxUsageCount : false,
+      vendorAllowed: true,
+      userAllowed: true,
+      newUsersOnlyMet: true,
+      orderTypeAllowed: true,
+      isEligible: false
+    };
+
+    if (promo.applicableVendors && promo.applicableVendors.length > 0 && vendorId) {
+      const vendorStringIds = promo.applicableVendors.map(v => v.toString());
+      eligibility.vendorAllowed = vendorStringIds.includes(vendorId.toString());
+    }
+
+    if (promo.applicableUsers && promo.applicableUsers.length > 0 && userId) {
+      const userStringIds = promo.applicableUsers.map(u => u.toString());
+      eligibility.userAllowed = userStringIds.includes(userId.toString());
+    }
+
+    if (promo.onlyForNewUsers && userOrdersCount !== undefined) {
+      eligibility.newUsersOnlyMet = userOrdersCount === 0;
+    }
+
+    if (promo.applicableOrderTypes && promo.applicableOrderTypes.length > 0 && orderContext) {
+      const { isGroupOrder, locationType, isCustomErrand } = orderContext;
+      const currentTypes: string[] = [];
+      if (isGroupOrder) currentTypes.push('group_order');
+      if (isCustomErrand) currentTypes.push('custom_errand');
+      if (locationType === 'outside_campus') currentTypes.push('outside_campus');
+      if (locationType === 'inside_campus') currentTypes.push('inside_campus');
+
+      eligibility.orderTypeAllowed = promo.applicableOrderTypes.some(allowedType => currentTypes.includes(allowedType));
+    }
+
+    eligibility.isEligible = 
+      eligibility.isActive &&
+      !eligibility.isExpired &&
+      eligibility.minAmountMet &&
+      !eligibility.usageLimitReached &&
+      eligibility.vendorAllowed &&
+      eligibility.userAllowed &&
+      eligibility.newUsersOnlyMet &&
+      eligibility.orderTypeAllowed;
+
+    return { found: true, promo, eligibility };
   }
 
   async incrementUsage(code: string) {

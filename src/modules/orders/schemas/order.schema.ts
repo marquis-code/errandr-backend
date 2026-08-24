@@ -18,6 +18,7 @@ export enum OrderStatus {
 
 export enum LocationType {
   INSIDE_CAMPUS = 'inside_campus',
+  CAMPUS_ENVIRONS = 'campus_environs',
   OUTSIDE_CAMPUS = 'outside_campus',
 }
 

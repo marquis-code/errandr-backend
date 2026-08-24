@@ -32,10 +32,17 @@ export class WalletsService {
       }
     }
     if (wallet && !wallet.virtualAccount) {
-      // Async fire-and-forget to avoid blocking the initial wallet load
-      this.generateVirtualAccount(wallet).catch(err => {
-        console.error('Failed to generate virtual account for wallet:', err.message);
-      });
+      // Check for cooldown to avoid spamming the paystack api if it fails
+      const lastErrorAt = wallet.metadata?.virtualAccountLastErrorAt;
+      const cooldownHours = 24;
+      const shouldAttempt = !lastErrorAt || (new Date().getTime() - new Date(lastErrorAt).getTime()) > cooldownHours * 60 * 60 * 1000;
+      
+      if (shouldAttempt) {
+        // Async fire-and-forget to avoid blocking the initial wallet load
+        this.generateVirtualAccount(wallet).catch(err => {
+          console.error('Failed to generate virtual account for wallet:', err.message);
+        });
+      }
     }
 
     return wallet as WalletDocument;
@@ -78,6 +85,9 @@ export class WalletsService {
       await wallet.save();
     } catch (error: any) {
       console.error(`Error generating virtual account for ${user._id}:`, error.message);
+      wallet.metadata = wallet.metadata || {};
+      wallet.metadata.virtualAccountLastErrorAt = new Date().toISOString();
+      await wallet.save();
       throw error;
     }
   }
@@ -114,6 +124,9 @@ export class WalletsService {
     description: string,
     orderId?: string,
     reference?: string,
+    actionType: string = 'automatic',
+    actionBy?: string,
+    proofOfTransaction?: string,
   ): Promise<void> {
     // 1. Idempotency Check: Don't process the same reference twice
     if (reference) {
@@ -138,6 +151,9 @@ export class WalletsService {
     wallet.balance += amount;
     wallet.totalEarned += amount;
     await wallet.save();
+    
+    // Sync with User model for profile retrieval
+    await this.userModel.findByIdAndUpdate(userId, { $inc: { walletBalance: amount } });
 
     await this.transactionModel.create({
       wallet: wallet._id,
@@ -146,15 +162,19 @@ export class WalletsService {
       description,
       order: orderId,
       reference,
-      status: TransactionStatus.COMPLETED
+      status: TransactionStatus.COMPLETED,
+      actionType,
+      actionBy,
+      proofOfTransaction
     });
 
     // Send Top-up Email if this is a top-up
-    if (description.toLowerCase().includes('top-up') || description.toLowerCase().includes('funded')) {
+    const lowerDesc = description.toLowerCase();
+    if (lowerDesc.includes('top-up') || lowerDesc.includes('funded') || lowerDesc.includes('virtual account transfer') || lowerDesc.includes('deposit')) {
       try {
         const user = await this.userModel.findById(userId);
         if (user && user.email) {
-          await this.emailService.sendPaymentReceipt(user.email, amount, reference || 'WALLET_UPDATE', 'wallet_topup');
+          await this.emailService.sendWalletFundingSuccess(user.email, amount, description);
         }
       } catch (e) {
         console.error('Failed to send wallet credit email:', e.message);
@@ -166,6 +186,9 @@ export class WalletsService {
     userId: string,
     amount: number,
     description: string,
+    actionType: string = 'automatic',
+    actionBy?: string,
+    proofOfTransaction?: string,
   ): Promise<void> {
     const wallet = await this.getOrCreateWallet(userId);
     
@@ -176,12 +199,29 @@ export class WalletsService {
     wallet.balance -= amount;
     await wallet.save();
 
+    // Sync with User model for profile retrieval
+    await this.userModel.findByIdAndUpdate(userId, { $inc: { walletBalance: -amount } });
+
     await this.transactionModel.create({
       wallet: wallet._id,
       amount,
       type: TransactionType.DEBIT,
       description,
+      actionType,
+      actionBy,
+      proofOfTransaction
     });
+
+    if (actionType === 'manual') {
+      try {
+        const user = await this.userModel.findById(userId);
+        if (user && user.email) {
+          await this.emailService.sendManualPayoutReceipt(user.email, amount, description, proofOfTransaction);
+        }
+      } catch (e) {
+        console.error(`Failed to send manual payout receipt to user ${userId}:`, e);
+      }
+    }
   }
 
   async updatePreferences(userId: string, preference: PayoutPreference, bankDetails?: any, metadata?: any, bankAccounts?: any[]): Promise<WalletDocument> {
@@ -221,6 +261,7 @@ export class WalletsService {
     // Debit Wallet to lock funds
     wallet.balance -= amount;
     await wallet.save();
+    await this.userModel.findByIdAndUpdate(userId, { $inc: { walletBalance: -amount } });
 
     // Log Transaction as PENDING (Queued for automated processing)
     const transaction = await this.transactionModel.create({
@@ -242,14 +283,23 @@ export class WalletsService {
 
     // Process immediately for all users
     try {
+      if (userEmail) {
+        await this.emailService.sendWithdrawalRequested(userEmail, amount, reference);
+      }
       await this.approvePayoutRequest(transaction._id.toString());
     } catch (error: any) {
       // Rollback if instant payout fails
       wallet.balance += amount;
       await wallet.save();
+      await this.userModel.findByIdAndUpdate(userId, { $inc: { walletBalance: amount } });
       transaction.status = TransactionStatus.FAILED;
       transaction.description = `Instant withdrawal failed: ${error.message}`;
       await transaction.save();
+
+      if (userEmail) {
+        await this.emailService.sendPayoutFailed(userEmail, amount, error.message || 'Processing failed');
+      }
+
       throw error;
     }
   }
@@ -330,7 +380,10 @@ export class WalletsService {
   }
 
   async rejectPayoutRequest(transactionId: string): Promise<void> {
-    const transaction = await this.transactionModel.findById(transactionId);
+    const transaction = await this.transactionModel.findById(transactionId).populate({
+      path: 'wallet',
+      populate: { path: 'owner' }
+    });
     
     if (!transaction || transaction.type !== TransactionType.DEBIT || transaction.status !== TransactionStatus.PENDING) {
       throw new Error('Invalid or already processed payout request');
@@ -343,10 +396,15 @@ export class WalletsService {
     await transaction.save();
 
     // Refund the wallet
-    const wallet = await this.walletModel.findById(transaction.wallet);
+    const wallet = await this.walletModel.findById((transaction.wallet as any)._id || transaction.wallet);
     if (wallet) {
       wallet.balance += transaction.amount;
       await wallet.save();
+    }
+
+    const owner = (transaction.wallet as any)?.owner;
+    if (owner && owner.email) {
+      await this.emailService.sendPayoutFailed(owner.email, transaction.amount, 'Rejected by Administration');
     }
   }
 
@@ -486,10 +544,21 @@ export class WalletsService {
   async updateTransactionStatus(reference: string, status: TransactionStatus): Promise<void> {
     const transaction = await this.transactionModel.findOne({
       'metadata.paystackReference': reference,
+    }).populate({
+      path: 'wallet',
+      populate: { path: 'owner' }
     });
+    
     if (transaction) {
       transaction.status = status;
       await transaction.save();
+
+      if (status === TransactionStatus.COMPLETED) {
+        const owner = (transaction.wallet as any)?.owner;
+        if (owner && owner.email) {
+          await this.emailService.sendPayoutSuccessful(owner.email, transaction.amount, transaction.reference || reference);
+        }
+      }
     }
   }
 
@@ -500,6 +569,9 @@ export class WalletsService {
   async handleFailedPayout(reference: string): Promise<void> {
     const transaction = await this.transactionModel.findOne({
       'metadata.paystackReference': reference,
+    }).populate({
+      path: 'wallet',
+      populate: { path: 'owner' }
     });
     if (!transaction) return;
 
@@ -509,10 +581,15 @@ export class WalletsService {
     await transaction.save();
 
     // Refund the wallet
-    const wallet = await this.walletModel.findById(transaction.wallet);
+    const wallet = await this.walletModel.findById((transaction.wallet as any)._id || transaction.wallet);
     if (wallet) {
       wallet.balance += transaction.amount;
       await wallet.save();
+    }
+
+    const owner = (transaction.wallet as any)?.owner;
+    if (owner && owner.email) {
+      await this.emailService.sendPayoutFailed(owner.email, transaction.amount, 'Transfer failed at provider');
     }
   }
 
@@ -525,9 +602,20 @@ export class WalletsService {
     search?: string,
     sortBy?: string,
     sortOrder?: string,
-    exportAsCsv?: boolean
+    exportAsCsv?: boolean,
+    type?: string,
+    category?: string
   ): Promise<{ transactions: any[], total: number, page: number, limit: number } | string> {
     const query: any = {};
+
+    if (type) {
+      query.type = type;
+    }
+
+    if (category === 'payout_requests') {
+      query.type = 'debit';
+      query['metadata.isPayoutRequest'] = true;
+    }
 
     if (startDate || endDate) {
       query.createdAt = {};
@@ -692,24 +780,10 @@ export class WalletsService {
 
     // Send email notification to user
     if (user.email) {
-      const emailHtml = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #eee; border-radius: 8px; overflow: hidden;">
-          <div style="background-color: #FF5C1A; padding: 20px; text-align: center;">
-            <h2 style="color: white; margin: 0;">Wallet Funded 💰</h2>
-          </div>
-          <div style="padding: 30px;">
-            <p>Hi ${user.firstName || user.lastName || 'User'},</p>
-            <p>Your Erranders wallet has been credited with <strong>₦${amount.toLocaleString()}</strong>.</p>
-            <p><strong>Description:</strong> ${description || 'Funded by Admin'}</p>
-            <p>You can use this balance immediately for your next orders.</p>
-            <a href="https://student.erranders.org/wallet" style="display: inline-block; padding: 12px 24px; background-color: #FF5C1A; color: white; text-decoration: none; border-radius: 6px; font-weight: bold; margin-top: 20px;">View Wallet</a>
-          </div>
-        </div>
-      `;
-      await this.emailService.sendEmail(
+      await this.emailService.sendWalletFundingSuccess(
         user.email,
-        `Wallet Credited — ₦${amount.toLocaleString()}`,
-        emailHtml
+        amount,
+        description || 'Funded by Admin'
       );
     }
 

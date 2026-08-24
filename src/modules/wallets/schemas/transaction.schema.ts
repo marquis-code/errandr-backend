@@ -41,6 +41,15 @@ export class Transaction {
 
   @Prop({ type: MongooseSchema.Types.Mixed })
   metadata?: any;
+
+  @Prop({ type: String, enum: ['automatic', 'manual'], default: 'automatic' })
+  actionType: string;
+
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: false })
+  actionBy?: MongooseSchema.Types.ObjectId | string;
+
+  @Prop({ type: String, required: false })
+  proofOfTransaction?: string;
 }
 
 export const TransactionSchema = SchemaFactory.createForClass(Transaction);

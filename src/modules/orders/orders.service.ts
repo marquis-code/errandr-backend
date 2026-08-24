@@ -5,6 +5,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { Order, OrderStatus, PaymentStatus, OrderType, LocationType } from './schemas/order.schema';
+import { DeliveryBid, DeliveryBidStatus } from './schemas/delivery-bid.schema';
 
 import { Vendor, VendorStatus } from '../vendors/schemas/vendor.schema';
 import { Errander, ErranderStatus } from '../erranders/schemas/errander.schema';
@@ -32,6 +33,8 @@ import * as bcrypt from 'bcryptjs';
 
 import { ModuleRef } from '@nestjs/core';
 import { ExamModeService } from '../exam-mode/exam-mode.service';
+import { NegotiationGateway } from './gateways/negotiation.gateway';
+
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
@@ -46,6 +49,7 @@ export class OrdersService {
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(SystemSetting.name) private settingModel: Model<SystemSetting>,
     @InjectModel('ErrandPool') private errandPoolModel: Model<any>,
+    @InjectModel(DeliveryBid.name) private deliveryBidModel: Model<DeliveryBid>,
     private redisService: RedisService,
     @InjectQueue('orders') private orderQueue: Queue,
     @Inject(forwardRef(() => WalletsService)) private walletsService: WalletsService,
@@ -65,6 +69,10 @@ export class OrdersService {
 
   private get examModeService(): ExamModeService {
     return this.moduleRef.get(ExamModeService, { strict: false });
+  }
+
+  private get negotiationGateway(): NegotiationGateway {
+    return this.moduleRef.get(NegotiationGateway, { strict: false });
   }
 
   /**
@@ -157,12 +165,9 @@ export class OrdersService {
         ? `🔥 A vendor just started preparing an order! Accept it now to pick it up exactly when it's hot!`
         : `🚨 An order is ready and waiting at the counter! Quick pickup available, grab it now!`;
         
-      await this.redisService.publish('notification:broadcast:erranders', JSON.stringify({
-        type: 'NEW_ORDER', // We use NEW_ORDER so the errander app prompts it like a fresh order availability
-        title: isPreparing ? 'Hot Order Alert!' : 'Ready for Pickup!',
-        body: creativeBody,
-        data: { orderId: order._id.toString(), status }
-      }));
+      // We use broadcastNewOrderToErranders so the errander app prompts it like a fresh order availability
+      // and has the fully populated payload (prevents 'Store Order' bug)
+      await this.broadcastNewOrderToErranders(order);
     }
   }
 
@@ -244,14 +249,15 @@ export class OrdersService {
           const feeDisplay = orderData.type === 'custom_errand' ? (orderData.deliveryFee || 0) : 300;
           
           if (userObj.fcmToken) {
-            await this.notificationsService.sendPushNotification(userObj.fcmToken, {
+            this.notificationsService.sendPushNotification(userObj.fcmToken, {
               title: '🚨 NEW ERRAND AVAILABLE!',
               body: `An order from ${vendorName} needs a runner right now! ₦${feeDisplay} fee`,
               data: { type: 'NEW_ORDER', orderId: orderData.orderId.toString() },
-            });
+            }).catch(e => this.logger.error(`Push failed: ${e.message}`));
           }
           if (userObj.phone) {
-             await this.notificationsService.sendZavuSMS(userObj.phone, `🚨 NEW ERRAND AVAILABLE! An order from ${vendorName} needs a runner right now! ₦${feeDisplay} fee`);
+             this.notificationsService.sendZavuSMS(userObj.phone, `🚨 NEW ERRAND AVAILABLE! An order from ${vendorName} needs a runner right now! ₦${feeDisplay} fee`)
+               .catch(e => this.logger.error(`SMS failed: ${e.message}`));
           }
         }
       }
@@ -806,21 +812,21 @@ export class OrdersService {
       paymentStatus: (paymentVerified || data.paymentMethod === 'cash') ? PaymentStatus.PAID : PaymentStatus.PENDING,
       paymentReference: data.paymentReference,
       locationType: data.locationType || LocationType.INSIDE_CAMPUS,
-      proposedDeliveryFee: data.locationType === LocationType.OUTSIDE_CAMPUS ? Number(data.proposedDeliveryFee) : undefined,
-      status: data.locationType === LocationType.OUTSIDE_CAMPUS 
+      proposedDeliveryFee: (data.locationType === LocationType.OUTSIDE_CAMPUS || data.locationType === LocationType.CAMPUS_ENVIRONS) ? Number(data.proposedDeliveryFee) : undefined,
+      status: (data.locationType === LocationType.OUTSIDE_CAMPUS || data.locationType === LocationType.CAMPUS_ENVIRONS) 
                 ? OrderStatus.NEGOTIATING 
                 : (paymentVerified || data.paymentMethod === 'cash') 
                 ? (data.isPreOrder ? OrderStatus.SCHEDULED : OrderStatus.CONFIRMED) 
                 : OrderStatus.PENDING,
       statusHistory: [
         { 
-          status: data.locationType === LocationType.OUTSIDE_CAMPUS 
+          status: (data.locationType === LocationType.OUTSIDE_CAMPUS || data.locationType === LocationType.CAMPUS_ENVIRONS) 
                     ? OrderStatus.NEGOTIATING 
                     : (paymentVerified || data.paymentMethod === 'cash') 
                     ? (data.isPreOrder ? OrderStatus.SCHEDULED : OrderStatus.CONFIRMED) 
                     : OrderStatus.PENDING,
           timestamp: new Date(), 
-          note: data.locationType === LocationType.OUTSIDE_CAMPUS ? 'Negotiating with riders' : (paymentVerified || data.paymentMethod === 'cash') 
+          note: (data.locationType === LocationType.OUTSIDE_CAMPUS || data.locationType === LocationType.CAMPUS_ENVIRONS) ? 'Negotiating with riders' : (paymentVerified || data.paymentMethod === 'cash') 
                   ? (data.isPreOrder ? 'Order scheduled for a later time' : 'Order placed and payment confirmed') 
                   : 'Order placed, awaiting payment' 
         },
@@ -902,12 +908,11 @@ export class OrdersService {
           order.orderNumber,
           (order as any).paymentMethod || 'card',
         );
+        this.emailService.sendOrderConfirmation(
+          (order.customer as any).email,
+          order,
+        );
       }
-      
-      this.emailService.sendOrderConfirmation(
-        (order.customer as any).email,
-        order,
-      );
     }
 
     // TRIGGER AUTOMATED VOICE CALL TO VENDOR
@@ -915,10 +920,11 @@ export class OrdersService {
       try {
         const itemsList = order.items.map(i => `${i.quantity} ${i.name}`);
         const message = `Hello, this is Erranders. You have a new order #${order.orderNumber} for ${order.total} Naira. Items: ${itemsList.join(', ')}. Please prepare it.`;
-        await this.notificationsService.sendZavuSMS(populatedVendor.phone, message);
+        this.notificationsService.sendZavuSMS(populatedVendor.phone, message)
+          .catch(e => this.logger.error(`Failed to trigger dispatch call: ${e.message}`));
         this.logger.log(`Triggered automated order dispatch SMS for order ${order.orderNumber} to ${populatedVendor.phone}`);
       } catch (e) {
-        this.logger.error(`Failed to trigger dispatch call: ${e.message}`);
+        this.logger.error(`Failed to trigger dispatch call logic: ${e.message}`);
       }
     }
 
@@ -1217,7 +1223,26 @@ export class OrdersService {
       }
     }
 
-    const newStatus = targetOrder.status === OrderStatus.PENDING ? OrderStatus.CONFIRMED : targetOrder.status;
+    const isNegotiating = targetOrder.status === OrderStatus.NEGOTIATING;
+    const newStatus = targetOrder.status === OrderStatus.PENDING ? OrderStatus.CONFIRMED : 
+                      (isNegotiating ? OrderStatus.AWAITING_PAYMENT : targetOrder.status);
+
+    const updateSet: any = {
+      errander: new Types.ObjectId(erranderId),
+      status: newStatus,
+    };
+
+    if (isNegotiating && targetOrder.proposedDeliveryFee) {
+      const newFee = targetOrder.proposedDeliveryFee;
+      const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
+      const commissionPercent = errandSetting?.value?.customErrandCommissionPercentage ?? 20;
+      const commissionAmount = Math.round(newFee * (commissionPercent / 100)); 
+      
+      updateSet.deliveryFee = newFee;
+      updateSet.erranderShare = newFee - commissionAmount;
+      updateSet.platformShare = (targetOrder.platformShare || 0) + commissionAmount - Math.round((targetOrder.deliveryFee || 0) * (commissionPercent / 100));
+      updateSet.total = (targetOrder.total || 0) - (targetOrder.deliveryFee || 0) + newFee;
+    }
 
     // ATOMIC UPDATE: Only update if no errander is assigned yet and status hasn't changed
     const order = await this.orderModel.findOneAndUpdate(
@@ -1227,20 +1252,33 @@ export class OrdersService {
         status: targetOrder.status 
       },
       {
-        $set: {
-          errander: new Types.ObjectId(erranderId),
-          status: newStatus,
-        },
+        $set: updateSet,
         $push: {
           statusHistory: {
             status: newStatus,
             timestamp: new Date(),
-            note: isAdmin ? 'Order manually assigned by admin' : (isBatchActive ? 'Order accepted as part of Batch Delivery' : 'Order accepted by errander'),
-          } as any
+            note: isAdmin ? 'Order manually assigned by admin' : (isBatchActive ? 'Order accepted as part of Batch Delivery' : (isNegotiating ? 'Errander accepted proposed fee' : 'Order accepted by errander')),
+        } as any
         }
       },
       { new: true }
     );
+
+    if (isNegotiating && order) {
+      try {
+        const gw = this.negotiationGateway;
+        if (gw) {
+          gw.sendOrderAcceptedDirectly(orderId, {
+            orderId: order._id.toString(),
+            riderId: erranderId,
+            agreedDeliveryFee: order.deliveryFee,
+            total: order.total
+          });
+        }
+      } catch (e) {
+        this.logger.error('Could not emit to negotiation gateway: ' + e);
+      }
+    }
 
     if (!order) {
       throw new BadRequestException('Order already accepted by another rider or is no longer available');
@@ -1437,6 +1475,13 @@ export class OrdersService {
   async completeOrder(orderId: string, erranderId: string, verificationCode: string): Promise<Order> {
     const order = await this.orderModel.findById(orderId);
     if (!order) throw new NotFoundException('Order not found');
+
+    // Status guard: prevent completing already-delivered or cancelled orders
+    const completableStatuses = ['in_transit', 'picked_up', 'confirmed', 'preparing', 'ready_for_pickup',
+      OrderStatus.IN_TRANSIT, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP];
+    if (!completableStatuses.includes(order.status)) {
+      throw new BadRequestException(`Order cannot be completed — current status is "${order.status}"`);
+    }
     
     // Security check: only assigned errander can complete
     const errander = await this.erranderModel.findOne({ user: erranderId });
@@ -1539,6 +1584,13 @@ export class OrdersService {
   async bypassDeliveryPinWithPhoto(orderId: string, erranderId: string, imageUrl: string): Promise<Order> {
     const order = await this.orderModel.findById(orderId);
     if (!order) throw new NotFoundException('Order not found');
+
+    // Status guard: prevent completing already-delivered or cancelled orders
+    const completableStatuses = ['in_transit', 'picked_up', 'confirmed', 'preparing', 'ready_for_pickup',
+      OrderStatus.IN_TRANSIT, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP];
+    if (!completableStatuses.includes(order.status)) {
+      throw new BadRequestException(`Order cannot be completed — current status is "${order.status}"`);
+    }
     
     // Security check: only assigned errander can complete
     const errander = await this.erranderModel.findOne({ user: erranderId });
@@ -1636,7 +1688,7 @@ export class OrdersService {
     if (status) {
       filter.status = status;
     } else {
-      filter.status = { $nin: [OrderStatus.PENDING, OrderStatus.AWAITING_PAYMENT] };
+      filter.status = { $nin: [OrderStatus.PENDING, OrderStatus.NEGOTIATING, OrderStatus.AWAITING_PAYMENT] };
     }
 
     const p = Math.max(1, parseInt(page) || 1);
@@ -1681,7 +1733,7 @@ export class OrdersService {
       if (status) {
         filter.status = status;
       } else {
-        filter.status = { $nin: [OrderStatus.PENDING, OrderStatus.AWAITING_PAYMENT] };
+        filter.status = { $nin: [OrderStatus.PENDING, OrderStatus.NEGOTIATING, OrderStatus.AWAITING_PAYMENT] };
       }
       const p = Math.max(1, Number(page) || 1);
       const l = Math.max(1, Number(limit) || 50);
@@ -2023,7 +2075,7 @@ export class OrdersService {
     const order = await this.orderModel.findById(orderId);
     if (!order) throw new NotFoundException('Order not found');
 
-    const allowedStatuses = [OrderStatus.PENDING, OrderStatus.CONFIRMED];
+    const allowedStatuses = [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.NEGOTIATING, OrderStatus.AWAITING_PAYMENT];
     if (!allowedStatuses.includes(order.status)) {
       throw new BadRequestException('Order cannot be cancelled at this stage');
     }
@@ -2115,6 +2167,25 @@ export class OrdersService {
     
     // Broadcast
     await this.broadcastNewOrderToErranders(order);
+    
+    // Notify customer
+    if (order.customer) {
+      const cust = await this.userModel.findById(order.customer);
+      if (cust && cust.email) {
+        this.emailService.sendPaymentReceipt(cust.email, order.total, order.orderNumber, 'wallet');
+        this.emailService.sendOrderConfirmation(cust.email, order);
+      }
+    }
+
+    // Notify vendor
+    if (order.vendor) {
+      const populatedVendor = await this.vendorModel.findById(order.vendor).populate('owner');
+      if (populatedVendor) {
+        this.notificationsService.notifyVendor(populatedVendor, order).catch(e => {
+          this.logger.error(`Vendor notification cascade failed from payWithWallet: ${e.message}`);
+        });
+      }
+    }
     
     return order.populate([
       { path: 'customer', select: 'firstName lastName phone avatar' },
@@ -2397,6 +2468,31 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
       data: { orderId: order._id.toString() },
     });
 
+    // Populate customer to get email
+    const populatedOrder = await order.populate('customer');
+    if (populatedOrder.customer && (populatedOrder.customer as any).email) {
+      this.emailService.sendPaymentReceipt(
+        (populatedOrder.customer as any).email,
+        populatedOrder.total,
+        populatedOrder.orderNumber,
+        'card'
+      );
+      this.emailService.sendOrderConfirmation(
+        (populatedOrder.customer as any).email,
+        populatedOrder,
+      );
+    }
+
+    // If it's a food order, notify the vendor
+    if (populatedOrder.vendor) {
+      const populatedVendor = await this.vendorModel.findById(populatedOrder.vendor).populate('owner');
+      if (populatedVendor) {
+        this.notificationsService.notifyVendor(populatedVendor, populatedOrder).catch(e => {
+          this.logger.error(`Vendor notification cascade failed from payForCustomErrand: ${e.message}`);
+        });
+      }
+    }
+
     return order;
   }
 
@@ -2412,12 +2508,15 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     }
 
     const serviceFee = 50; 
-    const total = newFee + serviceFee;
+    const total = (order.total || 0) - (order.deliveryFee || 0) + newFee;
     const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
     const commissionPercent = errandSetting?.value?.customErrandCommissionPercentage ?? 20;
     const commissionAmount = Math.round(newFee * (commissionPercent / 100)); 
     const erranderShare = newFee - commissionAmount;
-    const platformShare = serviceFee + commissionAmount;
+    
+    // For platformShare, it was serviceFee + commissionAmount. But wait, what if there's other platform shares?
+    // Let's just adjust it:
+    const platformShare = (order.platformShare || 0) + commissionAmount - Math.round((order.deliveryFee || 0) * (commissionPercent / 100));
 
     order.deliveryFee = newFee;
     order.erranderShare = erranderShare;
@@ -2491,40 +2590,65 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
   }
 
   async acceptBid(orderId: string, bidId: string, customerId: string): Promise<Order> {
-    const order = await this.orderModel.findById(orderId).populate('bids.errander');
+    const order = await this.orderModel.findById(orderId);
     if (!order) throw new NotFoundException('Order not found');
     if (order.customer.toString() !== customerId.toString()) throw new BadRequestException('Not your order');
     if (![OrderStatus.PENDING, OrderStatus.NEGOTIATING].includes(order.status as any)) throw new BadRequestException('Order is no longer accepting bids');
 
-    const bid = order.bids.find(b => b._id.toString() === bidId);
-    if (!bid) throw new NotFoundException('Bid not found');
-    if (bid.status !== 'pending') throw new BadRequestException('Bid is not pending');
+    // Try DeliveryBid collection first (used by NegotiationService/NegotiationGateway)
+    let deliveryBid = await this.deliveryBidModel.findById(bidId).populate('rider');
+    let riderUserId: string;
+    let newFee: number;
 
-    // Mark this bid as accepted, others rejected
-    order.bids.forEach(b => {
-      if (b._id.toString() === bidId) b.status = 'accepted';
-      else b.status = 'rejected';
-    });
+    if (deliveryBid && deliveryBid.order.toString() === orderId) {
+      // Found in DeliveryBid collection
+      if (deliveryBid.status !== DeliveryBidStatus.PENDING) throw new BadRequestException('Bid is not pending');
+      
+      deliveryBid.status = DeliveryBidStatus.ACCEPTED;
+      await deliveryBid.save();
+      
+      // Reject all other delivery bids
+      await this.deliveryBidModel.updateMany(
+        { order: new Types.ObjectId(orderId), _id: { $ne: deliveryBid._id } },
+        { $set: { status: DeliveryBidStatus.REJECTED } }
+      );
+      
+      riderUserId = (deliveryBid.rider as any)?._id?.toString() || deliveryBid.rider.toString();
+      newFee = deliveryBid.bidAmount;
+    } else {
+      // Fallback: check embedded order.bids array
+      await order.populate('bids.errander');
+      const embeddedBid = order.bids?.find(b => b._id.toString() === bidId);
+      if (!embeddedBid) throw new NotFoundException('Bid not found');
+      if (embeddedBid.status !== 'pending') throw new BadRequestException('Bid is not pending');
+      
+      order.bids.forEach(b => {
+        if (b._id.toString() === bidId) b.status = 'accepted';
+        else b.status = 'rejected';
+      });
+      
+      riderUserId = embeddedBid.errander?._id?.toString() || embeddedBid.errander?.toString();
+      newFee = embeddedBid.amount;
+    }
 
-    const newFee = bid.amount;
-    const serviceFee = 50; 
-    const total = newFee + serviceFee;
+    // Calculate commission
+    const baseTotal = order.total - (order.proposedDeliveryFee || order.deliveryFee || 0);
+    const total = baseTotal + newFee;
     const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
     const commissionPercent = errandSetting?.value?.customErrandCommissionPercentage ?? 20;
     const commissionAmount = Math.round(newFee * (commissionPercent / 100)); 
     const erranderShare = newFee - commissionAmount;
-    const platformShare = serviceFee + commissionAmount;
 
     order.deliveryFee = newFee;
     order.erranderShare = erranderShare;
-    order.platformShare = platformShare;
+    order.erranderPayout = erranderShare;
     order.total = total;
 
     // Assign the errander
-    let errander = await this.erranderModel.findOne({ user: bid.errander._id });
+    let errander = await this.erranderModel.findOne({ user: new Types.ObjectId(riderUserId) });
     if (!errander) {
       errander = await this.erranderModel.create({
-        user: bid.errander._id,
+        user: new Types.ObjectId(riderUserId),
         status: 'OFFLINE',
       });
     }
@@ -2534,17 +2658,18 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     order.statusHistory.push({
       status: OrderStatus.AWAITING_PAYMENT,
       timestamp: new Date(),
-      note: 'Customer accepted a counter-offer bid, awaiting payment'
+      note: `Customer accepted a counter-offer bid of ₦${newFee}, awaiting payment`
     });
 
     await order.save();
+    this.logger.log(`acceptBid() order=${orderId} bid=${bidId} newFee=${newFee} total=${total} accepted`);
     
     // Broadcast order accepted so it is removed from the dispatch pool
     await this.redisService.publish('notification:broadcast:erranders', JSON.stringify({
       type: 'ORDER_ACCEPTED',
       data: { 
         orderId: order._id.toString(),
-        winningUserId: bid.errander._id.toString()
+        winningUserId: riderUserId
       }
     }));
     
@@ -2553,7 +2678,7 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
       .populate('errander', 'firstName lastName phone avatar vehicleType');
 
     // Notify the accepted errander
-    await this.notificationsService.sendNotification(bid.errander._id.toString(), {
+    await this.notificationsService.sendNotification(riderUserId, {
       title: 'Bid Accepted!',
       body: `Your counter-offer for Order #${order.orderNumber} was accepted!`,
       type: 'ORDER_BID_ACCEPTED',
