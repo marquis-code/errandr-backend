@@ -185,7 +185,7 @@ export class NotificationsGateway
         client.leave(`order:${data.orderId}:viewers`);
       }
       
-      const viewersCount = this.server.sockets.adapter.rooms.get(`order:${data.orderId}:viewers`)?.size || 0;
+      const viewersCount = (this.server.sockets.adapter as any).rooms?.get(`order:${data.orderId}:viewers`)?.size || 0;
       
       // Emit to all clients so the student app can listen and update UI
       this.server.emit('errand:viewers_update', {

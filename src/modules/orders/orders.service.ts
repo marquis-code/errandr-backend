@@ -218,6 +218,7 @@ export class OrdersService {
       locationType: (populated as any).locationType,
       proposedDeliveryFee: (populated as any).proposedDeliveryFee,
       createdAt: (populated as any).createdAt,
+      customDetails: populated.customDetails,
     };
 
     // Broadcast via Redis to all backend instances (Render compatibility)
@@ -313,10 +314,13 @@ export class OrdersService {
           dropoffLocation: data.dropoffLocation,
           description: data.description,
           attachedImage: data.attachedImage,
+          attachedImages: data.attachedImages,
           attachedVoiceNote: data.attachedVoiceNote,
           estimatedItemCost: itemCost,
           urgency: data.urgency || 'standard',
         },
+        intendedPoolId: data.intendedPoolId,
+        intendsToCreatePool: data.intendsToCreatePool || false,
         subtotal: itemCost,
         deliveryFee: runnerFee,
         serviceFee,
@@ -327,16 +331,16 @@ export class OrdersService {
         total,
         paymentStatus: data.paymentReference ? (paymentVerified ? PaymentStatus.PAID : PaymentStatus.PENDING) : PaymentStatus.PENDING,
         paymentReference: data.paymentReference || undefined,
-        status: OrderStatus.PENDING,
+        status: (paymentVerified || data.paymentMethod === 'cash') ? OrderStatus.PENDING : OrderStatus.NEGOTIATING,
         itemCostDisbursementStatus: itemCost > 0 ? 'pending' : 'not_applicable',
         reconciliationStatus: itemCost > 0 ? 'pending' : 'not_applicable',
         statusHistory: [
-          { status: OrderStatus.PENDING, timestamp: new Date(), note: 'Custom errand created' },
+          { status: (paymentVerified || data.paymentMethod === 'cash') ? OrderStatus.PENDING : OrderStatus.NEGOTIATING, timestamp: new Date(), note: 'Custom errand created and awaiting negotiation' },
         ],
       });
 
-      // Only broadcast if payment is guaranteed (already verified or cash)
-      if (paymentVerified || data.paymentMethod === 'cash') {
+      // Broadcast immediately if negotiating or paid
+      if (paymentVerified || data.paymentMethod === 'cash' || order.status === OrderStatus.NEGOTIATING) {
         await this.broadcastNewOrderToErranders(order);
       }
 
@@ -2446,6 +2450,21 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     });
 
     await order.save();
+
+    // Handle Pooling
+    if (order.intendedPoolId) {
+      try {
+        await this.joinPool(order.intendedPoolId.toString(), order._id.toString(), customerId);
+      } catch (e) {
+        this.logger.error(`Failed to securely join pool on payment confirmation: ${e}`);
+      }
+    } else if (order.intendsToCreatePool) {
+      try {
+        await this.createErrandPool(order._id.toString(), customerId, order.customDetails?.description?.substring(0, 50) || 'Custom Errand Pool');
+      } catch (e) {
+        this.logger.error(`Failed to securely create pool on payment confirmation: ${e}`);
+      }
+    }
     
     // Auto-payout vendor since payment is confirmed
     await this.processVendorPayout(order);

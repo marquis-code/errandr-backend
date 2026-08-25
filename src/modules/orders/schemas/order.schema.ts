@@ -70,6 +70,7 @@ export class Order extends Document {
       dropoffLocation: String,
       description: String,
       attachedImage: String,
+      attachedImages: [String],
       attachedVoiceNote: String,
       estimatedItemCost: { type: Number, default: 0 },
       urgency: { type: String, enum: ['standard', 'express'], default: 'standard' },
@@ -80,6 +81,7 @@ export class Order extends Document {
     dropoffLocation: string;
     description: string;
     attachedImage?: string;
+    attachedImages?: string[];
     attachedVoiceNote?: string;
     estimatedItemCost: number;
     urgency: 'standard' | 'express';
@@ -455,6 +457,12 @@ export class Order extends Document {
 
   @Prop({ type: Types.ObjectId, ref: 'ErrandPool' })
   errandPoolId: Types.ObjectId;
+
+  @Prop({ type: Types.ObjectId, ref: 'ErrandPool' })
+  intendedPoolId: Types.ObjectId;
+
+  @Prop({ default: false })
+  intendsToCreatePool: boolean;
   
   @Prop()
   deliveryOtpHash: string;

@@ -162,9 +162,12 @@ export class ErrandersService {
   async getEarnings(userId: string) {
     return this.withRetry(async () => {
       const errander = await this.getOrCreateErrander(userId);
+      const WalletModel = this.userModel.db.model('Wallet');
+      const wallet = await WalletModel.findOne({ owner: userId }).lean();
+      
       return {
         totalDeliveries: errander.totalDeliveries || 0,
-        totalEarnings: errander.totalEarnings || 0,
+        totalEarnings: (wallet as any)?.totalEarned || errander.totalEarnings || 0,
         rating: errander.rating || 0,
       };
     }, 'getEarnings');
