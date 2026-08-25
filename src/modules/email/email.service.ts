@@ -478,7 +478,7 @@ export class EmailService {
     `).join('') || '';
 
     const customerName = (order.customer && order.customer.firstName) ? order.customer.firstName : 'Student';
-    const securityPin = order.securityPin || 'N/A';
+    const securityPin = order.deliveryPin || 'N/A';
 
     const html = this.wrap({
       preheader: `Payment confirmed for Order #${order.orderNumber}!`,
