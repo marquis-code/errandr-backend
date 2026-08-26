@@ -73,6 +73,7 @@ export class Order extends Document {
       attachedImages: [String],
       attachedVoiceNote: String,
       estimatedItemCost: { type: Number, default: 0 },
+      itemCostBuffer: { type: Number, default: 0 },
       urgency: { type: String, enum: ['standard', 'express'], default: 'standard' },
     },
   })
@@ -84,6 +85,7 @@ export class Order extends Document {
     attachedImages?: string[];
     attachedVoiceNote?: string;
     estimatedItemCost: number;
+    itemCostBuffer?: number;
     urgency: 'standard' | 'express';
   };
 

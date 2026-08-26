@@ -276,18 +276,21 @@ export class OrdersService {
       const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
       const minCustomErrandFee = errandSetting?.value?.minCustomErrandFee ?? 400;
       const commissionPercent = errandSetting?.value?.customErrandCommissionPercentage ?? 20;
+      const safetyBufferPercent = errandSetting?.value?.customErrandSafetyBufferPercentage ?? 20;
 
       if (!runnerFee || runnerFee < minCustomErrandFee) {
         throw new BadRequestException(`Runner fee must be at least ₦${minCustomErrandFee}`);
       }
 
       const itemCost = Number(data.estimatedItemCost) || 0;
+      const itemCostBuffer = Math.round(itemCost * (safetyBufferPercent / 100));
+      
       // Flat Buyer's Convenience Fee
       const serviceFee = 50; 
       // Paystack transfer fee: ₦10 for ≤₦5,000, ₦25 for >₦5,000 (charged to customer)
-      const transferFee = itemCost > 0 ? (itemCost <= 5000 ? 10 : 25) : 0;
-      // Total includes EVERYTHING: item cost + runner fee + service fee + transfer fee
-      const total = itemCost + runnerFee + serviceFee + transferFee;
+      const transferFee = (itemCost + itemCostBuffer) > 0 ? ((itemCost + itemCostBuffer) <= 5000 ? 10 : 25) : 0;
+      // Total includes EVERYTHING: item cost + buffer + runner fee + service fee + transfer fee
+      const total = itemCost + itemCostBuffer + runnerFee + serviceFee + transferFee;
 
       // Commission from Runner (Primary Model)
       const commissionAmount = Math.round(runnerFee * (commissionPercent / 100));
@@ -317,6 +320,7 @@ export class OrdersService {
           attachedImages: data.attachedImages,
           attachedVoiceNote: data.attachedVoiceNote,
           estimatedItemCost: itemCost,
+          itemCostBuffer: itemCostBuffer,
           urgency: data.urgency || 'standard',
         },
         intendedPoolId: data.intendedPoolId,
@@ -1318,68 +1322,10 @@ export class OrdersService {
         throw new BadRequestException('You need to add your bank details in Wallet settings before accepting market-run errands. The item cost needs to be transferred to your bank.');
       }
 
-      // Initiate Paystack Transfer
-      const itemCost = order.customDetails.estimatedItemCost;
-      const transferRef = `ITEM-${order.orderNumber}-${uuidv4().slice(0, 6).toUpperCase()}`;
-      
-      try {
-        const recipient = await this.paystackService.createTransferRecipient({
-          name: bankDetails.accountName || erranderUser?.firstName || 'Errander',
-          account_number: bankDetails.accountNumber,
-          bank_code: bankDetails.bankCode,
-        });
-
-        const transfer = await this.paystackService.initiateTransfer({
-          amount: itemCost,
-          reference: transferRef,
-          recipient: recipient.recipient_code,
-          reason: `Item cost for errand ${order.orderNumber}`,
-        });
-
-        if ((transfer as any).status === true || (transfer as any).status === 'success') {
-          order.itemCostDisbursementStatus = 'transferred';
-          order.itemCostTransferReference = transferRef;
-          await order.save();
-          this.logger.log(`Item cost ₦${itemCost} transferred to errander ${erranderId} bank for order ${order.orderNumber}`);
-        } else {
-          throw new Error((transfer as any).message || 'Transfer failed');
-        }
-      } catch (transferError: any) {
-        this.logger.error(`Item cost transfer failed for order ${order.orderNumber}: ${transferError.message}`);
-        
-        // Check if this is a test/mock environment
-        const isTestKey = process.env.PAYSTACK_SECRET_KEY?.startsWith('sk_test');
-        const useMock = Boolean(isTestKey || process.env.USE_MOCK_PAYOUT === 'true');
-        
-        if (useMock) {
-          // In test mode, mock the transfer and proceed
-          order.itemCostDisbursementStatus = 'transferred';
-          order.itemCostTransferReference = `MOCK-${transferRef}`;
-          await order.save();
-          this.logger.log(`[MOCK] Item cost ₦${itemCost} mock-transferred for order ${order.orderNumber}`);
-        } else {
-          // In production, rollback the acceptance
-          order.itemCostDisbursementStatus = 'failed';
-          await order.save();
-          
-          await this.orderModel.findByIdAndUpdate(orderId, {
-            $unset: { errander: '' },
-            $set: { status: OrderStatus.PENDING, itemCostDisbursementStatus: 'pending' },
-            $push: {
-              statusHistory: {
-                status: OrderStatus.PENDING,
-                timestamp: new Date(),
-                note: 'Acceptance rolled back — item cost bank transfer failed',
-              } as any
-            }
-          });
-          errander.status = ErranderStatus.AVAILABLE;
-          errander.currentOrder = null as any;
-          errander.batchOrders = errander.batchOrders?.filter(id => id.toString() !== orderId) || [];
-          await errander.save();
-          await this.broadcastNewOrderToErranders(order);
-          throw new BadRequestException('We couldn\'t transfer the item cost to your bank account. Please verify your bank details and try again.');
-        }
+      // ONLY INITIATE TRANSFER IF CUSTOMER HAS ALREADY PAID (e.g. upfront payment).
+      // If the customer hasn't paid yet (negotiated order), this transfer will happen during payment verification.
+      if (order.paymentStatus === PaymentStatus.PAID) {
+        await this.disburseItemCost(order, erranderId, bankDetails, erranderUser);
       }
     }
 
@@ -2143,7 +2089,7 @@ export class OrdersService {
     if (!order) throw new NotFoundException('Order not found');
     
     if (order.customer.toString() !== customerId.toString()) {
-      throw new ForbiddenException('You can only cancel your own orders');
+      throw new ForbiddenException('You can only pay for your own orders');
     }
     
     if (order.paymentStatus === PaymentStatus.PAID) {
@@ -2162,37 +2108,100 @@ export class OrdersService {
     }
     
     order.paymentStatus = PaymentStatus.PAID;
-    order.status = order.isPreOrder ? OrderStatus.SCHEDULED : OrderStatus.CONFIRMED;
-    order.statusHistory.push({
-      status: order.isPreOrder ? OrderStatus.SCHEDULED : OrderStatus.CONFIRMED,
-      timestamp: new Date(),
-      note: order.isPreOrder ? 'Order scheduled and paid via wallet balance' : 'Order paid via wallet balance',
-    });
     
-    await order.save();
-    
-    // Auto-payout vendor since payment is confirmed
-    await this.processVendorPayout(order);
-    
-    // Broadcast
-    await this.broadcastNewOrderToErranders(order);
-    
-    // Notify customer
-    if (order.customer) {
-      const cust = await this.userModel.findById(order.customer);
-      if (cust && cust.email) {
-        this.emailService.sendPaymentReceipt(cust.email, order.total, order.orderNumber, 'wallet');
-        this.emailService.sendOrderConfirmation(cust.email, order);
-      }
-    }
+    if (order.type === OrderType.CUSTOM_ERRAND || (order as any).isCustomErrand) {
+      order.status = order.status === OrderStatus.AWAITING_PAYMENT ? OrderStatus.CONFIRMED : OrderStatus.PENDING;
+      order.statusHistory.push({
+        status: order.status,
+        timestamp: new Date(),
+        note: 'Custom errand paid via wallet balance',
+      });
+      await order.save();
 
-    // Notify vendor
-    if (order.vendor) {
-      const populatedVendor = await this.vendorModel.findById(order.vendor).populate('owner');
-      if (populatedVendor) {
-        this.notificationsService.notifyVendor(populatedVendor, order).catch(e => {
-          this.logger.error(`Vendor notification cascade failed from payWithWallet: ${e.message}`);
-        });
+      // Handle Pooling
+      if (order.intendedPoolId) {
+        try {
+          await this.joinPool(order.intendedPoolId.toString(), order._id.toString(), customerId);
+        } catch (e) {
+          this.logger.error(`Failed to securely join pool on wallet payment: ${e}`);
+        }
+      } else if (order.intendsToCreatePool) {
+        try {
+          await this.createErrandPool(order._id.toString(), customerId, order.customDetails?.description?.substring(0, 50) || 'Custom Errand Pool');
+        } catch (e) {
+          this.logger.error(`Failed to securely create pool on wallet payment: ${e}`);
+        }
+      }
+
+      if (order.status === OrderStatus.CONFIRMED) {
+        await this.processVendorPayout(order);
+
+        // Disburse custom errand item cost to the assigned errander
+        if (order.type === OrderType.CUSTOM_ERRAND && order.errander) {
+          const erranderWallet = await this.walletsService.getOrCreateWallet(order.errander.toString());
+          if (erranderWallet.bankDetails?.accountNumber) {
+            await this.disburseItemCost(order, order.errander.toString(), erranderWallet.bankDetails);
+          }
+        }
+
+        try {
+          const erranderUser: any = await this.userModel.findById(order.errander);
+          if (erranderUser) {
+            await this.chatService.createMessage({
+              orderId: order._id.toString(),
+              senderId: erranderUser._id.toString(),
+              receiverId: customerId,
+              message: `Hi! I'm ${erranderUser.firstName || 'your rider'} and I've locked in your custom errand #${order.orderNumber}. Let's discuss! 🚀`,
+              messageType: 'text',
+            });
+            await this.notificationsService.sendNotification(erranderUser._id.toString(), {
+              title: 'Payment Confirmed!',
+              body: `Customer has paid for Order #${order.orderNumber} via Wallet. You can now start the errand!`,
+              type: 'ORDER_CONFIRMED',
+              data: { orderId: order._id.toString() },
+            });
+          }
+        } catch (err) {
+          this.logger.error('Failed to auto-create initial chat message for custom errand wallet payment:', err);
+        }
+      } else {
+        await this.broadcastNewOrderToErranders(order);
+      }
+
+      if (order.customer) {
+        const cust = await this.userModel.findById(order.customer);
+        if (cust && cust.email) {
+          this.emailService.sendPaymentReceipt(cust.email, order.total, order.orderNumber, 'wallet');
+        }
+      }
+    } else {
+      // Standard Vendor Order logic
+      order.status = order.isPreOrder ? OrderStatus.SCHEDULED : OrderStatus.CONFIRMED;
+      order.statusHistory.push({
+        status: order.isPreOrder ? OrderStatus.SCHEDULED : OrderStatus.CONFIRMED,
+        timestamp: new Date(),
+        note: order.isPreOrder ? 'Order scheduled and paid via wallet balance' : 'Order paid via wallet balance',
+      });
+      await order.save();
+      
+      await this.processVendorPayout(order);
+      await this.broadcastNewOrderToErranders(order);
+      
+      if (order.customer) {
+        const cust = await this.userModel.findById(order.customer);
+        if (cust && cust.email) {
+          this.emailService.sendPaymentReceipt(cust.email, order.total, order.orderNumber, 'wallet');
+          this.emailService.sendOrderConfirmation(cust.email, order);
+        }
+      }
+
+      if (order.vendor) {
+        const populatedVendor = await this.vendorModel.findById(order.vendor).populate('owner');
+        if (populatedVendor) {
+          this.notificationsService.notifyVendor(populatedVendor, order).catch(e => {
+            this.logger.error(`Vendor notification cascade failed from payWithWallet: ${e.message}`);
+          });
+        }
       }
     }
     
@@ -2469,6 +2478,14 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     // Auto-payout vendor since payment is confirmed
     await this.processVendorPayout(order);
 
+    // Disburse custom errand item cost to the assigned errander
+    if (order.type === OrderType.CUSTOM_ERRAND && order.errander) {
+      const erranderWallet = await this.walletsService.getOrCreateWallet(order.errander.toString());
+      if (erranderWallet.bankDetails?.accountNumber) {
+        await this.disburseItemCost(order, order.errander.toString(), erranderWallet.bankDetails);
+      }
+    }
+
     // Auto-create initial chat message for the order
     try {
       const erranderUser: any = order.errander;
@@ -2524,8 +2541,10 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     const order = await this.orderModel.findById(orderId);
     if (!order) throw new NotFoundException('Order not found');
     if (order.customer.toString() !== customerId.toString()) throw new BadRequestException('Not your order');
-    if (order.status !== OrderStatus.PENDING) {
-      throw new BadRequestException('Cannot increase fee after acceptance');
+    if (order.isPooledErrand) throw new BadRequestException('Cannot modify fee for an order in a pool');
+    if (order.paymentStatus === PaymentStatus.PAID) throw new BadRequestException('Order is already paid. Fee increases requiring a top-up are not supported yet.');
+    if (order.status !== OrderStatus.PENDING && order.status !== OrderStatus.NEGOTIATING) {
+      throw new BadRequestException('Cannot increase fee after acceptance or confirmation');
     }
     if (newFee <= order.deliveryFee) {
       throw new BadRequestException('New fee must be higher than current fee');
@@ -2556,6 +2575,7 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
   async placeBid(orderId: string, erranderId: string, amount: number): Promise<Order> {
     const order = await this.orderModel.findById(orderId).populate('bids.errander');
     if (!order) throw new NotFoundException('Order not found');
+    if (order.isPooledErrand) throw new BadRequestException('Bidding is disabled for pooled errands');
     if (![OrderStatus.PENDING, OrderStatus.NEGOTIATING].includes(order.status as any)) throw new BadRequestException('Order is no longer accepting bids');
 
     // check if this errander already bid
@@ -2617,6 +2637,8 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     const order = await this.orderModel.findById(orderId);
     if (!order) throw new NotFoundException('Order not found');
     if (order.customer.toString() !== customerId.toString()) throw new BadRequestException('Not your order');
+    if (order.isPooledErrand) throw new BadRequestException('Cannot accept bids for pooled errands');
+    if (order.paymentStatus === PaymentStatus.PAID) throw new BadRequestException('Order is already paid. Accepting higher bids requires top-up, which is not supported yet.');
     if (![OrderStatus.PENDING, OrderStatus.NEGOTIATING].includes(order.status as any)) throw new BadRequestException('Order is no longer accepting bids');
 
     // Try DeliveryBid collection first (used by NegotiationService/NegotiationGateway)
@@ -2867,7 +2889,9 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     }
 
     const estimatedCost = order.customDetails?.estimatedItemCost || 0;
-    const difference = estimatedCost - data.actualItemCost;
+    const itemCostBuffer = order.customDetails?.itemCostBuffer || 0;
+    const totalHeldByRider = estimatedCost + itemCostBuffer;
+    const difference = totalHeldByRider - data.actualItemCost;
 
     order.actualItemCost = data.actualItemCost;
     order.receiptImage = data.receiptImage || '';
@@ -2881,10 +2905,10 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     const customerId = order.customer?._id || order.customer;
     if (customerId) {
       const message = difference > 0
-        ? `Your rider submitted the actual cost of ₦${data.actualItemCost.toLocaleString()} for order #${order.orderNumber}. A refund of ₦${difference.toLocaleString()} will be credited once you approve.`
+        ? `Your rider submitted the actual cost of ₦${data.actualItemCost.toLocaleString()} for order #${order.orderNumber}. Since you paid a total of ₦${totalHeldByRider.toLocaleString()} (Estimate + Buffer), you will receive a refund of ₦${difference.toLocaleString()} once approved.`
         : difference < 0
-          ? `Your rider submitted the actual cost of ₦${data.actualItemCost.toLocaleString()} for order #${order.orderNumber}. The item cost was ₦${Math.abs(difference).toLocaleString()} more than estimated. The rider covered the difference.`
-          : `Your rider confirmed the item cost of ₦${data.actualItemCost.toLocaleString()} for order #${order.orderNumber} matches the estimate. Please approve.`;
+          ? `Your rider submitted the actual cost of ₦${data.actualItemCost.toLocaleString()} for order #${order.orderNumber}. The item cost exceeded your estimate + buffer by ₦${Math.abs(difference).toLocaleString()}. The rider covered the difference.`
+          : `Your rider confirmed the actual item cost exactly matches your estimated total of ₦${totalHeldByRider.toLocaleString()} (Estimate + Buffer). Please approve.`;
 
       try {
         await this.notificationsService.sendNotification(customerId.toString(), {
@@ -2922,7 +2946,7 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     if (!order) throw new NotFoundException('Order not found');
     
     const orderCustomerId = (order.customer?._id || order.customer)?.toString();
-    if (orderCustomerId !== customerId) {
+    if (orderCustomerId !== customerId.toString()) {
       throw new BadRequestException('Only the customer can approve reconciliation');
     }
     if (order.reconciliationStatus !== 'submitted') {
@@ -2962,6 +2986,20 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
           });
         } catch (e) {
           this.logger.warn(`Failed to notify customer about refund: ${e}`);
+        }
+
+        // Debit errander's wallet to retrieve unspent cash
+        if (order.errander) {
+          try {
+            await this.walletsService.forceDebitWallet(
+              order.errander.toString(),
+              order.refundAmount,
+              `Deduction: Unspent item cost buffer for order #${order.orderNumber}`,
+            );
+            this.logger.log(`Debited unspent buffer ₦${order.refundAmount} from errander ${order.errander.toString()} for order ${order.orderNumber}`);
+          } catch (e) {
+            this.logger.error(`Failed to debit unspent buffer from errander ${order.errander.toString()}: ${e}`);
+          }
         }
       } catch (e) {
         this.logger.error(`Failed to credit refund for order ${order.orderNumber}: ${e}`);
@@ -3031,6 +3069,8 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     
     if (order.type !== 'custom_errand') throw new BadRequestException('Only custom errands can be pooled');
     if (order.isPooledErrand) throw new BadRequestException('Order is already in a pool');
+    if (order.paymentStatus !== PaymentStatus.PAID) throw new BadRequestException('Order must be paid before creating a pool');
+    if ((order as any).paymentMethod === 'cash') throw new BadRequestException('Cash orders cannot be pooled');
 
     const poolCode = 'POOL-' + Math.random().toString(36).substring(2, 8).toUpperCase();
     
@@ -3060,7 +3100,7 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
   }
 
   async joinPool(poolId: string, orderId: string, customerId: string): Promise<any> {
-    const pool = await this.errandPoolModel.findById(poolId);
+    let pool = await this.errandPoolModel.findById(poolId);
     if (!pool) throw new NotFoundException('Pool not found');
     if (pool.status !== 'open') throw new BadRequestException('Pool is no longer open');
     if (pool.orders.length >= pool.maxParticipants) throw new BadRequestException('Pool is full');
@@ -3070,10 +3110,25 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     if (order.customer.toString() !== customerId) throw new BadRequestException('Not authorized');
     if (order.type !== 'custom_errand') throw new BadRequestException('Only custom errands can be pooled');
     if (order.isPooledErrand) throw new BadRequestException('Order is already in a pool');
+    if (order.paymentStatus !== PaymentStatus.PAID) throw new BadRequestException('Order must be paid before joining a pool');
+    if ((order as any).paymentMethod === 'cash') throw new BadRequestException('Cash orders cannot be pooled');
 
-    // Add to pool
-    pool.orders.push(order._id);
-    await pool.save();
+    // Add to pool atomically to prevent race conditions exceeding maxParticipants
+    pool = await this.errandPoolModel.findOneAndUpdate(
+      { 
+        _id: poolId, 
+        status: 'open',
+        $expr: { $lt: [{ $size: "$orders" }, "$maxParticipants"] }
+      },
+      {
+        $addToSet: { orders: order._id }
+      },
+      { new: true }
+    );
+
+    if (!pool) {
+      throw new BadRequestException('Failed to join pool: pool may be full or closed');
+    }
 
     order.isPooledErrand = true;
     order.errandPoolId = pool._id;
@@ -3138,6 +3193,68 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
 
     if (order.paymentStatus === PaymentStatus.PAID) {
       await this.broadcastNewOrderToErranders(order);
+    }
+  }
+
+  async disburseItemCost(order: Order, erranderId: string, bankDetails: any, erranderUser?: any): Promise<void> {
+    if (order.itemCostDisbursementStatus === 'transferred') return; // Already done
+
+    const itemCost = order.customDetails?.estimatedItemCost || 0;
+    const itemCostBuffer = order.customDetails?.itemCostBuffer || 0;
+    const totalToDisburse = itemCost + itemCostBuffer;
+    if (totalToDisburse <= 0) return;
+
+    const transferRef = `ITEM-${order.orderNumber}-${uuidv4().slice(0, 6).toUpperCase()}`;
+    
+    try {
+      const recipient = await this.paystackService.createTransferRecipient({
+        name: bankDetails.accountName || erranderUser?.firstName || 'Errander',
+        account_number: bankDetails.accountNumber,
+        bank_code: bankDetails.bankCode,
+      });
+
+      const transfer = await this.paystackService.initiateTransfer({
+        amount: totalToDisburse,
+        reference: transferRef,
+        recipient: recipient.recipient_code,
+        reason: `Item cost for errand ${order.orderNumber}`,
+      });
+
+      if ((transfer as any).status === true || (transfer as any).status === 'success') {
+        order.itemCostDisbursementStatus = 'transferred';
+        order.itemCostTransferReference = transferRef;
+        if ((order as any).save) await (order as any).save();
+        else await this.orderModel.findByIdAndUpdate(order._id, {
+          itemCostDisbursementStatus: 'transferred',
+          itemCostTransferReference: transferRef
+        });
+        this.logger.log(`Item cost ₦${itemCost} transferred to errander ${erranderId} bank for order ${order.orderNumber}`);
+      } else {
+        throw new Error((transfer as any).message || 'Transfer failed');
+      }
+    } catch (transferError: any) {
+      this.logger.error(`Item cost transfer failed for order ${order.orderNumber}: ${transferError.message}`);
+      
+      const isTestKey = process.env.PAYSTACK_SECRET_KEY?.startsWith('sk_test');
+      const useMock = Boolean(isTestKey || process.env.USE_MOCK_PAYOUT === 'true');
+      
+      if (useMock) {
+        order.itemCostDisbursementStatus = 'transferred';
+        order.itemCostTransferReference = `MOCK-${transferRef}`;
+        if ((order as any).save) await (order as any).save();
+        else await this.orderModel.findByIdAndUpdate(order._id, {
+          itemCostDisbursementStatus: 'transferred',
+          itemCostTransferReference: `MOCK-${transferRef}`
+        });
+        this.logger.log(`[MOCK] Item cost ₦${itemCost} mock-transferred for order ${order.orderNumber}`);
+      } else {
+        order.itemCostDisbursementStatus = 'failed';
+        if ((order as any).save) await (order as any).save();
+        else await this.orderModel.findByIdAndUpdate(order._id, { itemCostDisbursementStatus: 'failed' });
+        // NOTE: We don't rollback the order here because payment was already made by the customer. 
+        // We log an error for manual admin intervention.
+        this.logger.error(`CRITICAL: Failed to transfer item cost to errander ${erranderId} for paid order ${(order as any)._id}`);
+      }
     }
   }
 }

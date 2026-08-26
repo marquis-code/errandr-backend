@@ -224,6 +224,27 @@ export class WalletsService {
     }
   }
 
+  async forceDebitWallet(
+    userId: string,
+    amount: number,
+    description: string,
+  ): Promise<void> {
+    const wallet = await this.getOrCreateWallet(userId);
+    
+    wallet.balance -= amount;
+    await wallet.save();
+
+    await this.userModel.findByIdAndUpdate(userId, { $inc: { walletBalance: -amount } });
+
+    await this.transactionModel.create({
+      wallet: wallet._id,
+      amount,
+      type: TransactionType.DEBIT,
+      description,
+      actionType: 'automatic',
+    });
+  }
+
   async updatePreferences(userId: string, preference: PayoutPreference, bankDetails?: any, metadata?: any, bankAccounts?: any[]): Promise<WalletDocument> {
     const wallet = await this.getOrCreateWallet(userId);
     wallet.payoutPreference = preference;
@@ -362,7 +383,10 @@ export class WalletsService {
   }
 
   async markPayoutAsPaid(transactionId: string): Promise<void> {
-    const transaction = await this.transactionModel.findById(transactionId);
+    const transaction = await this.transactionModel.findById(transactionId).populate({
+      path: 'wallet',
+      populate: { path: 'owner' }
+    });
     
     if (!transaction || transaction.type !== TransactionType.DEBIT || transaction.status !== TransactionStatus.PENDING) {
       throw new Error('Invalid or already processed payout request');
@@ -377,6 +401,12 @@ export class WalletsService {
     };
     
     await transaction.save();
+
+    // Aggressively ensure payout sends an email
+    const owner = (transaction.wallet as any)?.owner;
+    if (owner && owner.email) {
+      await this.emailService.sendPayoutSuccessful(owner.email, transaction.amount, transaction.reference || transactionId);
+    }
   }
 
   async rejectPayoutRequest(transactionId: string): Promise<void> {

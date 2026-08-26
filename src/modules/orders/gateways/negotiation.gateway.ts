@@ -127,6 +127,6 @@ export class NegotiationGateway
   }
 
   sendOrderAcceptedDirectly(orderId: string, payload: any) {
-    this.server.to(`negotiation:${orderId}`).emit('bidAccepted', payload);
+    this.server.to(`negotiation:${orderId}`).emit('orderAcceptedDirectly', payload);
   }
 }

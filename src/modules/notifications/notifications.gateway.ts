@@ -179,13 +179,15 @@ export class NotificationsGateway
       client.handshake.auth?.userId as string;
     
     if (userId && data.orderId) {
+      const roomName = `order:${data.orderId}:viewers`;
       if (data.isViewing) {
-        client.join(`order:${data.orderId}:viewers`);
+        client.join(roomName);
       } else {
-        client.leave(`order:${data.orderId}:viewers`);
+        client.leave(roomName);
       }
       
-      const viewersCount = (this.server.sockets.adapter as any).rooms?.get(`order:${data.orderId}:viewers`)?.size || 0;
+      const room = (client as any).adapter?.rooms?.get(roomName);
+      const viewersCount = room?.size || 0;
       
       // Emit to all clients so the student app can listen and update UI
       this.server.emit('errand:viewers_update', {

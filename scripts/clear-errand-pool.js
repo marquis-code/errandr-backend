@@ -51,6 +51,19 @@ async function main() {
 
     console.log(`🚀 Successfully cleared ${result.modifiedCount} available errands from the pool.`);
 
+    // 2. Clear custom errand pools (errandpools collection)
+    const errandPoolsCollection = db.collection('errandpools');
+    const poolResult = await errandPoolsCollection.updateMany(
+      { status: 'open' },
+      { 
+        $set: { 
+          status: 'cancelled' 
+        } 
+      }
+    );
+
+    console.log(`🚀 Successfully cancelled ${poolResult.modifiedCount} open custom errand pools.`);
+
   } catch (error) {
     console.error('❌ An error occurred:', error);
   } finally {
