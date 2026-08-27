@@ -384,7 +384,7 @@ async getMyVendorOrders(
     @Body() body: { actualItemCost: number; receiptImage?: string; note?: string },
   ) {
     this.logger.log(`submitReconciliation() id=${id} user=${user._id} actualCost=${body.actualItemCost}`);
-    return this.ordersService.submitReconciliation(id, (user._id as unknown) as string, body);
+    return this.ordersService.submitReconciliation(id, user._id.toString(), body);
   }
 
   @Put(':id/reconcile/approve')
@@ -396,7 +396,7 @@ async getMyVendorOrders(
     @CurrentUser() user: User,
   ) {
     this.logger.log(`approveReconciliation() id=${id} user=${user._id}`);
-    return this.ordersService.approveReconciliation(id, (user._id as unknown) as string);
+    return this.ordersService.approveReconciliation(id, user._id.toString());
   }
 
   // --- ERRAND POOLING (CUSTOM ERRANDS) ---

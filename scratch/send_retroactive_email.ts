@@ -13,7 +13,8 @@ async function bootstrap() {
   try {
     for (const email of emails) {
       console.log(`Attempting to aggressively send payout email to ${email} for amount ${amount}`);
-      await emailService.sendPayoutSuccessful(email, amount, reference);
+      const result = await emailService.sendPayoutSuccessful(email, amount, reference);
+      console.log(`Email result for ${email}:`, JSON.stringify(result, null, 2));
       console.log(`Successfully sent email to ${email}`);
     }
   } catch (error) {

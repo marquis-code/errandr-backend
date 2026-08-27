@@ -74,6 +74,8 @@ export class WalletsController {
     @Query('exportAsCsv') exportAsCsv?: string,
     @Query('type') type?: string,
     @Query('category') category?: string,
+    @Query('userRole') userRole?: string,
+    @Query('userId') userId?: string,
     @Res({ passthrough: true }) res?: Response
   ) {
     const isExport = exportAsCsv === 'true';
@@ -88,7 +90,9 @@ export class WalletsController {
       sortOrder,
       isExport,
       type,
-      category
+      category,
+      userRole,
+      userId
     );
 
     if (isExport && res) {

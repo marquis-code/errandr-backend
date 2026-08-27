@@ -6,6 +6,7 @@ import { Transaction, TransactionDocument, TransactionType, TransactionStatus } 
 import { PaystackService } from '../payments/paystack.service';
 import { EmailService } from '../email/email.service';
 import { User } from '../users/schemas/user.schema';
+import { Order } from '../orders/schemas/order.schema';
 import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
@@ -14,6 +15,7 @@ export class WalletsService {
     @InjectModel(Wallet.name) private walletModel: Model<WalletDocument>,
     @InjectModel(Transaction.name) private transactionModel: Model<TransactionDocument>,
     @InjectModel(User.name) private userModel: Model<User>,
+    @InjectModel(Order.name) private orderModel: Model<any>,
     @Inject(forwardRef(() => PaystackService)) private paystackService: PaystackService,
     private emailService: EmailService,
   ) {}
@@ -634,9 +636,27 @@ export class WalletsService {
     sortOrder?: string,
     exportAsCsv?: boolean,
     type?: string,
-    category?: string
+    category?: string,
+    userRole?: string,
+    userId?: string
   ): Promise<{ transactions: any[], total: number, page: number, limit: number } | string> {
     const query: any = {};
+
+    if (userId) {
+      const wallet = await this.walletModel.findOne({ owner: userId }).select('_id');
+      if (wallet) {
+        query.wallet = wallet._id;
+      } else {
+        // If user has no wallet, return empty result
+        query.wallet = null;
+      }
+    } else if (userRole && userRole !== 'all') {
+      const users = await this.userModel.find({ role: userRole }).select('_id');
+      const userIds = users.map(u => u._id);
+      const wallets = await this.walletModel.find({ owner: { $in: userIds } }).select('_id');
+      const walletIds = wallets.map(w => w._id);
+      query.wallet = { $in: walletIds };
+    }
 
     if (type) {
       query.type = type;
@@ -686,7 +706,7 @@ export class WalletsService {
         .find(query)
         .populate({
           path: 'wallet',
-          populate: { path: 'owner', select: 'firstName lastName email' }
+          populate: { path: 'owner', select: 'firstName lastName email role' }
         })
         .sort(sort);
 
@@ -715,7 +735,7 @@ export class WalletsService {
         .find(query)
         .populate({
           path: 'wallet',
-          populate: { path: 'owner', select: 'firstName lastName email' }
+          populate: { path: 'owner', select: 'firstName lastName email role' }
         })
         .sort(sort)
         .skip(skip)
@@ -731,54 +751,185 @@ export class WalletsService {
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const startOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
 
-    const [totalVolume, totalCommissions, highestSpender, todaysVol, yesterdaysVol] = await Promise.all([
-      this.transactionModel.aggregate([
-        { $match: { type: TransactionType.CREDIT } },
-        { $group: { _id: null, total: { $sum: '$amount' } } }
+    const [walletAccruals, transactionStats, highestSpender, todaysVol, yesterdaysVol, orderStats, highestPoints, topVendor, topErrander] = await Promise.all([
+      // 1. Wallet Accruals by Role (Total Earned / Balances)
+      this.walletModel.aggregate([
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'owner',
+            foreignField: '_id',
+            as: 'ownerDoc'
+          }
+        },
+        { $unwind: { path: '$ownerDoc', preserveNullAndEmptyArrays: false } },
+        {
+          $group: {
+            _id: '$ownerDoc.role',
+            totalAccrued: { $sum: '$totalEarned' },
+            currentBalance: { $sum: '$balance' }
+          }
+        }
       ]),
+      
+      // 2. Transaction Stats by Role and Type (Funding, Usage, Payouts)
       this.transactionModel.aggregate([
-        { $match: { description: { $regex: /order/i } } }, // Simplifying commission logic for now
-        { $group: { _id: null, total: { $sum: '$amount' } } }
+        { $match: { status: TransactionStatus.COMPLETED } },
+        {
+          $lookup: {
+            from: 'wallets',
+            localField: 'wallet',
+            foreignField: '_id',
+            as: 'walletDoc'
+          }
+        },
+        { $unwind: { path: '$walletDoc', preserveNullAndEmptyArrays: false } },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'walletDoc.owner',
+            foreignField: '_id',
+            as: 'ownerDoc'
+          }
+        },
+        { $unwind: { path: '$ownerDoc', preserveNullAndEmptyArrays: false } },
+        {
+          $group: {
+            _id: { role: '$ownerDoc.role', type: '$type' },
+            totalAmount: { $sum: '$amount' }
+          }
+        }
       ]),
+      
+      // 3. Highest Spender
       this.transactionModel.aggregate([
-        { $match: { type: TransactionType.DEBIT } },
+        { $match: { type: TransactionType.DEBIT, status: TransactionStatus.COMPLETED } },
         { $group: { _id: '$wallet', totalSpent: { $sum: '$amount' } } },
         { $sort: { totalSpent: -1 } },
         { $limit: 1 },
         {
-          $lookup: {
-            from: 'wallets',
-            localField: '_id',
-            foreignField: '_id',
-            as: 'wallet'
-          }
+          $lookup: { from: 'wallets', localField: '_id', foreignField: '_id', as: 'wallet' }
         },
         { $unwind: { path: '$wallet', preserveNullAndEmptyArrays: true } },
         {
-          $lookup: {
-            from: 'users',
-            localField: 'wallet.owner',
-            foreignField: '_id',
-            as: 'owner'
-          }
+          $lookup: { from: 'users', localField: 'wallet.owner', foreignField: '_id', as: 'owner' }
         },
         { $unwind: { path: '$owner', preserveNullAndEmptyArrays: true } },
         { $project: { _id: 0, totalSpent: 1, owner: { firstName: 1, lastName: 1, email: 1, avatar: 1 } } }
       ]),
+      
+      // 4. Today's Volume (Total successful credits)
       this.transactionModel.aggregate([
-        { $match: { type: TransactionType.CREDIT, createdAt: { $gte: startOfToday } } },
+        { $match: { type: TransactionType.CREDIT, status: TransactionStatus.COMPLETED, createdAt: { $gte: startOfToday } } },
         { $group: { _id: null, total: { $sum: '$amount' } } }
       ]),
+      
+      // 5. Yesterday's Volume
       this.transactionModel.aggregate([
-        { $match: { type: TransactionType.CREDIT, createdAt: { $gte: startOfYesterday, $lt: startOfToday } } },
+        { $match: { type: TransactionType.CREDIT, status: TransactionStatus.COMPLETED, createdAt: { $gte: startOfYesterday, $lt: startOfToday } } },
         { $group: { _id: null, total: { $sum: '$amount' } } }
+      ]),
+      
+      // 6. Platform Share directly from Orders
+      this.orderModel.aggregate([
+        { $match: { status: 'delivered' } }, // Only count completed orders
+        {
+          $group: {
+            _id: '$type', // 'marketplace' or 'custom_errand'
+            totalPlatformShare: { $sum: '$platformShare' }
+          }
+        }
+      ]),
+      
+      // 7. Highest Points Student
+      this.userModel.find({ role: 'student' }).sort({ points: -1 }).limit(1).select('firstName lastName email avatar points totalOrders').lean(),
+
+      // 8. Top Vendor (by total earned)
+      this.walletModel.aggregate([
+        { $lookup: { from: 'users', localField: 'owner', foreignField: '_id', as: 'owner' } },
+        { $unwind: '$owner' },
+        { $match: { 'owner.role': 'vendor' } },
+        { $sort: { totalEarned: -1 } },
+        { $limit: 1 },
+        { $project: { _id: 0, totalEarned: 1, owner: { firstName: 1, lastName: 1, email: 1, avatar: 1 } } }
+      ]),
+
+      // 9. Top Errander (by total earned)
+      this.walletModel.aggregate([
+        { $lookup: { from: 'users', localField: 'owner', foreignField: '_id', as: 'owner' } },
+        { $unwind: '$owner' },
+        { $match: { 'owner.role': { $in: ['errander', 'dispatcher'] } } },
+        { $sort: { totalEarned: -1 } },
+        { $limit: 1 },
+        { $project: { _id: 0, totalEarned: 1, owner: { firstName: 1, lastName: 1, email: 1, avatar: 1 } } }
       ])
     ]);
 
+    // Parse the results
+    let vendorAccrued = 0;
+    let dispatcherAccrued = 0;
+    
+    walletAccruals.forEach(stat => {
+      if (stat._id === 'vendor') vendorAccrued = stat.totalAccrued;
+      if (stat._id === 'errander' || stat._id === 'dispatcher') dispatcherAccrued = stat.totalAccrued;
+    });
+
+    let studentFunding = 0;
+    let studentUsage = 0;
+    let totalPaidOut = 0; // Withdrawals by vendors/dispatchers
+    let vendorPaidOut = 0;
+    let dispatcherPaidOut = 0;
+
+    transactionStats.forEach(stat => {
+      const role = stat._id.role;
+      const type = stat._id.type;
+      
+      if (role === 'user' || role === 'student') {
+        if (type === TransactionType.CREDIT) studentFunding += stat.totalAmount;
+        if (type === TransactionType.DEBIT) studentUsage += stat.totalAmount;
+      }
+      
+      if (role === 'vendor' && type === TransactionType.DEBIT) {
+        vendorPaidOut += stat.totalAmount;
+        totalPaidOut += stat.totalAmount;
+      }
+      
+      if ((role === 'errander' || role === 'dispatcher') && type === TransactionType.DEBIT) {
+        dispatcherPaidOut += stat.totalAmount;
+        totalPaidOut += stat.totalAmount;
+      }
+    });
+
+    // Total Volume = Total Funding
+    const totalVolume = studentFunding;
+    
+    // Platform Revenue = From Orders
+    let platformMarketplace = 0;
+    let platformCustomErrands = 0;
+    
+    orderStats.forEach((stat: any) => {
+      if (stat._id === 'marketplace' || stat._id === 'regular') platformMarketplace = stat.totalPlatformShare || 0;
+      if (stat._id === 'custom_errand') platformCustomErrands = stat.totalPlatformShare || 0;
+    });
+
+    const totalCommissions = platformMarketplace + platformCustomErrands;
+
     return {
-      totalVolume: totalVolume[0]?.total || 0,
-      totalCommissions: Math.round((totalVolume[0]?.total || 0) * 0.05), // Calculated 5% platform share
+      totalVolume,
+      totalCommissions,
+      platformMarketplace,
+      platformCustomErrands,
+      vendorAccrued,
+      dispatcherAccrued,
+      totalPaidOut,
+      vendorPaidOut,
+      dispatcherPaidOut,
+      studentFunding,
+      studentUsage,
       highestPurchaseUser: highestSpender[0] || null,
+      highestPointsUser: highestPoints[0] || null,
+      topVendor: topVendor[0] || null,
+      topErrander: topErrander[0] || null,
       todaysRevenue: todaysVol[0]?.total || 0,
       yesterdaysRevenue: yesterdaysVol[0]?.total || 0,
     };

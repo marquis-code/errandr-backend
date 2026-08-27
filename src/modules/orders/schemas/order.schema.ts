@@ -501,8 +501,11 @@ export class Order extends Document {
   @Prop()
   reconciliationNote: string;
 
-  @Prop()
+  @Prop({ default: 0 })
   refundAmount: number;
+
+  @Prop({ default: 0 })
+  shortfallAmount: number;
 
   @Prop()
   abandonmentFeedback: string;

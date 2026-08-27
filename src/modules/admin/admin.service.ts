@@ -139,6 +139,9 @@ export class AdminService {
         $addFields: {
           walletBalance: { 
             $ifNull: [ { $arrayElemAt: ['$walletInfo.balance', 0] }, 0 ] 
+          },
+          totalEarned: {
+            $ifNull: [ { $arrayElemAt: ['$walletInfo.totalEarned', 0] }, 0 ] 
           }
         }
       },
@@ -152,7 +155,13 @@ export class AdminService {
   }
 
   async getVendor(id: string) {
-    return this.vendorModel.findById(id).populate('owner', 'firstName lastName email phone');
+    if (!Types.ObjectId.isValid(id)) return null;
+    return this.vendorModel.findOne({
+      $or: [
+        { _id: new Types.ObjectId(id) },
+        { owner: new Types.ObjectId(id) }
+      ]
+    }).populate('owner', 'firstName lastName email phone');
   }
 
   async getReports() {
@@ -315,7 +324,7 @@ export class AdminService {
 
     const skip = (page - 1) * limit;
 
-    const [orders, total, pendingCount, processingCount, completedCount, cancelledCount] = await Promise.all([
+    const [orders, total, pendingCount, processingCount, completedCount, cancelledCount, revenueAgg] = await Promise.all([
       this.orderModel
         .find(query)
         .populate('customer', 'firstName lastName email phone')
@@ -328,7 +337,18 @@ export class AdminService {
       this.orderModel.countDocuments({ ...query, status: 'pending' }),
       this.orderModel.countDocuments({ ...query, status: { $in: ['accepted', 'assigned', 'picked_up'] } }),
       this.orderModel.countDocuments({ ...query, status: 'delivered' }),
-      this.orderModel.countDocuments({ ...query, status: 'cancelled' })
+      this.orderModel.countDocuments({ ...query, status: 'cancelled' }),
+      this.orderModel.aggregate([
+        { $match: query },
+        {
+          $group: {
+            _id: null,
+            totalRevenue: {
+              $sum: { $ifNull: ["$total", { $ifNull: ["$totalAmount", 0] }] }
+            }
+          }
+        }
+      ])
     ]);
 
     return {
@@ -340,7 +360,8 @@ export class AdminService {
         pending: pendingCount,
         processing: processingCount,
         completed: completedCount,
-        cancelled: cancelledCount
+        cancelled: cancelledCount,
+        totalRevenue: revenueAgg[0]?.totalRevenue || 0
       }
     };
   }
@@ -443,7 +464,13 @@ export class AdminService {
   }
 
   async getDispatcher(id: string) {
-    return this.erranderModel.findById(id).populate('user', '-password');
+    if (!Types.ObjectId.isValid(id)) return null;
+    return this.erranderModel.findOne({
+      $or: [
+        { _id: new Types.ObjectId(id) },
+        { user: new Types.ObjectId(id) }
+      ]
+    }).populate('user', '-password');
   }
 
   async suspendDispatcher(id: string) {

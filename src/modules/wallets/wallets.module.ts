@@ -9,6 +9,7 @@ import { PaymentsModule } from '../payments/payments.module';
 import { EmailModule } from '../email/email.module';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { WalletsCronService } from './wallets.cron';
+import { Order, OrderSchema } from '../orders/schemas/order.schema';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { WalletsCronService } from './wallets.cron';
       { name: Wallet.name, schema: WalletSchema },
       { name: Transaction.name, schema: TransactionSchema },
       { name: User.name, schema: UserSchema },
+      { name: Order.name, schema: OrderSchema },
     ]),
     forwardRef(() => PaymentsModule),
     EmailModule,
