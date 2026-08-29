@@ -42,6 +42,7 @@ export enum ServiceLocation {
   PHYSICAL_LOCATION = 'physical_location',
   MOBILE_OPERATOR = 'mobile_operator',
   VIRTUAL_ONLINE = 'virtual_online',
+  NONE = '',
 }
 
 export enum TeamSize {
@@ -50,6 +51,7 @@ export enum TeamSize {
   SIX_TO_TEN = '6-10',
   ELEVEN_TO_TWENTY = '11-20',
   TWENTY_PLUS = '20+',
+  NONE = '',
 }
 
 export enum VendorStatus {
