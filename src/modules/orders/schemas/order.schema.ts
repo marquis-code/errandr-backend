@@ -13,6 +13,7 @@ export enum OrderStatus {
   CANCELLED = 'cancelled',
   REFUNDED = 'refunded',
   AWAITING_PAYMENT = 'awaiting_payment',
+  AWAITING_PAYMENT_CONFIRMATION = 'awaiting_payment_confirmation',
   NEGOTIATING = 'negotiating',
 }
 

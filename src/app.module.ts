@@ -40,6 +40,7 @@ import { MapboxModule } from './modules/mapbox/mapbox.module';
 import { GlobalProductsModule } from './modules/global-products/global-products.module';
 import { PushCampaignsModule } from './modules/push-campaigns/push-campaigns.module';
 import { ExamModeModule } from './modules/exam-mode/exam-mode.module';
+import { MarketPoolModule } from './modules/market-pool/market-pool.module';
 
 @Module({
   imports: [
@@ -115,6 +116,7 @@ import { ExamModeModule } from './modules/exam-mode/exam-mode.module';
     PushCampaignsModule,
     PromoCodesModule,
     ExamModeModule,
+    MarketPoolModule,
   ],
 })
 export class AppModule {}

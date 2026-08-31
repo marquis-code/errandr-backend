@@ -181,6 +181,16 @@ export class User extends Document {
     smsNotifications: boolean;
     marketingPromos: boolean;
   };
+
+  @Prop({
+    type: Object,
+    default: null
+  })
+  bankDetails: {
+    bankName: string;
+    accountName: string;
+    accountNumber: string;
+  };
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

@@ -184,7 +184,7 @@ async getMyVendorOrders(
         this.ordersService.findById(id),
         timeout
       ]);
-      console.log(`--- GET /orders/${id} OUTPUT ---`, JSON.stringify(order, null, 2));
+      // console.log(`--- GET /orders/${id} OUTPUT ---`, JSON.stringify(order, null, 2));
       return order;
     } catch (error) {
       console.error(`--- GET /orders/${id} FAILED, RETURNING FALLBACK ---`, error.message);
@@ -243,6 +243,31 @@ async getMyVendorOrders(
   ) {
     this.logger.log(`payForCustomErrand() id=${id} user=${user._id}`);
     return this.ordersService.payForCustomErrand(id, (user._id as unknown) as string, body.paymentReference);
+  }
+
+  @Post(':id/custom/p2p-pay')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Student marks custom errand as paid via P2P transfer' })
+  markCustomErrandAsPaid(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+    @Body() body: { proofOfPayment?: string },
+  ) {
+    this.logger.log(`markCustomErrandAsPaid() id=${id} user=${user._id}`);
+    return this.ordersService.markCustomErrandAsPaid(id, (user._id as unknown) as string, body?.proofOfPayment);
+  }
+
+  @Post(':id/custom/p2p-confirm')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Errander confirms receipt of P2P transfer' })
+  confirmCustomErrandPayment(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+  ) {
+    this.logger.log(`confirmCustomErrandPayment() id=${id} user=${user._id}`);
+    return this.ordersService.confirmCustomErrandPayment(id, (user._id as unknown) as string);
   }
 
   @Put(':id/custom/fee')

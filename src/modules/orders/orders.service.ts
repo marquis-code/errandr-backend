@@ -1755,7 +1755,7 @@ export class OrdersService {
           select: 'storeName logo phone address location user owner',
           populate: { path: 'owner', select: 'phone' }
         })
-        .populate('errander', 'firstName lastName phone user')
+        .populate('errander', 'firstName lastName phone user bankDetails')
         .populate('bids.errander', 'firstName lastName avatar phone')
         .populate('viewers.errander', 'firstName lastName avatar phone')
         .maxTimeMS(10000)
@@ -1766,6 +1766,12 @@ export class OrdersService {
         const erranderDetails = await this.erranderModel.findOne({ user: (order.errander as any)._id }).maxTimeMS(5000).lean();
         if (erranderDetails) {
           (order as any).erranderDetails = erranderDetails;
+        }
+        
+        // Fetch wallet for bank details
+        const wallet = await this.walletsService.getWallet((order.errander as any)._id as string);
+        if (wallet?.bankDetails) {
+          (order.errander as any).bankDetails = wallet.bankDetails;
         }
       }
 
@@ -1934,8 +1940,16 @@ export class OrdersService {
       order.hasRatedErrander = true;
       
       // Update Errander Average Rating
+      let resolvedErranderUserId = order.errander.toString();
       if (order.errander) {
-         const errander = await this.erranderModel.findOne({ user: new Types.ObjectId(order.errander.toString()) });
+         let errander = await this.erranderModel.findOne({ user: new Types.ObjectId(order.errander.toString()) });
+         if (!errander) {
+           // Fallback in case order.errander is actually the Errander ObjectId
+           errander = await this.erranderModel.findById(order.errander);
+           if (errander && errander.user) {
+             resolvedErranderUserId = errander.user.toString();
+           }
+         }
          if (errander) {
             // Very simple moving average calculation
             const currentRating = errander.rating || 0;
@@ -1947,8 +1961,8 @@ export class OrdersService {
       
       // Award points to Erranders for good rating
       if (data.erranderRating >= 4 && order.errander) {
-        await this.rewardsService.updateUserStats(order.errander.toString(), { perfectRating: data.erranderRating === 5 });
-        await this.rewardsService.addPoints(order.errander.toString(), data.erranderRating === 5 ? 50 : 20, `${data.erranderRating}-star rating bonus (Compliance)`);
+        await this.rewardsService.updateUserStats(resolvedErranderUserId, { perfectRating: data.erranderRating === 5 });
+        await this.rewardsService.addPoints(resolvedErranderUserId, data.erranderRating === 5 ? 50 : 20, `${data.erranderRating}-star rating bonus (Compliance)`);
       }
     }
 
@@ -2240,7 +2254,7 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
 
   // TEMP: check what the most recent orders in DB look like
   const sampleOrders = await this.orderModel.find().limit(3).select('vendor customer status orderNumber');
-  this.logger.log(`getOrdersForVendorOwner() sample DB orders = ${JSON.stringify(sampleOrders)}`);
+// this.logger.log(`getOrdersForVendorOwner() sample DB orders = ${JSON.stringify(sampleOrders)}`);
   return this.getVendorOrders(vendor._id.toString(), status, page, limit);
 }
 
@@ -2410,7 +2424,7 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
       });
     }
 
-    order.errander = errander._id;
+    order.errander = errander.user;
     order.status = OrderStatus.AWAITING_PAYMENT;
     order.statusHistory.push({
       status: OrderStatus.AWAITING_PAYMENT,
@@ -2701,7 +2715,7 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
       });
     }
 
-    order.errander = errander._id;
+    order.errander = errander.user;
     order.status = OrderStatus.AWAITING_PAYMENT;
     order.statusHistory.push({
       status: OrderStatus.AWAITING_PAYMENT,
@@ -2727,8 +2741,8 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
 
     // Notify the accepted errander
     await this.notificationsService.sendNotification(riderUserId, {
-      title: 'Bid Accepted!',
-      body: `Your counter-offer for Order #${order.orderNumber} was accepted!`,
+      title: 'Offer Accepted!',
+      body: `Your offer has been accepted, currently awaiting payment`,
       type: 'ORDER_BID_ACCEPTED',
       data: { orderId: order._id.toString() },
     });
@@ -2742,6 +2756,91 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     });
 
     return populatedOrder as Order;
+  }
+
+  async markCustomErrandAsPaid(orderId: string, customerId: string, proofOfPayment?: string): Promise<Order> {
+    const order = await this.orderModel.findById(orderId).populate('errander');
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.customer.toString() !== customerId.toString()) throw new BadRequestException('Not your order');
+    if (order.status !== OrderStatus.AWAITING_PAYMENT) {
+      throw new BadRequestException('Order is not awaiting payment');
+    }
+
+    if (proofOfPayment) {
+      if (!order.customDetails) {
+        // @ts-ignore - bypassing strict type check for partial update
+        order.customDetails = {};
+      }
+      // @ts-ignore
+      order.customDetails.proofOfPayment = proofOfPayment;
+    }
+
+    order.status = OrderStatus.AWAITING_PAYMENT_CONFIRMATION;
+    order.statusHistory.push({
+      status: OrderStatus.AWAITING_PAYMENT_CONFIRMATION,
+      timestamp: new Date(),
+      note: 'Student marked custom errand as paid via P2P transfer.'
+    });
+
+    await order.save();
+
+    if (order.errander) {
+      const erranderIdStr = (order.errander as any)._id ? (order.errander as any)._id.toString() : order.errander.toString();
+      await this.notificationsService.sendNotification(erranderIdStr, {
+        title: 'Payment Sent!',
+        body: `Student marked Order #${order.orderNumber} as paid. Please verify the transfer in your bank app.`,
+        type: 'ORDER_AWAITING_PAYMENT_CONFIRMATION',
+        data: { orderId: order._id.toString() },
+      });
+
+      // Emit real-time status update to errander
+      try {
+        await this.notifyOrderStatusUpdate(order, OrderStatus.AWAITING_PAYMENT_CONFIRMATION, 'Payment sent via P2P');
+      } catch (e) {
+        this.logger.error(`Failed to emit socket status update for order ${order._id}: ${e.message}`);
+      }
+    }
+
+    return order;
+  }
+
+  async confirmCustomErrandPayment(orderId: string, erranderId: string): Promise<Order> {
+    const order = await this.orderModel.findById(orderId);
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.errander?.toString() !== erranderId.toString()) throw new BadRequestException('Not the assigned rider');
+    
+    order.paymentStatus = PaymentStatus.PAID;
+    order.status = OrderStatus.CONFIRMED;
+    order.statusHistory.push({
+      status: OrderStatus.CONFIRMED,
+      timestamp: new Date(),
+      note: 'Errander confirmed receipt of P2P transfer. Order confirmed.'
+    });
+
+    // Deduct platform fees from Errander's wallet
+    const platformRevenue = (order.serviceFee || 0) + (order.transferFee || 0);
+    const erranderUser = await this.userModel.findById(erranderId);
+    if (erranderUser && platformRevenue > 0) {
+      erranderUser.walletBalance = (erranderUser.walletBalance || 0) - platformRevenue;
+      await erranderUser.save();
+    }
+
+    await order.save();
+
+    await this.notificationsService.sendNotification(order.customer.toString(), {
+      title: 'Payment Confirmed!',
+      body: `The rider confirmed your payment. Your errand is now active.`,
+      type: 'ORDER_CONFIRMED',
+      data: { orderId: order._id.toString() },
+    });
+
+    try {
+      await this.notifyOrderStatusUpdate(order, OrderStatus.CONFIRMED, 'Payment confirmed');
+    } catch (e) {
+      this.logger.error(`Failed to emit socket status update: ${e.message}`);
+    }
+
+    return order;
   }
 
   async calculateDynamicFee(vendorId: string, customerId: string, deliveryAddress: string, deliveryLocationStr?: string, isWithinLuth?: boolean): Promise<number> {

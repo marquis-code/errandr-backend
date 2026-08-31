@@ -29,7 +29,7 @@ export class ErrandersController {
         this.errandersService.getProfile((user._id as unknown) as string),
         timeout
       ]);
-      console.log('--- GET /erranders/me OUTPUT ---', JSON.stringify(profile, null, 2));
+      // console.log('--- GET /erranders/me OUTPUT ---', JSON.stringify(profile, null, 2));
       return profile;
     } catch (error) {
       console.error('--- GET /erranders/me FAILED, RETURNING FALLBACK ---', error.message);
@@ -84,7 +84,7 @@ export class ErrandersController {
         this.errandersService.getEarnings((user._id as unknown) as string),
         timeout
       ]);
-      console.log('--- GET /erranders/earnings OUTPUT ---', JSON.stringify(earnings, null, 2));
+      // console.log('--- GET /erranders/earnings OUTPUT ---', JSON.stringify(earnings, null, 2));
       return earnings;
     } catch (error) {
       console.error('--- GET /erranders/earnings FAILED, RETURNING FALLBACK ---', error.message);
