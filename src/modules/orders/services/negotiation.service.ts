@@ -5,6 +5,8 @@ import { Order, OrderStatus, LocationType, PaymentStatus } from '../schemas/orde
 import { DeliveryBid, DeliveryBidStatus } from '../schemas/delivery-bid.schema';
 import { Errander } from '../../erranders/schemas/errander.schema';
 import { User } from '../../users/schemas/user.schema';
+import { WalletsService } from '../../wallets/wallets.service';
+import { NotificationsService } from '../../notifications/notifications.service';
 
 @Injectable()
 export class NegotiationService {
@@ -15,6 +17,8 @@ export class NegotiationService {
     @InjectModel(DeliveryBid.name) private readonly deliveryBidModel: Model<DeliveryBid>,
     @InjectModel(Errander.name) private readonly erranderModel: Model<Errander>,
     @InjectModel(User.name) private readonly userModel: Model<User>,
+    private readonly walletsService: WalletsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async submitBid(orderId: string, riderId: string, bidAmount: number) {
@@ -26,12 +30,22 @@ export class NegotiationService {
       throw new BadRequestException('Order is no longer accepting bids');
     }
 
+    if (order.type === 'custom_errand') {
+      const wallet = await this.walletsService.getWallet(riderId);
+      const requiredBalance = bidAmount * 0.20;
+      if (wallet && wallet.balance < requiredBalance) {
+        throw new BadRequestException(`Your wallet balance is too low to bid on this custom errand. You need at least ₦${requiredBalance} in your wallet to cover the platform fee.`);
+      }
+    }
+
     // Check if the rider already placed a bid
     const existingBid = await this.deliveryBidModel.findOne({ order: new Types.ObjectId(orderId), rider: new Types.ObjectId(riderId) });
     
     if (existingBid) {
+      if (!existingBid.originalAmount) existingBid.originalAmount = existingBid.bidAmount;
       existingBid.bidAmount = bidAmount;
-      existingBid.status = DeliveryBidStatus.PENDING;
+      existingBid.status = DeliveryBidStatus.COUNTER_OFFER;
+      existingBid.lastNegotiatorRole = 'errander';
       await existingBid.save();
       return existingBid;
     }
@@ -41,6 +55,14 @@ export class NegotiationService {
       rider: new Types.ObjectId(riderId),
       bidAmount,
       status: DeliveryBidStatus.PENDING,
+      lastNegotiatorRole: 'errander',
+    });
+
+    await this.notificationsService.sendNotification(order.customer.toString(), {
+      title: 'New Bid Received',
+      body: `A rider has proposed a delivery fee of ₦${bidAmount} for your errand.`,
+      type: 'ORDER_BIDS_UPDATE',
+      data: { orderId: order._id.toString() },
     });
 
     return newBid;
@@ -88,6 +110,12 @@ export class NegotiationService {
         order.total = order.total + bid.bidAmount;
     }
     order.deliveryFee = bid.bidAmount;
+    
+    // Deduct 20% platform fee from the negotiated delivery fee
+    const platformCommission = bid.bidAmount * 0.20;
+    order.platformShare = (order.platformShare || 0) + platformCommission;
+    order.erranderPayout = bid.bidAmount - platformCommission;
+    order.erranderShare = order.erranderPayout;
     
     await order.save();
 

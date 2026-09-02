@@ -1461,12 +1461,14 @@ export class OrdersService {
 
     // ERRANDER PAYOUT
     const erranderEarnings = order.erranderPayout || order.deliveryFee;
-    await this.walletsService.creditWallet(
-      erranderId,
-      erranderEarnings,
-      `Delivery earnings for order ${order.orderNumber}`,
-      order._id.toString(),
-    );
+    if (order.type !== OrderType.CUSTOM_ERRAND) {
+      await this.walletsService.creditWallet(
+        erranderId,
+        erranderEarnings,
+        `Delivery earnings for order ${order.orderNumber}`,
+        order._id.toString(),
+      );
+    }
 
     // Free up errander or update batch
     const erranderDoc = await this.erranderModel.findOne({ user: new Types.ObjectId(erranderId) });
@@ -1567,12 +1569,14 @@ export class OrdersService {
 
     // ERRANDER PAYOUT
     const erranderEarnings = order.erranderPayout || order.deliveryFee;
-    await this.walletsService.creditWallet(
-      erranderId,
-      erranderEarnings,
-      `Delivery earnings for order ${order.orderNumber}`,
-      order._id.toString(),
-    );
+    if (order.type !== OrderType.CUSTOM_ERRAND) {
+      await this.walletsService.creditWallet(
+        erranderId,
+        erranderEarnings,
+        `Delivery earnings for order ${order.orderNumber}`,
+        order._id.toString(),
+      );
+    }
 
     // Free up errander or update batch
     const erranderDoc = await this.erranderModel.findOne({ user: new Types.ObjectId(erranderId) });
@@ -1886,7 +1890,7 @@ export class OrdersService {
     
     const erranderUserId = fullOrder.errander.toString();
     
-    if (erranderUserId) {
+    if (erranderUserId && fullOrder.type !== OrderType.CUSTOM_ERRAND) {
       await this.walletsService.creditWallet(
         erranderUserId,
         erranderEarnings,
@@ -2413,6 +2417,11 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
       throw new BadRequestException('Order is no longer available');
     }
 
+    const wallet = await this.walletsService.getWallet(erranderId);
+    if (wallet && wallet.balance < -2000) {
+      throw new BadRequestException('Your wallet balance is too low to accept cash/custom errands. Please top up your wallet.');
+    }
+
     let errander = await this.erranderModel.findOne({
       user: new Types.ObjectId(erranderId),
     });
@@ -2616,43 +2625,125 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
       title: 'New Bid Received',
       body: `A rider has proposed a counter-offer of ₦${amount} for your errand.`,
       type: 'ORDER_BIDS_UPDATE',
-      data: { orderId: order._id.toString(), order: populatedOrder },
+      data: { orderId: order._id.toString() },
     });
 
     return populatedOrder as Order;
   }
-
-  async rejectBid(orderId: string, bidId: string, customerId: string): Promise<Order> {
-    const order = await this.orderModel.findById(orderId).populate('bids.errander');
+  async counterBid(orderId: string, bidId: string, userId: string, amount: number, role: 'student' | 'errander'): Promise<any> {
+    const order = await this.orderModel.findById(orderId);
     if (!order) throw new NotFoundException('Order not found');
-    if (order.customer.toString() !== customerId.toString()) throw new BadRequestException('Not your order');
+    if (![OrderStatus.PENDING, OrderStatus.NEGOTIATING].includes(order.status as any)) throw new BadRequestException('Order is no longer accepting bids');
 
-    const bid = order.bids.find(b => b._id.toString() === bidId);
-    if (!bid) throw new NotFoundException('Bid not found');
-    if (bid.status !== 'pending') throw new BadRequestException('Bid is not pending');
+    const deliveryBid = await this.deliveryBidModel.findById(bidId).populate('rider');
+    if (!deliveryBid) throw new NotFoundException('Bid not found');
+    if (deliveryBid.order.toString() !== orderId) throw new BadRequestException('Bid does not belong to this order');
 
-    bid.status = 'rejected';
-    await order.save();
-
-    const populatedOrder = await this.orderModel.findById(order._id).populate('bids.errander');
-
-    // Notify the errander that their bid was rejected
-    if (bid.errander) {
-      await this.notificationsService.sendNotification(bid.errander._id.toString(), {
-        title: 'Offer Declined',
-        body: `Your offer of ₦${bid.amount} was declined by the student.`,
-        type: 'ORDER_BIDS_UPDATE',
-        data: { orderId: order._id.toString() },
-      });
+    if (role === 'student' && order.customer.toString() !== userId.toString()) {
+      throw new BadRequestException('Not your order');
+    }
+    if (role === 'errander' && deliveryBid.rider._id.toString() !== userId.toString()) {
+      throw new BadRequestException('Not your bid');
     }
 
-    return populatedOrder as Order;
-  }
+    if (role === 'errander' && order.type === OrderType.CUSTOM_ERRAND) {
+      const wallet = await this.walletsService.getWallet(userId);
+      const requiredBalance = amount * 0.20;
+      if (wallet && wallet.balance < requiredBalance) {
+        throw new BadRequestException(`Your wallet balance is too low to counter-offer on this custom errand. You need at least ₦${requiredBalance} in your wallet to cover the platform fee.`);
+      }
+    }
 
-  async acceptBid(orderId: string, bidId: string, customerId: string): Promise<Order> {
+    if (!deliveryBid.originalAmount) {
+      deliveryBid.originalAmount = deliveryBid.bidAmount;
+    }
+    
+    deliveryBid.bidAmount = amount;
+    deliveryBid.status = DeliveryBidStatus.COUNTER_OFFER;
+    deliveryBid.lastNegotiatorRole = role;
+    
+    await deliveryBid.save();
+
+    const populatedBid = await this.deliveryBidModel.findById(deliveryBid._id).populate('rider', 'firstName lastName avatar phone').lean();
+
+    // Notify the other party
+    const targetUserId = role === 'student' ? populatedBid!.rider._id || populatedBid!.rider : order.customer;
+    await this.notificationsService.sendNotification(targetUserId.toString(), {
+      title: 'Offer Countered',
+      body: `The ${role} has proposed a new price of ₦${amount}.`,
+      type: 'BID_COUNTERED',
+      data: { orderId: order._id.toString() },
+    });
+
+    // Broadcast the counter offer to the negotiation room
+    await this.redisService.publish('notification:broadcast:negotiation', JSON.stringify({
+      orderId,
+      type: 'BID_COUNTERED',
+      bid: populatedBid
+    }));
+
+    return deliveryBid;
+  }
+  async rejectBid(orderId: string, bidId: string, customerId: string): Promise<Order> {
     const order = await this.orderModel.findById(orderId);
     if (!order) throw new NotFoundException('Order not found');
     if (order.customer.toString() !== customerId.toString()) throw new BadRequestException('Not your order');
+
+    let deliveryBid = await this.deliveryBidModel.findById(bidId).populate('rider');
+    if (!deliveryBid || deliveryBid.order.toString() !== orderId) {
+      throw new NotFoundException('Bid not found');
+    }
+    if (deliveryBid.status !== DeliveryBidStatus.PENDING && deliveryBid.status !== DeliveryBidStatus.COUNTER_OFFER) {
+      throw new BadRequestException('Bid is not pending or in counter-offer state');
+    }
+
+    deliveryBid.status = DeliveryBidStatus.REJECTED;
+    await deliveryBid.save();
+
+    // Notify the errander that their bid was rejected
+    if (deliveryBid.rider) {
+      const riderUserId = (deliveryBid.rider as any)?._id?.toString() || deliveryBid.rider.toString();
+      await this.notificationsService.sendNotification(riderUserId, {
+        title: 'Offer Declined',
+        body: `Your offer of ₦${deliveryBid.bidAmount} was declined by the student.`,
+        type: 'ORDER_BIDS_UPDATE',
+        data: { orderId: order._id.toString() },
+      });
+      
+      // Also broadcast to the negotiation room so UI updates
+      await this.redisService.publish('notification:broadcast:negotiation', JSON.stringify({
+        orderId,
+        type: 'BID_REJECTED',
+        bid: deliveryBid
+      }));
+    }
+
+    return order;
+  }
+
+  async getMyBid(orderId: string, erranderId: string): Promise<any> {
+    const deliveryBid = await this.deliveryBidModel
+      .findOne({ order: new Types.ObjectId(orderId), rider: new Types.ObjectId(erranderId) })
+      .populate('rider', 'firstName lastName phone avatar')
+      .sort({ createdAt: -1 });
+    
+    if (deliveryBid) {
+      return deliveryBid;
+    }
+    
+    // Fallback to legacy embedded bids if necessary
+    const order = await this.orderModel.findById(orderId);
+    if (order && order.bids && order.bids.length > 0) {
+      const embeddedBid = order.bids.find(b => b.errander.toString() === erranderId);
+      if (embeddedBid) return embeddedBid;
+    }
+
+    return null;
+  }
+
+  async acceptBid(orderId: string, bidId: string, userId: string): Promise<Order> {
+    const order = await this.orderModel.findById(orderId);
+    if (!order) throw new NotFoundException('Order not found');
     if (order.isPooledErrand) throw new BadRequestException('Cannot accept bids for pooled errands');
     if (order.paymentStatus === PaymentStatus.PAID) throw new BadRequestException('Order is already paid. Accepting higher bids requires top-up, which is not supported yet.');
     if (![OrderStatus.PENDING, OrderStatus.NEGOTIATING].includes(order.status as any)) throw new BadRequestException('Order is no longer accepting bids');
@@ -2663,8 +2754,26 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     let newFee: number;
 
     if (deliveryBid && deliveryBid.order.toString() === orderId) {
+      // Check permissions: either the customer accepts, or the rider accepts a student's counter
+      const isCustomer = order.customer.toString() === userId.toString();
+      const isRider = deliveryBid.rider._id.toString() === userId.toString();
+      
+      if (!isCustomer && !isRider) {
+        throw new BadRequestException('Not authorized to accept this bid');
+      }
+
+      if (isRider && order.type === OrderType.CUSTOM_ERRAND) {
+        const wallet = await this.walletsService.getWallet(userId);
+        const requiredBalance = deliveryBid.bidAmount * 0.20;
+        if (wallet && wallet.balance < requiredBalance) {
+          throw new BadRequestException(`Your wallet balance is too low to accept this custom errand. You need at least ₦${requiredBalance} in your wallet to cover the platform fee.`);
+        }
+      }
+
       // Found in DeliveryBid collection
-      if (deliveryBid.status !== DeliveryBidStatus.PENDING) throw new BadRequestException('Bid is not pending');
+      if (deliveryBid.status !== DeliveryBidStatus.PENDING && deliveryBid.status !== DeliveryBidStatus.COUNTER_OFFER) {
+        throw new BadRequestException('Bid is not pending or in counter-offer state');
+      }
       
       deliveryBid.status = DeliveryBidStatus.ACCEPTED;
       await deliveryBid.save();
@@ -2704,6 +2813,7 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     order.deliveryFee = newFee;
     order.erranderShare = erranderShare;
     order.erranderPayout = erranderShare;
+    order.platformShare = (order.platformShare || 0) + commissionAmount;
     order.total = total;
 
     // Assign the errander
@@ -2739,10 +2849,12 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
       .populate('customer', 'firstName lastName email phone avatar')
       .populate('errander', 'firstName lastName phone avatar vehicleType');
 
+    const isCustomerAccepting = order.customer.toString() === userId.toString();
+
     // Notify the accepted errander
     await this.notificationsService.sendNotification(riderUserId, {
       title: 'Offer Accepted!',
-      body: `Your offer has been accepted, currently awaiting payment`,
+      body: isCustomerAccepting ? `The student accepted your offer, currently awaiting payment` : `You accepted the student's counter-offer. Awaiting payment.`,
       type: 'ORDER_BID_ACCEPTED',
       data: { orderId: order._id.toString() },
     });
@@ -2750,10 +2862,20 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     // Notify customer to refresh
     await this.notificationsService.sendNotification(order.customer.toString(), {
       title: 'Errand Accepted!',
-      body: 'You have accepted a bid. Please make payment to confirm and open chat.',
+      body: isCustomerAccepting ? 'You have accepted a bid. Please make payment to confirm and open chat.' : 'The rider accepted your counter-offer. Please make payment to confirm.',
       type: 'ORDER_ACCEPTED',
-      data: { orderId: order._id.toString(), order: populatedOrder },
+      data: { orderId: order._id.toString() },
     });
+
+    // Emit socket event to the negotiation room so the other party navigates
+    await this.redisService.publish('notification:broadcast:negotiation', JSON.stringify({
+      orderId: order._id.toString(),
+      type: 'BID_ACCEPTED_DIRECTLY',
+      payload: { 
+        orderId: order._id.toString(),
+        winningUserId: riderUserId
+      }
+    }));
 
     return populatedOrder as Order;
   }
@@ -2818,11 +2940,14 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     });
 
     // Deduct platform fees from Errander's wallet
-    const platformRevenue = (order.serviceFee || 0) + (order.transferFee || 0);
-    const erranderUser = await this.userModel.findById(erranderId);
-    if (erranderUser && platformRevenue > 0) {
-      erranderUser.walletBalance = (erranderUser.walletBalance || 0) - platformRevenue;
-      await erranderUser.save();
+    const calculatedPlatformShare = order.platformShare || (order.deliveryFee ? order.deliveryFee * 0.20 : 0);
+    const platformRevenue = (order.serviceFee || 0) + (order.transferFee || 0) + calculatedPlatformShare;
+    if (platformRevenue > 0) {
+      await this.walletsService.forceDebitWallet(
+        erranderId,
+        platformRevenue,
+        `Platform fee for direct P2P transfer (Order #${order.orderNumber})`
+      );
     }
 
     await order.save();

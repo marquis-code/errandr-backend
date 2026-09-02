@@ -10,6 +10,8 @@ import {
 import { Server, Socket } from 'socket.io';
 import { NegotiationService } from '../services/negotiation.service';
 
+import { RedisService } from '../../redis/redis.service';
+
 @WebSocketGateway({
   cors: {
     origin: (origin, callback) => {
@@ -28,7 +30,34 @@ export class NegotiationGateway
   // Track viewers per order: { orderId: Set<socketId> }
   private orderViewers: Map<string, Set<string>> = new Map();
 
-  constructor(private negotiationService: NegotiationService) {}
+  constructor(
+    private negotiationService: NegotiationService,
+    private redisService: RedisService
+  ) {
+    this.setupRedisSubscriber();
+  }
+
+  private async setupRedisSubscriber() {
+    const subClient = this.redisService.getNewClient();
+    await subClient.psubscribe('notification:broadcast:negotiation');
+    
+    subClient.on('pmessage', (pattern, channel, message) => {
+      if (channel === 'notification:broadcast:negotiation') {
+        try {
+          const data = JSON.parse(message);
+          if (data.type === 'BID_COUNTERED') {
+            this.server.to(`negotiation:${data.orderId}`).emit('bidCountered', data.bid);
+          } else if (data.type === 'BID_ACCEPTED_DIRECTLY') {
+            this.server.to(`negotiation:${data.orderId}`).emit('orderAcceptedDirectly', data.payload);
+          } else if (data.type === 'BID_REJECTED') {
+            this.server.to(`negotiation:${data.orderId}`).emit('bidRejected', data.bid);
+          }
+        } catch (e) {
+          console.error('Failed to process negotiation broadcast', e);
+        }
+      }
+    });
+  }
 
   handleConnection(client: Socket) {
     console.log(`Negotiation client connected: ${client.id}`);
@@ -96,9 +125,11 @@ export class NegotiationGateway
       const bid = await this.negotiationService.submitBid(data.orderId, data.riderId, data.bidAmount);
       const populatedBid = await bid.populate('rider', 'firstName lastName avatar phone');
       
+      const plainBid = populatedBid.toObject();
+
       // Broadcast bid to student (and other riders listening)
-      this.server.to(`negotiation:${data.orderId}`).emit('newBid', populatedBid);
-      return { success: true, bid: populatedBid };
+      this.server.to(`negotiation:${data.orderId}`).emit('newBid', plainBid);
+      return { success: true, bid: plainBid };
     } catch (e) {
       return { success: false, error: e.message };
     }

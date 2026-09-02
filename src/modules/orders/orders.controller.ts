@@ -309,6 +309,20 @@ async getMyVendorOrders(
     return this.ordersService.acceptBid(id, bidId, (user._id as unknown) as string);
   }
 
+  @Put(':id/custom/bid/:bidId/counter')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Counter a bid for a custom errand' })
+  counterBid(
+    @Param('id') id: string,
+    @Param('bidId') bidId: string,
+    @Body() body: { amount: number, role: 'student' | 'errander' },
+    @CurrentUser() user: User,
+  ) {
+    this.logger.log(`counterBid() id=${id} bidId=${bidId} user=${user._id} amount=${body.amount}`);
+    return this.ordersService.counterBid(id, bidId, (user._id as unknown) as string, body.amount, body.role);
+  }
+
   @Put(':id/custom/bid/:bidId/reject')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
@@ -320,6 +334,18 @@ async getMyVendorOrders(
   ) {
     this.logger.log(`rejectBid() id=${id} bidId=${bidId} user=${user._id}`);
     return this.ordersService.rejectBid(id, bidId, (user._id as unknown) as string);
+  }
+
+  @Get(':id/custom/bid/me')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get current user\'s active bid for a custom errand' })
+  getMyBid(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+  ) {
+    this.logger.log(`getMyBid() id=${id} user=${user._id}`);
+    return this.ordersService.getMyBid(id, (user._id as unknown) as string);
   }
 
   @Put(':id/rate')
