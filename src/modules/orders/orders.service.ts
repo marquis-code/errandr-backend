@@ -1427,21 +1427,25 @@ export class OrdersService {
     if (!order) throw new NotFoundException('Order not found');
 
     // Status guard: prevent completing already-delivered or cancelled orders
-    const completableStatuses = ['in_transit', 'picked_up', 'confirmed', 'preparing', 'ready_for_pickup',
-      OrderStatus.IN_TRANSIT, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP];
+    const completableStatuses = ['in_transit', 'picked_up', 'confirmed', 'preparing', 'ready_for_pickup', 'interception_in_progress',
+      OrderStatus.IN_TRANSIT, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP, OrderStatus.INTERCEPTION_IN_PROGRESS];
     if (!completableStatuses.includes(order.status)) {
       throw new BadRequestException(`Order cannot be completed — current status is "${order.status}"`);
     }
     
-    // Security check: only assigned errander can complete
+    // Security check: only primary errander OR second errander (interception) can complete
     const errander = await this.erranderModel.findOne({ user: erranderId });
     if (!errander) throw new BadRequestException('Errander profile not found');
     
     const orderErranderId = (order.errander as any)?._id?.toString() || order.errander?.toString();
-    this.logger.log(`completeOrder check: order.errander=${orderErranderId} vs erranderId=${erranderId.toString()}`);
+    const secondErranderId = order.interception?.secondErrander?.toString();
+    const isSecondErrander = secondErranderId && (secondErranderId === erranderId.toString() || secondErranderId === errander._id.toString());
+    const isPrimaryErrander = orderErranderId === errander._id.toString() || orderErranderId === erranderId.toString();
     
-    if (orderErranderId !== errander._id.toString() && orderErranderId !== erranderId.toString()) {
-      this.logger.error(`Assignment mismatch: ${orderErranderId} !== ${errander._id.toString()} or ${erranderId.toString()}`);
+    this.logger.log(`completeOrder check: order.errander=${orderErranderId} secondErrander=${secondErranderId} vs erranderId=${erranderId.toString()}`);
+    
+    if (!isPrimaryErrander && !isSecondErrander) {
+      this.logger.error(`Assignment mismatch: ${orderErranderId} or ${secondErranderId} !== ${erranderId.toString()}`);
       throw new BadRequestException('You are not assigned to this order');
     }
 
@@ -1776,11 +1780,12 @@ export class OrdersService {
           {
             status: { $in: [OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP, OrderStatus.NEGOTIATING] },
             errander: { $exists: false },
-            $or: [
-              { deliveryOption: 'use_an_errander' },
-              { deliveryOption: { $exists: false } },
-              { deliveryOption: null }
-            ]
+            deliveryOption: { $in: ['use_an_errander', null] }
+          },
+          {
+            status: { $in: [OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP, OrderStatus.NEGOTIATING] },
+            errander: { $exists: false },
+            deliveryOption: { $exists: false }
           },
           {
             status: OrderStatus.INTERCEPTION_PENDING
@@ -3355,7 +3360,7 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
   }
 
   async acceptInterception(orderId: string, secondErranderId: string): Promise<Order> {
-    const order = await this.orderModel.findById(orderId).populate('customer');
+    const order = await this.orderModel.findById(orderId).populate('customer').populate('errander', 'firstName lastName user');
     if (!order) throw new NotFoundException('Order not found');
     if (order.status !== OrderStatus.INTERCEPTION_PENDING) {
       throw new BadRequestException('Order is not pending interception');
@@ -3370,20 +3375,33 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     await order.save();
 
     // Notify the student
-    await this.notificationsService.sendNotification(order.customer._id.toString(), {
-      type: 'ORDER_UPDATE',
+    await this.notificationsService.sendNotification((order.customer as any)._id.toString(), {
+      type: 'ORDER_INTERCEPTION_ACCEPTED',
       title: 'Package Hand-off',
       body: `Your package has been handed off at ${order.interception.point} to a new errander who is on the way.`,
       data: { orderId: order._id },
     });
 
-    // Also broadcast so UI can update
+    // Notify the FIRST errander (directed) so their delivery page reloads
+    const firstErranderUserId = (order.errander as any)?.user?.toString() || (order.errander as any)?._id?.toString() || order.errander?.toString();
+    if (firstErranderUserId) {
+      await this.redisService.publish(`notification:${firstErranderUserId}`, JSON.stringify({
+        type: 'ORDER_INTERCEPTION_ACCEPTED',
+        data: { orderId: order._id },
+      }));
+    }
+
+    // Also broadcast to pool so all erranders can remove this order from pool
     await this.redisService.publish('notification:broadcast:erranders', JSON.stringify({
       type: 'INTERCEPTION_ACCEPTED',
       data: { orderId: order._id },
     }));
 
-    return order;
+    // Return populated order
+    return order.populate([
+      { path: 'interception.secondErrander', select: 'firstName lastName phone avatar' },
+      { path: 'customer', select: 'firstName lastName phone' },
+    ]);
   }
 
   // --- ERRAND POOLING (CUSTOM ERRANDS) ---
