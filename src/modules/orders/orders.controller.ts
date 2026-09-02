@@ -449,6 +449,30 @@ async getMyVendorOrders(
     this.logger.log(`approveReconciliation() id=${id} user=${user._id}`);
     return this.ordersService.approveReconciliation(id, user._id.toString());
   }
+  // --- INTERCEPTION ---
+
+  @Post(':id/interception/request')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Request interception hand-off' })
+  requestInterception(
+    @Param('id') id: string,
+    @Body('point') point: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.ordersService.requestInterception(id, point, user._id.toString());
+  }
+
+  @Post(':id/interception/accept')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Accept interception task' })
+  acceptInterception(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.ordersService.acceptInterception(id, user._id.toString());
+  }
 
   // --- ERRAND POOLING (CUSTOM ERRANDS) ---
 

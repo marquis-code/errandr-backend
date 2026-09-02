@@ -15,6 +15,8 @@ export enum OrderStatus {
   AWAITING_PAYMENT = 'awaiting_payment',
   AWAITING_PAYMENT_CONFIRMATION = 'awaiting_payment_confirmation',
   NEGOTIATING = 'negotiating',
+  INTERCEPTION_PENDING = 'interception_pending',
+  INTERCEPTION_IN_PROGRESS = 'interception_in_progress',
 }
 
 export enum LocationType {
@@ -92,6 +94,19 @@ export class Order extends Document {
 
   @Prop({ type: Types.ObjectId, ref: 'User' })
   errander: Types.ObjectId;
+
+  @Prop({
+    type: {
+      status: { type: String, enum: ['pending', 'accepted', 'completed'] },
+      point: String,
+      secondErrander: { type: Types.ObjectId, ref: 'User' },
+    },
+  })
+  interception?: {
+    status: 'pending' | 'accepted' | 'completed';
+    point: string;
+    secondErrander?: Types.ObjectId;
+  };
 
   @Prop({
     type: [

@@ -84,6 +84,9 @@ export class NotificationsGateway
           if (notification.type === 'ORDER_ACCEPTED') {
             this.server.emit('notification:order-accepted', notification);
             this.logger.log(`[Redis Broadcast] notification:order-accepted sent to all clients`);
+          } else if (notification.type === 'INTERCEPTION_REQUESTED' || notification.type === 'INTERCEPTION_ACCEPTED') {
+            this.server.emit('notification:new', notification);
+            this.logger.log(`[Redis Broadcast] notification:new (${notification.type}) sent to all clients`);
           } else {
             this.server.emit('notification:new-order', notification);
             this.logger.log(`[Redis Broadcast] notification:new-order sent to all clients`);

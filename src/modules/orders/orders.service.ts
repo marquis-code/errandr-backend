@@ -1462,12 +1462,30 @@ export class OrdersService {
     // ERRANDER PAYOUT
     const erranderEarnings = order.erranderPayout || order.deliveryFee;
     if (order.type !== OrderType.CUSTOM_ERRAND) {
-      await this.walletsService.creditWallet(
-        erranderId,
-        erranderEarnings,
-        `Delivery earnings for order ${order.orderNumber}`,
-        order._id.toString(),
-      );
+      const hasInterception = order.interception && (order.interception.status === 'accepted' || order.interception.status === 'completed');
+      if (hasInterception && order.interception.secondErrander) {
+        const firstShare = erranderEarnings * 0.6;
+        const secondShare = erranderEarnings * 0.4;
+        await this.walletsService.creditWallet(
+          order.errander.toString(),
+          firstShare,
+          `Delivery earnings (60% Interception) for order ${order.orderNumber}`,
+          order._id.toString(),
+        );
+        await this.walletsService.creditWallet(
+          order.interception.secondErrander.toString(),
+          secondShare,
+          `Delivery earnings (40% Interception) for order ${order.orderNumber}`,
+          order._id.toString(),
+        );
+      } else {
+        await this.walletsService.creditWallet(
+          erranderId,
+          erranderEarnings,
+          `Delivery earnings for order ${order.orderNumber}`,
+          order._id.toString(),
+        );
+      }
     }
 
     // Free up errander or update batch
@@ -1570,12 +1588,30 @@ export class OrdersService {
     // ERRANDER PAYOUT
     const erranderEarnings = order.erranderPayout || order.deliveryFee;
     if (order.type !== OrderType.CUSTOM_ERRAND) {
-      await this.walletsService.creditWallet(
-        erranderId,
-        erranderEarnings,
-        `Delivery earnings for order ${order.orderNumber}`,
-        order._id.toString(),
-      );
+      const hasInterception = order.interception && (order.interception.status === 'accepted' || order.interception.status === 'completed');
+      if (hasInterception && order.interception.secondErrander) {
+        const firstShare = erranderEarnings * 0.6;
+        const secondShare = erranderEarnings * 0.4;
+        await this.walletsService.creditWallet(
+          order.errander.toString(),
+          firstShare,
+          `Delivery earnings (60% Interception) for order ${order.orderNumber}`,
+          order._id.toString(),
+        );
+        await this.walletsService.creditWallet(
+          order.interception.secondErrander.toString(),
+          secondShare,
+          `Delivery earnings (40% Interception) for order ${order.orderNumber}`,
+          order._id.toString(),
+        );
+      } else {
+        await this.walletsService.creditWallet(
+          erranderId,
+          erranderEarnings,
+          `Delivery earnings for order ${order.orderNumber}`,
+          order._id.toString(),
+        );
+      }
     }
 
     // Free up errander or update batch
@@ -1736,16 +1772,24 @@ export class OrdersService {
   async getAvailableOrders() {
     return this.orderModel
       .find({
-        status: { $in: [OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP, OrderStatus.NEGOTIATING] },
-        errander: { $exists: false },
-         $or: [
-          { deliveryOption: 'use_an_errander' },
-          { deliveryOption: { $exists: false } },
-          { deliveryOption: null }
+        $or: [
+          {
+            status: { $in: [OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP, OrderStatus.NEGOTIATING] },
+            errander: { $exists: false },
+            $or: [
+              { deliveryOption: 'use_an_errander' },
+              { deliveryOption: { $exists: false } },
+              { deliveryOption: null }
+            ]
+          },
+          {
+            status: OrderStatus.INTERCEPTION_PENDING
+          }
         ]
       })
       .populate('vendor', 'storeName logo address location')
       .populate('customer', 'firstName lastName deliveryAddress location gender')
+      .populate('errander', 'firstName lastName phone avatar')
       .sort({ createdAt: -1 });
   }
 
@@ -1762,6 +1806,7 @@ export class OrdersService {
         .populate('errander', 'firstName lastName phone user bankDetails')
         .populate('bids.errander', 'firstName lastName avatar phone')
         .populate('viewers.errander', 'firstName lastName avatar phone')
+        .populate('interception.secondErrander', 'firstName lastName avatar phone')
         .maxTimeMS(10000)
         .lean();
       if (!order) throw new NotFoundException('Order not found');
@@ -1891,12 +1936,30 @@ export class OrdersService {
     const erranderUserId = fullOrder.errander.toString();
     
     if (erranderUserId && fullOrder.type !== OrderType.CUSTOM_ERRAND) {
-      await this.walletsService.creditWallet(
-        erranderUserId,
-        erranderEarnings,
-        `Delivery earnings for order ${fullOrder.orderNumber}`,
-        fullOrder._id.toString(),
-      );
+      const hasInterception = fullOrder.interception && (fullOrder.interception.status === 'accepted' || fullOrder.interception.status === 'completed');
+      if (hasInterception && fullOrder.interception.secondErrander) {
+        const firstShare = erranderEarnings * 0.6;
+        const secondShare = erranderEarnings * 0.4;
+        await this.walletsService.creditWallet(
+          fullOrder.errander.toString(),
+          firstShare,
+          `Delivery earnings (60% Interception) for order ${fullOrder.orderNumber}`,
+          fullOrder._id.toString(),
+        );
+        await this.walletsService.creditWallet(
+          fullOrder.interception.secondErrander.toString(),
+          secondShare,
+          `Delivery earnings (40% Interception) for order ${fullOrder.orderNumber}`,
+          fullOrder._id.toString(),
+        );
+      } else {
+        await this.walletsService.creditWallet(
+          erranderUserId,
+          erranderEarnings,
+          `Delivery earnings for order ${fullOrder.orderNumber}`,
+          fullOrder._id.toString(),
+        );
+      }
     }
   }
 
@@ -3260,6 +3323,65 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
         throw new BadRequestException('Refund failed. Please contact support.');
       }
     }
+
+    return order;
+  }
+  // --- INTERCEPTION ---
+
+  async requestInterception(orderId: string, point: string, erranderId: string): Promise<Order> {
+    const order = await this.orderModel.findById(orderId);
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.errander?.toString() !== erranderId) {
+      throw new BadRequestException('You are not the errander for this order');
+    }
+    if (order.status !== OrderStatus.PICKED_UP && order.status !== OrderStatus.IN_TRANSIT) {
+      throw new BadRequestException('Interception can only be requested after picking up the item');
+    }
+
+    order.status = OrderStatus.INTERCEPTION_PENDING;
+    order.interception = {
+      status: 'pending',
+      point,
+    };
+    await order.save();
+
+    // Broadcast to erranders that an interception is available
+    await this.redisService.publish('notification:broadcast:erranders', JSON.stringify({
+      type: 'INTERCEPTION_REQUESTED',
+      data: { orderId: order._id, point },
+    }));
+
+    return order;
+  }
+
+  async acceptInterception(orderId: string, secondErranderId: string): Promise<Order> {
+    const order = await this.orderModel.findById(orderId).populate('customer');
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.status !== OrderStatus.INTERCEPTION_PENDING) {
+      throw new BadRequestException('Order is not pending interception');
+    }
+    if (order.errander?.toString() === secondErranderId) {
+      throw new BadRequestException('You cannot intercept your own order');
+    }
+
+    order.status = OrderStatus.INTERCEPTION_IN_PROGRESS;
+    order.interception.secondErrander = new Types.ObjectId(secondErranderId);
+    order.interception.status = 'accepted';
+    await order.save();
+
+    // Notify the student
+    await this.notificationsService.sendNotification(order.customer._id.toString(), {
+      type: 'ORDER_UPDATE',
+      title: 'Package Hand-off',
+      body: `Your package has been handed off at ${order.interception.point} to a new errander who is on the way.`,
+      data: { orderId: order._id },
+    });
+
+    // Also broadcast so UI can update
+    await this.redisService.publish('notification:broadcast:erranders', JSON.stringify({
+      type: 'INTERCEPTION_ACCEPTED',
+      data: { orderId: order._id },
+    }));
 
     return order;
   }
