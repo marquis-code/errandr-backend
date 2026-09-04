@@ -35,6 +35,19 @@ export class MarketPoolController {
     return this.marketPoolService.addItem(campaignId, body);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Post('campaigns/:id/custom-requests')
+  async requestCustomItem(@Param('id') campaignId: string, @Req() req, @Body() body: any) {
+    return this.marketPoolService.createCustomRequest(req.user._id.toString(), campaignId, body);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Get('campaigns/:id/custom-requests')
+  async getCustomRequests(@Param('id') campaignId: string) {
+    return this.marketPoolService.getCustomRequests(campaignId);
+  }
+
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   @Get('campaigns/:id/aggregation')

@@ -4,6 +4,7 @@ import { Model, Types } from 'mongoose';
 import { MarketPoolCampaign, MarketPoolCampaignStatus } from './schemas/market-pool-campaign.schema';
 import { MarketPoolItem } from './schemas/market-pool-item.schema';
 import { MarketPoolOrder, MarketPoolOrderStatus } from './schemas/market-pool-order.schema';
+import { MarketPoolCustomRequest } from './schemas/market-pool-custom-request.schema';
 import { WalletsService } from '../wallets/wallets.service';
 
 @Injectable()
@@ -14,6 +15,7 @@ export class MarketPoolService {
     @InjectModel(MarketPoolCampaign.name) private campaignModel: Model<MarketPoolCampaign>,
     @InjectModel(MarketPoolItem.name) private itemModel: Model<MarketPoolItem>,
     @InjectModel(MarketPoolOrder.name) private orderModel: Model<MarketPoolOrder>,
+    @InjectModel(MarketPoolCustomRequest.name) private customRequestModel: Model<MarketPoolCustomRequest>,
     private walletsService: WalletsService,
   ) {}
 
@@ -90,6 +92,18 @@ export class MarketPoolService {
         await order.save();
       }
     }
+  }
+
+  async createCustomRequest(userId: string, campaignId: string, data: any): Promise<MarketPoolCustomRequest> {
+    return this.customRequestModel.create({
+      userId,
+      campaignId,
+      ...data,
+    });
+  }
+
+  async getCustomRequests(campaignId: string): Promise<MarketPoolCustomRequest[]> {
+    return this.customRequestModel.find({ campaignId }).populate('userId', 'name email phone').sort({ createdAt: -1 });
   }
 
   async getAggregation(campaignId: string): Promise<any> {
