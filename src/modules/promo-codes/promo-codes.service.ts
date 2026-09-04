@@ -30,8 +30,8 @@ export class PromoCodesService {
         users.forEach(user => {
           if (user.email) {
             const discountText = savedPromo.discountType === 'percentage' 
-              ? `${savedPromo.discountValue}% OFF` 
-              : `₦${savedPromo.discountValue} OFF`;
+              ? `${savedPromo.value}% OFF` 
+              : `₦${savedPromo.value} OFF`;
             
             const htmlContent = `
               <div style="font-family: sans-serif; padding: 20px;">

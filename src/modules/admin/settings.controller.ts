@@ -57,6 +57,35 @@ export class SettingsController {
     await setting.save();
     return setting.value;
   }
+
+  @Get('market-pool/bank')
+  @ApiOperation({ summary: 'Get market pool bank settings' })
+  async getMarketPoolBankSettings() {
+    let setting = await this.settingModel.findOne({ key: 'market_pool_bank_account' }).exec();
+    if (!setting) {
+      setting = await this.settingModel.create({
+        key: 'market_pool_bank_account',
+        value: { bankName: '', accountNumber: '', accountName: '' },
+      });
+    }
+    return setting.value;
+  }
+
+  @Put('market-pool/bank')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update market pool bank settings (admin only)' })
+  async updateMarketPoolBankSettings(@Body() body: { bankName: string; accountNumber: string; accountName: string }) {
+    let setting = await this.settingModel.findOne({ key: 'market_pool_bank_account' }).exec();
+    if (!setting) {
+      setting = new this.settingModel({ key: 'market_pool_bank_account' });
+    }
+    setting.value = { ...setting.value, ...body };
+    await setting.save();
+    return setting.value;
+  }
+
   @Get('negotiation')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

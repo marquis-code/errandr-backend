@@ -6,7 +6,12 @@ import { MarketPoolCampaign, MarketPoolCampaignSchema } from './schemas/market-p
 import { MarketPoolItem, MarketPoolItemSchema } from './schemas/market-pool-item.schema';
 import { MarketPoolOrder, MarketPoolOrderSchema } from './schemas/market-pool-order.schema';
 import { MarketPoolCustomRequest, MarketPoolCustomRequestSchema } from './schemas/market-pool-custom-request.schema';
+import { MarketPoolCategory, MarketPoolCategorySchema } from './schemas/market-pool-category.schema';
+import { SystemSetting, SystemSettingSchema } from '../admin/schemas/system-setting.schema';
 import { WalletsModule } from '../wallets/wallets.module';
+import { EmailModule } from '../email/email.module';
+import { UsersModule } from '../users/users.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -15,8 +20,13 @@ import { WalletsModule } from '../wallets/wallets.module';
       { name: MarketPoolItem.name, schema: MarketPoolItemSchema },
       { name: MarketPoolOrder.name, schema: MarketPoolOrderSchema },
       { name: MarketPoolCustomRequest.name, schema: MarketPoolCustomRequestSchema },
+      { name: MarketPoolCategory.name, schema: MarketPoolCategorySchema },
+      { name: SystemSetting.name, schema: SystemSettingSchema },
     ]),
     WalletsModule,
+    EmailModule,
+    UsersModule,
+    NotificationsModule,
   ],
   controllers: [MarketPoolController],
   providers: [MarketPoolService],

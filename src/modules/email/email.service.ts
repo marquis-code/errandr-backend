@@ -1137,4 +1137,132 @@ export class EmailService {
     `;
     return this.sendEmail(to, subject, html);
   }
+  async sendMarketPoolPaymentUploadedEmail(orderId: string, userName: string, proofUrl: string) {
+    // Send to admin to review
+    const to = 'marquis@erranders.org'; // Default admin email for now
+    const subject = `[Market Pool] Payment Proof Uploaded for Order #${orderId.slice(-6).toUpperCase()}`;
+    const html = `
+      ${this.getBaseStyles()}
+      <div class="wrapper">
+        <div class="container">
+          <div class="content-header">
+            <div class="header-badge" style="background: rgba(255, 92, 26, 0.1); color: #FF5C1A; padding: 4px 12px; border-radius: 99px; display: inline-block; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px;">Market Pool</div>
+            <h1 class="title">Payment Proof Uploaded</h1>
+            <p class="subtitle" style="color: #cbd5e1;">Review the receipt from ${userName}</p>
+          </div>
+          <div class="content-body">
+            <p style="font-size: 15px; color: #3f3f46; margin-bottom: 16px; text-align: left;">
+              Hi Admin,<br><br>
+              ${userName} has uploaded a proof of payment for their Market Pool order <strong>#${orderId.slice(-6).toUpperCase()}</strong>.
+            </p>
+            <div style="background-color: #f8fafc; padding: 20px; border-radius: 12px; margin-bottom: 24px; text-align: center;">
+              <a href="${proofUrl}" target="_blank" style="display: inline-block; padding: 12px 24px; background-color: #FF5C1A; color: #ffffff; text-decoration: none; font-weight: 600; border-radius: 8px;">View Receipt</a>
+            </div>
+            <p style="font-size: 15px; color: #3f3f46; margin-bottom: 24px; text-align: left;">
+              Please log in to the admin dashboard to verify this payment and process the order.
+            </p>
+          </div>
+          ${this.getEcosystemFooter()}
+        </div>
+      </div>
+    `;
+    return this.sendEmail(to, subject, html);
+  }
+
+  async sendMarketPoolPaymentApprovedEmail(to: string, userName: string, orderId: string) {
+    const subject = `Your Market Pool Payment was Approved! 🎉`;
+    const html = `
+      ${this.getBaseStyles()}
+      <div class="wrapper">
+        <div class="container">
+          <div class="content-header">
+            <div class="header-badge" style="background: rgba(255, 92, 26, 0.1); color: #FF5C1A; padding: 4px 12px; border-radius: 99px; display: inline-block; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px;">Payment Confirmed</div>
+            <h1 class="title">Payment Approved</h1>
+            <p class="subtitle" style="color: #cbd5e1;">Your order is now being processed</p>
+          </div>
+          <div class="content-body">
+            <p style="font-size: 15px; color: #3f3f46; margin-bottom: 16px; text-align: left;">
+              Hi <strong>${userName}</strong>,<br><br>
+              Great news! We have verified your payment for Market Pool order <strong>#${orderId.slice(-6).toUpperCase()}</strong>.
+            </p>
+            <p style="font-size: 15px; color: #3f3f46; margin-bottom: 24px; text-align: left;">
+              Your order is now confirmed and will be processed for delivery on Saturday. You can track its status in the Erranders App.
+            </p>
+          </div>
+          ${this.getEcosystemFooter()}
+        </div>
+      </div>
+    `;
+    return this.sendEmail(to, subject, html);
+  }
+  async sendMarketPoolPaymentVerifiedEmail(orderId: string, name: string) {
+    const subject = `Payment Verified - Market Pool Order #${orderId.slice(-6)}`;
+    
+    const html = this.wrap({
+      preheader: `Your payment has been verified`,
+      badge: { text: 'Payment Verified', color: 'green' },
+      title: `You're All Set!`,
+      subtitle: `Your payment for Market Pool Order #${orderId.slice(-6)} has been received and verified.`,
+      content: `
+        <p style="margin: 0 0 16px; color: #3f3f46; font-size: 15px; text-align: left; line-height: 1.6;">
+          Hello ${name},<br><br>
+          Great news! We've successfully verified your payment. Your order is now confirmed and we will begin processing it immediately.
+        </p>
+        
+        <div style="background-color: #fafafa; border: 1px solid #e4e4e7; border-radius: 8px; padding: 16px; margin: 24px 0;">
+          <p style="margin: 0 0 12px; font-weight: 700; color: #171721;">What happens next?</p>
+          <p style="margin: 0; font-size: 13px; color: #71717a; text-align: left; line-height: 1.6;">
+            1. <strong>Procuring</strong>: We bulk-buy items from the market.<br>
+            2. <strong>Repackaging</strong>: We sort and pack your specific order.<br>
+            3. <strong>Delivery</strong>: Your order is sent out for delivery to your location.<br>
+          </p>
+        </div>
+        
+        <a href="https://erranders.com/market-pool/receipt/${orderId}" class="btn">View & Download Receipt</a>
+        
+        <p style="margin: 24px 0 0; font-size: 13px; color: #71717a;">
+          You can track your order's progress at any time from your student dashboard.
+        </p>
+      `
+    });
+
+    console.log(`[EMAIL MOCK] Sending Payment Verified to: ${name}`);
+  }
+
+  async sendMarketPoolStatusUpdateEmail(orderId: string, name: string, status: string, to: string) {
+    const formattedStatus = status.replace(/_/g, ' ');
+    const subject = `Order Update: ${formattedStatus} - Market Pool Order #${orderId.slice(-6)}`;
+    
+    // Status descriptions
+    const statusMessages = {
+      'PROCURING': 'We are currently at the market purchasing items for the pool. Your items are being procured!',
+      'PACKING': 'We have returned from the market! Your specific order is now being sorted and packed.',
+      'ON_WAY': 'Your order has been packed and handed over to our dispatchers. It is currently on the way to you!',
+      'DELIVERED': 'Your Market Pool order has been successfully delivered. Thank you for shopping with Erranders!'
+    };
+
+    const defaultMessage = `Your Market Pool order status has been updated to ${formattedStatus}.`;
+    const message = statusMessages[status] || defaultMessage;
+    
+    const html = this.wrap({
+      preheader: `Update on your Market Pool order`,
+      badge: { text: 'Status Update', color: 'orange' },
+      title: `Order is ${formattedStatus}`,
+      subtitle: `Your Market Pool Order #${orderId.slice(-6)} has a new update!`,
+      content: `
+        <p style="margin: 0 0 16px; color: #3f3f46; font-size: 15px; text-align: left; line-height: 1.6;">
+          Hello ${name},<br><br>
+          ${message}
+        </p>
+        
+        <a href="https://erranders.com/market-pool/orders" class="btn">Track Order Progress</a>
+        
+        <p style="margin: 24px 0 0; font-size: 13px; color: #71717a;">
+          You can track your order's progress at any time from your student dashboard.
+        </p>
+      `
+    });
+
+    return this.sendEmail(to, subject, html);
+  }
 }

@@ -2,8 +2,13 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 
 export enum MarketPoolOrderStatus {
+  PENDING_PAYMENT = 'pending_payment',
+  PAYMENT_VERIFYING = 'payment_verifying',
   PAID = 'paid',
   PARTIALLY_REFUNDED = 'partially_refunded',
+  PROCURING = 'procuring',
+  REPACKAGING = 'repackaging',
+  OUT_FOR_DELIVERY = 'out_for_delivery',
   DELIVERED = 'delivered',
 }
 
@@ -17,6 +22,9 @@ export class MarketPoolOrderItem {
 
   @Prop({ required: true })
   priceAtPurchase: number;
+
+  @Prop()
+  preferences?: string;
 }
 export const MarketPoolOrderItemSchema = SchemaFactory.createForClass(MarketPoolOrderItem);
 
@@ -37,8 +45,20 @@ export class MarketPoolOrder extends Document {
   @Prop({ required: true })
   deliveryFee: number;
 
-  @Prop({ type: String, enum: MarketPoolOrderStatus, default: MarketPoolOrderStatus.PAID })
+  @Prop({ type: String, enum: MarketPoolOrderStatus, default: MarketPoolOrderStatus.PENDING_PAYMENT })
   status: MarketPoolOrderStatus;
+
+  @Prop({ type: String, enum: ['morning', 'afternoon'], default: 'morning' })
+  deliverySlot: string;
+
+  @Prop()
+  proxyName: string;
+
+  @Prop()
+  proxyPhone: string;
+
+  @Prop()
+  paymentProofUrl: string;
 }
 
 export const MarketPoolOrderSchema = SchemaFactory.createForClass(MarketPoolOrder);
