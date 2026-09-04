@@ -401,6 +401,10 @@ export class Order extends Document {
   @Prop({ type: Types.ObjectId, ref: 'User' })
   cancelledBy: Types.ObjectId;
 
+  // Support Issues
+  @Prop()
+  issues: string;
+
   // Real-time Wallet & Verification
   @Prop({ required: true, default: () => Math.random().toString(36).substring(2, 8).toUpperCase() })
   uniqueCode: string;

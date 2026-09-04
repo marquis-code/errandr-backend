@@ -552,4 +552,16 @@ async getMyVendorOrders(
     // isAdmin = true bypasses normal tier/load constraints
     return this.ordersService.acceptOrder(id, body.erranderId, true);
   }
+
+  @Put(':id/issues')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Admin updates issues on an order' })
+  updateOrderIssues(
+    @Param('id') id: string,
+    @Body() body: { issues: string }
+  ) {
+    return this.ordersService.updateIssues(id, body.issues);
+  }
 }

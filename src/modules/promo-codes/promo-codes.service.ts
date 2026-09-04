@@ -2,11 +2,15 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { PromoCode } from './schemas/promo-code.schema';
+import { User } from '../users/schemas/user.schema';
+import { EmailService } from '../email/email.service';
 
 @Injectable()
 export class PromoCodesService {
   constructor(
     @InjectModel(PromoCode.name) private readonly promoCodeModel: Model<PromoCode>,
+    @InjectModel(User.name) private readonly userModel: Model<User>,
+    private readonly emailService: EmailService,
   ) {}
 
   async create(data: any): Promise<PromoCode> {
@@ -18,7 +22,35 @@ export class PromoCodesService {
       ...data,
       code: data.code.toUpperCase(),
     });
-    return promo.save();
+    const savedPromo = await promo.save();
+
+    if (data.applicableUsers && data.applicableUsers.length > 0) {
+      // Dispatch emails
+      this.userModel.find({ _id: { $in: data.applicableUsers } }).then(users => {
+        users.forEach(user => {
+          if (user.email) {
+            const discountText = savedPromo.discountType === 'percentage' 
+              ? `${savedPromo.discountValue}% OFF` 
+              : `₦${savedPromo.discountValue} OFF`;
+            
+            const htmlContent = `
+              <div style="font-family: sans-serif; padding: 20px;">
+                <h2>Hello ${user.firstName},</h2>
+                <p>A special promo code has just been generated for you!</p>
+                <div style="background: #FF5C1A; color: #fff; padding: 15px; border-radius: 8px; font-size: 24px; text-align: center; letter-spacing: 2px; font-weight: bold; margin: 20px 0;">
+                  ${savedPromo.code}
+                </div>
+                <p>Use this code to get <strong>${discountText}</strong> on your next order!</p>
+                ${savedPromo.expiresAt ? `<p><em>Valid until: ${new Date(savedPromo.expiresAt).toLocaleDateString()}</em></p>` : ''}
+              </div>
+            `;
+            this.emailService.sendEmail(user.email, 'Your Exclusive Promo Code 🎁', htmlContent).catch(console.error);
+          }
+        });
+      }).catch(console.error);
+    }
+
+    return savedPromo;
   }
 
   async update(id: string, data: any): Promise<PromoCode> {

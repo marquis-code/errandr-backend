@@ -3677,4 +3677,13 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
       }
     }
   }
+
+  async updateIssues(orderId: string, issues: string): Promise<Order> {
+    const order = await this.orderModel.findById(orderId);
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+    order.issues = issues;
+    return (order as any).save();
+  }
 }
