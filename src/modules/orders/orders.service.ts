@@ -3030,6 +3030,22 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
 
     await order.save();
 
+    // Handle Pooling for P2P confirmed payment
+    const customerId = order.customer.toString();
+    if (order.intendedPoolId) {
+      try {
+        await this.joinPool(order.intendedPoolId.toString(), order._id.toString(), customerId);
+      } catch (e) {
+        this.logger.error(`Failed to securely join pool on P2P payment confirmation: ${e}`);
+      }
+    } else if (order.intendsToCreatePool) {
+      try {
+        await this.createErrandPool(order._id.toString(), customerId, order.customDetails?.description?.substring(0, 50) || 'Custom Errand Pool');
+      } catch (e) {
+        this.logger.error(`Failed to securely create pool on P2P payment confirmation: ${e}`);
+      }
+    }
+
     await this.notificationsService.sendNotification(order.customer.toString(), {
       title: 'Payment Confirmed!',
       body: `The rider confirmed your payment. Your errand is now active.`,
