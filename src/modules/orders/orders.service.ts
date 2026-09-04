@@ -113,7 +113,7 @@ export class OrdersService {
     const erranderId = order.errander?._id || order.errander;
     const vendorOwnerId = order.vendor?.owner?._id || order.vendor?.owner;
 
-    const statusData = { orderId: order._id, status, orderNumber: order.orderNumber };
+    const statusData = { orderId: order._id.toString(), status, orderNumber: order.orderNumber };
 
     // Milestone control: Only send SMS for major order state changes
     const majorStatuses = [
@@ -287,8 +287,10 @@ export class OrdersService {
       
       // Flat Buyer's Convenience Fee
       const serviceFee = 50; 
-      // Paystack transfer fee: ₦10 for ≤₦5,000, ₦25 for >₦5,000 (charged to customer)
-      const transferFee = (itemCost + itemCostBuffer) > 0 ? ((itemCost + itemCostBuffer) <= 5000 ? 10 : 25) : 0;
+      
+      const enableTransferFee = errandSetting?.value?.enableTransferFee === true;
+      // Paystack transfer fee: ₦10 for ≤₦5,000, ₦25 for >₦5,000 (charged to customer) ONLY if enabled
+      const transferFee = enableTransferFee && (itemCost + itemCostBuffer) > 0 ? ((itemCost + itemCostBuffer) <= 5000 ? 10 : 25) : 0;
       // Total includes EVERYTHING: item cost + buffer + runner fee + service fee + transfer fee
       const total = itemCost + itemCostBuffer + runnerFee + serviceFee + transferFee;
 
@@ -1231,7 +1233,10 @@ export class OrdersService {
       }
     }
 
+    const isCustomErrand = targetOrder.type === 'custom_errand';
     const isNegotiating = targetOrder.status === OrderStatus.NEGOTIATING;
+    const isCustomErrandPending = isCustomErrand && targetOrder.status === OrderStatus.PENDING;
+
     const newStatus = targetOrder.status === OrderStatus.PENDING ? OrderStatus.CONFIRMED : 
                       (isNegotiating ? OrderStatus.AWAITING_PAYMENT : targetOrder.status);
 
@@ -1240,7 +1245,7 @@ export class OrdersService {
       status: newStatus,
     };
 
-    if (isNegotiating && targetOrder.proposedDeliveryFee) {
+    if ((isNegotiating || isCustomErrandPending) && targetOrder.proposedDeliveryFee) {
       const newFee = targetOrder.proposedDeliveryFee;
       const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
       const commissionPercent = errandSetting?.value?.customErrandCommissionPercentage ?? 20;
@@ -1265,24 +1270,26 @@ export class OrdersService {
           statusHistory: {
             status: newStatus,
             timestamp: new Date(),
-            note: isAdmin ? 'Order manually assigned by admin' : (isBatchActive ? 'Order accepted as part of Batch Delivery' : (isNegotiating ? 'Errander accepted proposed fee' : 'Order accepted by errander')),
+            note: isAdmin ? 'Order manually assigned by admin' : (isBatchActive ? 'Order accepted as part of Batch Delivery' : (isNegotiating || isCustomErrandPending ? 'Errander accepted proposed fee' : 'Order accepted by errander')),
         } as any
         }
       },
       { new: true }
     );
 
-    if (isNegotiating && order) {
+    if ((isNegotiating || isCustomErrandPending) && order) {
       try {
-        const gw = this.negotiationGateway;
-        if (gw) {
-          gw.sendOrderAcceptedDirectly(orderId, {
+        await this.redisService.publish('notification:broadcast:negotiation', JSON.stringify({
+          orderId: order._id.toString(),
+          type: 'BID_ACCEPTED_DIRECTLY',
+          payload: { 
             orderId: order._id.toString(),
             riderId: erranderId,
+            winningUserId: erranderId,
             agreedDeliveryFee: order.deliveryFee,
             total: order.total
-          });
-        }
+          }
+        }));
       } catch (e) {
         this.logger.error('Could not emit to negotiation gateway: ' + e);
       }
@@ -1341,12 +1348,15 @@ export class OrdersService {
     await errander.save();
 
     // Notify all parties via stored notifications + real-time
-    await this.notifyOrderStatusUpdate(order, OrderStatus.CONFIRMED, 'Order accepted by errander');
+    await this.notifyOrderStatusUpdate(order, order.status as OrderStatus, 'Order accepted by errander');
 
     // Broadcast order accepted so it is removed from the dispatch pool for all other riders
     await this.redisService.publish('notification:broadcast:erranders', JSON.stringify({
       type: 'ORDER_ACCEPTED',
-      data: { orderId: order._id.toString() }
+      data: { 
+        orderId: order._id.toString(),
+        winningUserId: erranderUser?._id.toString() || erranderId
+      }
     }));
 
     // Reward for Fast Acceptance (Compliance)
@@ -1467,7 +1477,7 @@ export class OrdersService {
     const erranderEarnings = order.erranderPayout || order.deliveryFee;
     if (order.type !== OrderType.CUSTOM_ERRAND) {
       const hasInterception = order.interception && (order.interception.status === 'accepted' || order.interception.status === 'completed');
-      if (hasInterception && order.interception.secondErrander) {
+      if (hasInterception && order.interception!.secondErrander) {
         const firstShare = erranderEarnings * 0.6;
         const secondShare = erranderEarnings * 0.4;
         await this.walletsService.creditWallet(
@@ -1477,7 +1487,7 @@ export class OrdersService {
           order._id.toString(),
         );
         await this.walletsService.creditWallet(
-          order.interception.secondErrander.toString(),
+          order.interception!.secondErrander.toString(),
           secondShare,
           `Delivery earnings (40% Interception) for order ${order.orderNumber}`,
           order._id.toString(),
@@ -1593,7 +1603,7 @@ export class OrdersService {
     const erranderEarnings = order.erranderPayout || order.deliveryFee;
     if (order.type !== OrderType.CUSTOM_ERRAND) {
       const hasInterception = order.interception && (order.interception.status === 'accepted' || order.interception.status === 'completed');
-      if (hasInterception && order.interception.secondErrander) {
+      if (hasInterception && order.interception!.secondErrander) {
         const firstShare = erranderEarnings * 0.6;
         const secondShare = erranderEarnings * 0.4;
         await this.walletsService.creditWallet(
@@ -1603,7 +1613,7 @@ export class OrdersService {
           order._id.toString(),
         );
         await this.walletsService.creditWallet(
-          order.interception.secondErrander.toString(),
+          order.interception!.secondErrander.toString(),
           secondShare,
           `Delivery earnings (40% Interception) for order ${order.orderNumber}`,
           order._id.toString(),
@@ -1942,7 +1952,7 @@ export class OrdersService {
     
     if (erranderUserId && fullOrder.type !== OrderType.CUSTOM_ERRAND) {
       const hasInterception = fullOrder.interception && (fullOrder.interception.status === 'accepted' || fullOrder.interception.status === 'completed');
-      if (hasInterception && fullOrder.interception.secondErrander) {
+      if (hasInterception && fullOrder.interception!.secondErrander) {
         const firstShare = erranderEarnings * 0.6;
         const secondShare = erranderEarnings * 0.4;
         await this.walletsService.creditWallet(
@@ -1952,7 +1962,7 @@ export class OrdersService {
           fullOrder._id.toString(),
         );
         await this.walletsService.creditWallet(
-          fullOrder.interception.secondErrander.toString(),
+          fullOrder.interception!.secondErrander.toString(),
           secondShare,
           `Delivery earnings (40% Interception) for order ${fullOrder.orderNumber}`,
           fullOrder._id.toString(),
@@ -3370,15 +3380,15 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     }
 
     order.status = OrderStatus.INTERCEPTION_IN_PROGRESS;
-    order.interception.secondErrander = new Types.ObjectId(secondErranderId);
-    order.interception.status = 'accepted';
+    order.interception!.secondErrander = new Types.ObjectId(secondErranderId);
+    order.interception!.status = 'accepted';
     await order.save();
 
     // Notify the student
     await this.notificationsService.sendNotification((order.customer as any)._id.toString(), {
       type: 'ORDER_INTERCEPTION_ACCEPTED',
       title: 'Package Hand-off',
-      body: `Your package has been handed off at ${order.interception.point} to a new errander who is on the way.`,
+      body: `Your package has been handed off at ${order.interception!.point} to a new errander who is on the way.`,
       data: { orderId: order._id },
     });
 

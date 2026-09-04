@@ -78,6 +78,7 @@ export class Order extends Document {
       estimatedItemCost: { type: Number, default: 0 },
       itemCostBuffer: { type: Number, default: 0 },
       urgency: { type: String, enum: ['standard', 'express'], default: 'standard' },
+      proofOfPayment: String,
     },
   })
   customDetails: {
@@ -90,6 +91,7 @@ export class Order extends Document {
     estimatedItemCost: number;
     itemCostBuffer?: number;
     urgency: 'standard' | 'express';
+    proofOfPayment?: string;
   };
 
   @Prop({ type: Types.ObjectId, ref: 'User' })

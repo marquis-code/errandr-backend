@@ -23,7 +23,7 @@ export class SettingsController {
       // Seed default settings if not exists
       setting = await this.settingModel.create({
         key: 'custom_errand',
-        value: { baseFee: 450, expressFee: 850, convenienceFee: 50, commissionFlatFee: 50, customErrandCommissionPercentage: 20, customErrandSafetyBufferPercentage: 20, platformProcessingFee: 500, platformServiceFeePercentage: 5, foodMarkupPercentage: 5, minOutsideCampusFee: 450, minCampusEnvironsFee: 350, minCustomErrandFee: 400 },
+        value: { baseFee: 450, expressFee: 850, convenienceFee: 50, commissionFlatFee: 50, customErrandCommissionPercentage: 20, customErrandSafetyBufferPercentage: 20, platformProcessingFee: 500, platformServiceFeePercentage: 5, foodMarkupPercentage: 5, minOutsideCampusFee: 450, minCampusEnvironsFee: 350, minCustomErrandFee: 400, enableTransferFee: false },
       });
     }
     return setting.value;
@@ -34,7 +34,7 @@ export class SettingsController {
   @Roles(UserRole.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update custom errand pricing settings (admin only)' })
-  async updateCustomErrandSettings(@Body() body: { baseFee: number; expressFee: number; convenienceFee?: number; commissionFlatFee?: number; customErrandCommissionPercentage?: number; customErrandSafetyBufferPercentage?: number; platformProcessingFee?: number; platformServiceFeePercentage?: number; foodMarkupPercentage?: number; minOutsideCampusFee?: number; minCampusEnvironsFee?: number; minCustomErrandFee?: number }) {
+  async updateCustomErrandSettings(@Body() body: { baseFee: number; expressFee: number; convenienceFee?: number; commissionFlatFee?: number; customErrandCommissionPercentage?: number; customErrandSafetyBufferPercentage?: number; platformProcessingFee?: number; platformServiceFeePercentage?: number; foodMarkupPercentage?: number; minOutsideCampusFee?: number; minCampusEnvironsFee?: number; minCustomErrandFee?: number; enableTransferFee?: boolean }) {
     let setting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
     if (!setting) {
       setting = new this.settingModel({ key: 'custom_errand' });
@@ -52,6 +52,7 @@ export class SettingsController {
       minCampusEnvironsFee: Number(body.minCampusEnvironsFee ?? 350),
       minCustomErrandFee: Number(body.minCustomErrandFee ?? 400),
       customErrandSafetyBufferPercentage: Number(body.customErrandSafetyBufferPercentage ?? 20),
+      enableTransferFee: body.enableTransferFee ?? false,
     };
     await setting.save();
     return setting.value;
