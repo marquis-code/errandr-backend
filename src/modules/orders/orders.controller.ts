@@ -553,6 +553,19 @@ async getMyVendorOrders(
     return this.ordersService.acceptOrder(id, body.erranderId, true);
   }
 
+  @Put(':id/admin-reassign')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Admin manually reassigns an errander to an active order' })
+  adminReassignOrder(
+    @Param('id') id: string,
+    @Body() body: { erranderId: string, revertStatus: boolean, forfeitFee: boolean }
+  ) {
+    this.logger.log(`Admin reassigning order=${id} to errander=${body.erranderId}`);
+    return this.ordersService.adminReassignOrder(id, body.erranderId, body.revertStatus, body.forfeitFee);
+  }
+
   @Put(':id/issues')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)

@@ -86,6 +86,34 @@ export class SettingsController {
     return setting.value;
   }
 
+  @Get('market-pool/config')
+  @ApiOperation({ summary: 'Get market pool general config (slots, fees)' })
+  async getMarketPoolConfig() {
+    let setting = await this.settingModel.findOne({ key: 'market_pool_config' }).exec();
+    if (!setting) {
+      setting = await this.settingModel.create({
+        key: 'market_pool_config',
+        value: { slots: ['Morning (8am - 12pm)', 'Afternoon (1pm - 5pm)'], feeType: 'flat', feeValue: 500 },
+      });
+    }
+    return setting.value;
+  }
+
+  @Put('market-pool/config')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update market pool config (admin only)' })
+  async updateMarketPoolConfig(@Body() body: { slots: string[]; feeType: 'flat' | 'percentage'; feeValue: number }) {
+    let setting = await this.settingModel.findOne({ key: 'market_pool_config' }).exec();
+    if (!setting) {
+      setting = new this.settingModel({ key: 'market_pool_config' });
+    }
+    setting.value = { ...setting.value, ...body };
+    await setting.save();
+    return setting.value;
+  }
+
   @Get('negotiation')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

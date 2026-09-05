@@ -136,7 +136,16 @@ export class MarketPoolService {
       await dbItem.save();
     }
 
-    const deliveryFee = 500; // Flat delivery fee
+    const configSetting = await this.systemSettingModel.findOne({ key: 'market_pool_config' }).exec();
+    const config = configSetting?.value || { feeType: 'flat', feeValue: 500 };
+    
+    let deliveryFee = 500; // default fallback
+    if (config.feeType === 'percentage') {
+      deliveryFee = Math.round((totalItemCost * config.feeValue) / 100);
+    } else {
+      deliveryFee = config.feeValue;
+    }
+    
     const total = totalItemCost + deliveryFee;
 
     // We no longer deduct from wallet here. Order goes into PENDING_PAYMENT
@@ -160,6 +169,34 @@ export class MarketPoolService {
       return { bankName: '', accountNumber: '', accountName: '' };
     }
     return setting.value;
+  }
+
+  async updateDeliveryPreference(
+    orderId: string, 
+    userId: string, 
+    deliverySlot?: string, 
+    proxyName?: string, 
+    proxyPhone?: string
+  ): Promise<MarketPoolOrder> {
+    const order = await this.orderModel.findById(orderId);
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.userId.toString() !== userId) throw new BadRequestException('Unauthorized');
+
+    const uneditableStatuses = [
+      MarketPoolOrderStatus.OUT_FOR_DELIVERY,
+      MarketPoolOrderStatus.DELIVERED
+    ];
+
+    if (uneditableStatuses.includes(order.status as MarketPoolOrderStatus)) {
+      throw new BadRequestException('Order delivery preference can no longer be edited at this stage');
+    }
+
+    if (deliverySlot !== undefined) order.deliverySlot = deliverySlot;
+    if (proxyName !== undefined) order.proxyName = proxyName;
+    if (proxyPhone !== undefined) order.proxyPhone = proxyPhone;
+
+    await order.save();
+    return order;
   }
 
   async uploadProof(orderId: string, userId: string, paymentProofUrl: string): Promise<MarketPoolOrder> {

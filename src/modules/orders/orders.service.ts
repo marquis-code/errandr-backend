@@ -1432,6 +1432,111 @@ export class OrdersService {
     ]);
   }
 
+  async adminReassignOrder(orderId: string, newErranderId: string, revertStatus: boolean = true, forfeitFee: boolean = true): Promise<Order> {
+    const order = await this.orderModel.findById(orderId);
+    if (!order) throw new NotFoundException('Order not found');
+
+    if (!order.errander) {
+      throw new BadRequestException('Order is not currently assigned. Use standard assign instead.');
+    }
+
+    const oldErranderId = (order.errander as any)?._id?.toString() || order.errander?.toString();
+    if (oldErranderId === newErranderId) {
+      throw new BadRequestException('Order is already assigned to this errander.');
+    }
+
+    // Custom errand safety block
+    if (order.type === OrderType.CUSTOM_ERRAND && order.paymentStatus === PaymentStatus.PAID) {
+      throw new BadRequestException('Cannot automatically reassign a Custom Errand that has already been paid/disbursed. Admin must resolve funds manually.');
+    }
+
+    const newErrander = await this.erranderModel.findOne({ user: new Types.ObjectId(newErranderId) });
+    if (!newErrander) {
+      throw new NotFoundException('New errander profile not found');
+    }
+
+    const oldErrander = await this.erranderModel.findOne({ user: new Types.ObjectId(oldErranderId) });
+    
+    const newStatus = revertStatus ? OrderStatus.CONFIRMED : order.status;
+
+    // ATOMIC Update: swap errander, revert status, log history
+    const updatedOrder = await this.orderModel.findByIdAndUpdate(
+      orderId,
+      {
+        $set: {
+          errander: new Types.ObjectId(newErranderId),
+          status: newStatus,
+        },
+        $push: {
+          statusHistory: {
+            status: newStatus,
+            timestamp: new Date(),
+            note: `Admin reassigned order from ${oldErranderId} to ${newErranderId}`,
+          } as any
+        }
+      },
+      { new: true }
+    );
+
+    // Update Old Errander State
+    if (oldErrander) {
+      oldErrander.batchOrders = oldErrander.batchOrders?.filter(id => id.toString() !== orderId) || [];
+      if (oldErrander.currentOrder?.toString() === orderId) {
+        oldErrander.currentOrder = null as any;
+      }
+      if (oldErrander.batchOrders.length === 0 && !oldErrander.currentOrder) {
+        oldErrander.status = ErranderStatus.AVAILABLE;
+      }
+      await oldErrander.save();
+
+      // Ledger Reversal
+      if (forfeitFee) {
+        try {
+          const transactions = await this.walletsService.getTransactions(oldErranderId);
+          // Look for a credit transaction related to this order
+          const payoutTx = transactions.find(t => 
+            t.type === 'credit' && 
+            (t.reference === order._id.toString() || t.description?.includes(order.orderNumber))
+          );
+          if (payoutTx) {
+            await this.walletsService.forceDebitWallet(
+              oldErranderId,
+              payoutTx.amount,
+              `Reversal due to order reassignment (Order #${order.orderNumber})`
+            );
+          }
+        } catch (e) {
+          this.logger.error(`Failed to reverse fee for errander ${oldErranderId} on order ${orderId}: ${e.message}`);
+        }
+      }
+    }
+
+    // Update New Errander State
+    newErrander.status = ErranderStatus.BUSY;
+    if (!newErrander.batchOrders) newErrander.batchOrders = [];
+    if (!newErrander.batchOrders.some(id => id.toString() === orderId)) {
+      newErrander.batchOrders.push(new Types.ObjectId(orderId));
+    }
+    await newErrander.save();
+
+    if (!updatedOrder) {
+      throw new InternalServerErrorException('Failed to reassign order');
+    }
+
+    // Broadcast update
+    await this.redisService.publish('notification:broadcast:erranders', JSON.stringify({
+      type: 'ORDER_REASSIGNED',
+      data: { orderId: orderId, winningUserId: newErranderId }
+    }));
+    await this.notifyOrderStatusUpdate(updatedOrder, newStatus as OrderStatus, 'Order has been reassigned to a new dispatcher');
+
+    return updatedOrder.populate([
+      { path: 'customer', select: 'firstName lastName phone avatar' },
+      { path: 'vendor', select: 'storeName logo phone' },
+      { path: 'errander', select: 'firstName lastName phone avatar' },
+    ]);
+  }
+
   async completeOrder(orderId: string, erranderId: string, verificationCode: string): Promise<Order> {
     const order = await this.orderModel.findById(orderId);
     if (!order) throw new NotFoundException('Order not found');

@@ -39,6 +39,22 @@ export class MarketPoolController {
     return this.marketPoolService.uploadProof(orderId, req.user._id.toString(), paymentProofUrl);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Put('orders/:id/delivery-details')
+  async updateDeliveryDetails(
+    @Req() req, 
+    @Param('id') orderId: string, 
+    @Body() body: { deliverySlot?: string, proxyName?: string, proxyPhone?: string }
+  ) {
+    return this.marketPoolService.updateDeliveryPreference(
+      orderId, 
+      req.user._id.toString(), 
+      body.deliverySlot, 
+      body.proxyName, 
+      body.proxyPhone
+    );
+  }
+
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   @Put('orders/:id/verify-payment')
