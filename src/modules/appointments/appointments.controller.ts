@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Body, Param, Query, UseGuards, Res } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Body, Param, Query, UseGuards, Res } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AppointmentsService } from './appointments.service';
 import { JwtAuthGuard, CurrentUser } from '../../common/decorators';
@@ -111,6 +111,21 @@ export class AppointmentsController {
       throw new NotFoundException('Vendor profile not found for this user');
     }
     return this.appointmentsService.updateStatus(id, (vendor._id as unknown) as string, status);
+  }
+
+  @Patch(':id/verify-payment')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Verify direct transfer payment (Vendor)' })
+  async verifyDirectTransfer(
+    @Param('id') id: string, 
+    @CurrentUser() user: any
+  ) {
+    const vendor = await this.vendorsService.findByOwner(user._id);
+    if (!vendor) {
+      throw new NotFoundException('Vendor profile not found for this user');
+    }
+    return this.appointmentsService.verifyDirectTransferPayment(id, (vendor._id as unknown) as string);
   }
 
   @Put(':id/client-cancel')

@@ -42,8 +42,12 @@ export class ChatController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get chat messages between a user and a vendor owner' })
-  getDirectMessages(@CurrentUser() user: User, @Param('vendorOwnerId') vendorOwnerId: string) {
-    return this.chatService.getDirectMessages((user._id as unknown) as string, vendorOwnerId);
+  getDirectMessages(
+    @CurrentUser() user: User, 
+    @Param('vendorOwnerId') vendorOwnerId: string,
+    @Query('serviceId') serviceId?: string
+  ) {
+    return this.chatService.getDirectMessages((user._id as unknown) as string, vendorOwnerId, serviceId);
   }
 
   @Post('rooms/create')

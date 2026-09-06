@@ -102,6 +102,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       roomType?: string;
       attachment?: string;
       replyTo?: string;
+      serviceId?: string;
     },
   ) {
     const messageContent = data.content || data.message || '';
@@ -147,6 +148,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         receiver: data.receiverId ? { _id: data.receiverId } : undefined,
         order: orderId,
         appointment: appointmentId,
+        service: data.serviceId,
         createdAt: new Date().toISOString(),
         senderType: 'customer',
       };
@@ -177,6 +179,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         message: messageContent,
         orderId,
         appointmentId,
+        service: data.serviceId,
         roomType 
       });
       

@@ -8,6 +8,7 @@ import { EmailService } from '../email/email.service';
 import { WalletsService } from '../wallets/wallets.service';
 import { AdminService } from '../admin/admin.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { VendorsService } from '../vendors/vendors.service';
 
 @Injectable()
 export class AppointmentsService {
@@ -20,6 +21,7 @@ export class AppointmentsService {
     private readonly walletsService: WalletsService,
     private readonly adminService: AdminService,
     private readonly notificationsService: NotificationsService,
+    private readonly vendorsService: VendorsService,
   ) {}
 
   async create(userId: string | null, data: any) {
@@ -56,8 +58,10 @@ export class AppointmentsService {
       pendingBalance,
       notes: data.notes,
       status: AppointmentStatus.PENDING,
-      paymentStatus: 'pending',
-      paymentReference: reference
+      paymentStatus: data.paymentMethod === 'direct_transfer' ? 'pending_verification' : 'pending',
+      paymentReference: reference,
+      paymentMethod: data.paymentMethod || 'paystack',
+      proofOfPayment: data.proofOfPayment
     };
 
     if (userId) {
@@ -68,6 +72,32 @@ export class AppointmentsService {
     }
 
     const appointment = await this.appointmentModel.create(appointmentPayload);
+
+    // If Direct Transfer, skip Paystack and return success with pending verification
+    if (data.paymentMethod === 'direct_transfer') {
+      try {
+        const vendorData = await this.vendorsService.findById(data.vendor);
+        if (vendorData) {
+          const userEmail = data.userEmail || data.guestInfo?.email || 'user@erranders.org';
+          // Notify vendor
+          const ownerEmail = (vendorData.owner as any)?.email;
+          if (ownerEmail) {
+            await this.emailService.sendVendorNewBooking(
+              ownerEmail,
+              appointment,
+              userEmail
+            );
+          }
+        }
+      } catch (err) {
+        console.error('Error sending direct transfer notification:', err);
+      }
+      return {
+        appointment,
+        authorization_url: null, // No Paystack redirect needed
+        status: 'pending_verification'
+      };
+    }
 
     // Initialize Paystack Payment
     try {
@@ -196,6 +226,54 @@ export class AppointmentsService {
     }
   }
 
+  async verifyDirectTransferPayment(appointmentId: string, vendorId: string) {
+    const appointment = await this.appointmentModel.findOne({
+      _id: new Types.ObjectId(appointmentId),
+      vendor: new Types.ObjectId(vendorId),
+    }).populate('user', 'firstName lastName email').populate('vendor', 'storeName email owner');
+
+    if (!appointment) {
+      throw new NotFoundException('Appointment not found');
+    }
+
+    if (appointment.paymentStatus !== 'pending_verification') {
+      throw new BadRequestException('Appointment is not pending verification');
+    }
+
+    appointment.paymentStatus = 'success';
+    appointment.status = AppointmentStatus.CONFIRMED;
+    await appointment.save();
+
+    // Send payment receipt / confirmation to student
+    const email = (appointment.user as any)?.email || appointment.guestInfo?.email;
+    const firstName = (appointment.user as any)?.firstName || appointment.guestInfo?.firstName || 'Erranders User';
+    const lastName = (appointment.user as any)?.lastName || appointment.guestInfo?.lastName || '';
+    const studentName = `${firstName} ${lastName}`.trim();
+    
+    if (email) {
+      await this.emailService.sendBookingReceipt(
+        email,
+        appointment.price,
+        appointment.paymentReference,
+        appointment,
+        studentName
+      );
+    }
+
+    // Trigger student notification (Push)
+    const userId = appointment.user?._id?.toString() || appointment.user?.toString();
+    if (userId) {
+      await this.notificationsService.sendNotification(userId, {
+        title: 'Booking Confirmed! 🎉',
+        body: `Your payment was verified and your booking with ${(appointment.vendor as any)?.storeName || 'the vendor'} is confirmed.`,
+        type: 'BOOKING_CONFIRMED',
+        data: { appointmentId: appointment._id }
+      });
+    }
+
+    return { success: true, message: 'Payment verified successfully', appointment };
+  }
+
   async findAllForVendor(vendorId: string, query: any) {
     const filter: any = { vendor: new Types.ObjectId(vendorId) };
     if (query.status) filter.status = query.status;
@@ -238,25 +316,29 @@ export class AppointmentsService {
     appointment.status = status;
     await appointment.save();
 
-    // If status changed to COMPLETED or CANCELLED/NO_SHOW, credit the vendor's wallet with the commitment fee
-    if (previousStatus !== status && (status === AppointmentStatus.COMPLETED || status === AppointmentStatus.CANCELLED || status === AppointmentStatus.NO_SHOW)) {
+    if (previousStatus !== status) {
       if (appointment.commitmentFee > 0 && appointment.paymentStatus === 'success') {
         const vendorObj: any = appointment.vendor;
-        if (vendorObj && vendorObj.owner) {
-          // Calculate platform commission if needed, for now credit full commitment fee
-          // Platform commission logic can be added here in the future
-          const creditAmount = appointment.commitmentFee;
-          
-          try {
-            await this.walletsService.creditWallet(
-              vendorObj.owner.toString(),
-              creditAmount,
-              `Commitment fee for appointment ${appointment._id}`,
-              undefined,
-              appointment.paymentReference
-            );
-          } catch (e) {
-            this.logger.error(`Failed to credit wallet for appointment ${appointment._id}: ${e.message}`);
+        const studentId = appointment.user?._id?.toString() || appointment.user?.toString();
+        const vendorOwnerId = vendorObj?.owner?._id?.toString() || vendorObj?.owner?.toString();
+        
+        if (status === AppointmentStatus.COMPLETED || status === AppointmentStatus.NO_SHOW) {
+          if (vendorOwnerId) {
+            try {
+              await this.walletsService.creditWallet(vendorOwnerId, appointment.commitmentFee, `Commitment fee for appointment ${appointment._id}`, undefined, appointment.paymentReference);
+            } catch (e) {
+              this.logger.error(`Failed to credit vendor wallet for appointment ${appointment._id}: ${e.message}`);
+            }
+          }
+        } else if (status === AppointmentStatus.CANCELLED) {
+          if (studentId) {
+            try {
+              await this.walletsService.creditWallet(studentId, appointment.commitmentFee, `Refund for vendor-cancelled appointment ${appointment._id}`, undefined, appointment.paymentReference);
+            } catch (e) {
+              this.logger.error(`Failed to refund student wallet for appointment ${appointment._id}: ${e.message}`);
+            }
+          } else {
+            this.logger.error(`Cannot automatically refund Guest for cancelled appointment ${appointment._id}. Manual Paystack refund required.`);
           }
         }
       }
@@ -291,6 +373,40 @@ export class AppointmentsService {
     return appointment;
   }
 
+  private async processStudentCancellationFinancials(appointment: any) {
+    if (appointment.commitmentFee > 0 && appointment.paymentStatus === 'success') {
+      const scheduledStart = new Date(appointment.scheduledDate);
+      const [hours, minutes] = appointment.startTime.split(':').map(Number);
+      scheduledStart.setHours(hours, minutes, 0, 0);
+
+      const diffHours = (scheduledStart.getTime() - new Date().getTime()) / (1000 * 60 * 60);
+      const refundPercentage = diffHours >= 24 ? 1 : 0.5;
+      const penaltyPercentage = 1 - refundPercentage;
+
+      const refundAmount = Math.round(appointment.commitmentFee * refundPercentage);
+      const penaltyAmount = Math.round(appointment.commitmentFee * penaltyPercentage);
+
+      const studentId = appointment.user?._id?.toString() || appointment.user?.toString();
+      const vendorOwnerId = (appointment.vendor as any)?.owner?._id?.toString() || (appointment.vendor as any)?.owner?.toString();
+
+      if (refundAmount > 0) {
+        if (studentId) {
+          try {
+            await this.walletsService.creditWallet(studentId, refundAmount, `Refund for cancelled appointment ${appointment._id}`, undefined, appointment.paymentReference);
+          } catch(e) { this.logger.error(`Failed to refund student wallet: ${e.message}`); }
+        } else {
+          this.logger.error(`Cannot automatically refund Guest for appointment ${appointment._id}. Manual Paystack refund required.`);
+        }
+      }
+      
+      if (penaltyAmount > 0 && vendorOwnerId) {
+        try {
+          await this.walletsService.creditWallet(vendorOwnerId, penaltyAmount, `Penalty fee for late cancellation of appointment ${appointment._id}`, undefined, appointment.paymentReference);
+        } catch(e) { this.logger.error(`Failed to credit vendor penalty: ${e.message}`); }
+      }
+    }
+  }
+
   async trackBooking(reference: string, email: string) {
     const appointment = await this.appointmentModel.findOne({ paymentReference: reference })
       .populate('vendor', 'storeName businessType businessName address logo')
@@ -319,6 +435,8 @@ export class AppointmentsService {
 
     appointment.status = AppointmentStatus.CANCELLED;
     await appointment.save();
+
+    await this.processStudentCancellationFinancials(appointment);
 
     // Notify Vendor
     try {
@@ -363,6 +481,8 @@ export class AppointmentsService {
     appointment.status = AppointmentStatus.CANCELLED;
     await appointment.save();
 
+    await this.processStudentCancellationFinancials(appointment);
+
     // Notify Vendor
     try {
       const vendor: any = appointment.vendor;
@@ -389,7 +509,10 @@ export class AppointmentsService {
   }
 
   async rescheduleForUser(id: string, userId: string, payload: { scheduledDate: string, startTime: string, endTime: string }) {
-    const appointment = await this.appointmentModel.findOne({ _id: new Types.ObjectId(id), user: new Types.ObjectId(userId) });
+    const appointment = await this.appointmentModel.findOne({ _id: new Types.ObjectId(id), user: new Types.ObjectId(userId) })
+      .populate({ path: 'vendor', select: 'owner', populate: { path: 'owner', select: 'email' } })
+      .populate('user', 'firstName lastName');
+      
     if (!appointment) throw new NotFoundException('Booking not found');
 
     if (appointment.status === AppointmentStatus.COMPLETED || appointment.status === AppointmentStatus.CANCELLED) {
@@ -401,6 +524,28 @@ export class AppointmentsService {
     appointment.endTime = payload.endTime;
     appointment.status = AppointmentStatus.PENDING;
     await appointment.save();
+
+    // Notify Vendor
+    try {
+      const vendor: any = appointment.vendor;
+      const user: any = appointment.user;
+      const studentName = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : (appointment.guestInfo?.firstName || 'A Student');
+      
+      if (vendor?.owner?._id) {
+        await this.notificationsService.sendNotification(vendor.owner._id.toString(), {
+          title: 'Booking Rescheduled 📅',
+          body: `${studentName} has rescheduled their booking to ${payload.scheduledDate} at ${payload.startTime}.`,
+          type: 'BOOKING_RESCHEDULED',
+          data: { appointmentId: appointment._id }
+        });
+        
+        if (vendor.owner.email) {
+          // If you have an email template for reschedule, call it here. For now, we rely on the push notification.
+        }
+      }
+    } catch (e) {
+      this.logger.error(`Failed to send vendor reschedule notification: ${e.message}`);
+    }
 
     return { success: true, message: 'Booking rescheduled successfully', appointment };
   }

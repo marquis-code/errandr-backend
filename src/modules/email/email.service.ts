@@ -630,6 +630,37 @@ export class EmailService {
     return this.sendEmail(to, `Booking Update: ${status.toUpperCase()} ${emoji}`, html);
   }
 
+  async sendAppointmentReminder(to: string, appointment: any, type: '24h' | '1h', role: 'student' | 'vendor', name: string) {
+    const timeText = type === '24h' ? 'tomorrow' : 'in 1 hour';
+    const displayDate = new Date(appointment.scheduledDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    
+    let title = '';
+    let subtitle = '';
+    
+    if (role === 'student') {
+      title = `Upcoming Appointment ${timeText} ⏳`;
+      subtitle = `Hi ${name}, this is a reminder for your upcoming booking with <b>${appointment.vendor?.storeName || 'the vendor'}</b>.`;
+    } else {
+      title = `Upcoming Booking ${timeText} ⏳`;
+      subtitle = `Hi ${name}, you have a booking ${timeText} with <b>${appointment.user?.firstName || appointment.guestInfo?.firstName || 'A student'}</b>.`;
+    }
+
+    const html = this.wrap({
+      preheader: `Reminder: Appointment ${timeText}`,
+      badge: { text: 'REMINDER', color: 'orange' },
+      title,
+      subtitle,
+      content: `
+        <div class="card">
+          <p class="card-label">Date & Time</p>
+          <p class="card-value" style="font-size: 16px;">${displayDate}, ${appointment.startTime} – ${appointment.endTime}</p>
+        </div>
+        <a href="${role === 'student' ? 'https://www.erranders.org/dashboard/activity' : 'https://vendor.erranders.org/dashboard/appointments'}" class="btn">View Booking Details</a>
+      `
+    });
+    return this.sendEmail(to, `Reminder: Upcoming Appointment ${timeText}`, html);
+  }
+
   async sendStatusUpdate(to: string, orderNumber: string, status: string, emoji: string = '🚚') {
     const icon = status.includes('PREP') ? '🍳' : (status.includes('TRANSIT') ? '🚲' : (status.includes('DELIVER') ? '✅' : emoji));
     const html = this.wrap({

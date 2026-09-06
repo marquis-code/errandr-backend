@@ -85,6 +85,18 @@ export class Appointment extends Document {
 
   @Prop()
   paymentReference: string;
+
+  @Prop({ type: String, enum: ['paystack', 'direct_transfer'], default: 'paystack' })
+  paymentMethod: string;
+
+  @Prop({ type: String })
+  proofOfPayment: string;
+
+  @Prop({ default: false })
+  reminderSent24h: boolean;
+
+  @Prop({ default: false })
+  reminderSent1h: boolean;
 }
 
 export const AppointmentSchema = SchemaFactory.createForClass(Appointment);

@@ -33,6 +33,7 @@ export class ChatService {
   async createMessage(data: {
     orderId?: string;
     appointmentId?: string;
+    service?: string;
     senderId: string;
     receiverId?: string;
     message: string;
@@ -51,6 +52,7 @@ export class ChatService {
       roomType: data.roomType || (data.orderId ? 'order' : (data.appointmentId ? 'direct' : 'support')),
       attachment: data.attachment,
       replyTo: data.replyTo ? new Types.ObjectId(data.replyTo) : undefined,
+      service: data.service ? new Types.ObjectId(data.service) : undefined,
     });
 
     // Fire-and-forget: send push notifications in background WITHOUT blocking the return.
@@ -318,16 +320,24 @@ export class ChatService {
       return Array.from(threads.values());
   }
 
-  async getDirectMessages(userId: string, vendorOwnerId: string): Promise<ChatMessage[]> {
+  async getDirectMessages(userId: string, vendorOwnerId: string, serviceId?: string): Promise<ChatMessage[]> {
+    const query: any = {
+      roomType: 'direct',
+      appointment: { $exists: false },
+      $or: [
+        { sender: new Types.ObjectId(userId), receiver: new Types.ObjectId(vendorOwnerId) },
+        { sender: new Types.ObjectId(vendorOwnerId), receiver: new Types.ObjectId(userId) }
+      ]
+    };
+    
+    if (serviceId) {
+      query.service = new Types.ObjectId(serviceId);
+    } else {
+      query.service = { $exists: false };
+    }
+
     return this.chatModel
-      .find({
-        roomType: 'direct',
-        appointment: { $exists: false },
-        $or: [
-          { sender: new Types.ObjectId(userId), receiver: new Types.ObjectId(vendorOwnerId) },
-          { sender: new Types.ObjectId(vendorOwnerId), receiver: new Types.ObjectId(userId) }
-        ]
-      })
+      .find(query)
       .populate('sender', 'firstName lastName avatar role')
       .populate('receiver', 'firstName lastName avatar role')
       .sort({ createdAt: 1 });
@@ -345,6 +355,7 @@ export class ChatService {
       })
       .populate('sender', 'firstName lastName avatar storeName')
       .populate('receiver', 'firstName lastName avatar storeName')
+      .populate('service', 'name coverImage')
       .sort({ createdAt: -1 });
 
     const threads = new Map<string, any>();
@@ -358,17 +369,20 @@ export class ChatService {
       if (!otherUser._id) continue;
 
       const otherUserId = otherUser._id.toString();
+      const serviceId = (msg as any).service?._id?.toString() || 'general';
+      const threadKey = `${otherUserId}_${serviceId}`;
 
-      if (!threads.has(otherUserId)) {
-        threads.set(otherUserId, {
+      if (!threads.has(threadKey)) {
+        threads.set(threadKey, {
           user: otherUser,
+          service: (msg as any).service,
           lastMessage: msg,
           unreadCount: 0 // Will populate this later if needed
         });
       }
 
       if (msg.receiver?.toString() === userId && !msg.isRead) {
-        threads.get(otherUserId).unreadCount++;
+        threads.get(threadKey).unreadCount += 1;
       }
     }
 

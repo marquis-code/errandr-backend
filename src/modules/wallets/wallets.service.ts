@@ -7,6 +7,7 @@ import { PaystackService } from '../payments/paystack.service';
 import { EmailService } from '../email/email.service';
 import { User } from '../users/schemas/user.schema';
 import { Order } from '../orders/schemas/order.schema';
+import { Vendor } from '../vendors/schemas/vendor.schema';
 import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
@@ -15,7 +16,8 @@ export class WalletsService {
     @InjectModel(Wallet.name) private walletModel: Model<WalletDocument>,
     @InjectModel(Transaction.name) private transactionModel: Model<TransactionDocument>,
     @InjectModel(User.name) private userModel: Model<User>,
-    @InjectModel(Order.name) private orderModel: Model<any>,
+    @InjectModel(Order.name) private orderModel: Model<Order>,
+    @InjectModel(Vendor.name) private vendorModel: Model<any>,
     @Inject(forwardRef(() => PaystackService)) private paystackService: PaystackService,
     private emailService: EmailService,
   ) {}
@@ -252,6 +254,7 @@ export class WalletsService {
     wallet.payoutPreference = preference;
     if (bankDetails !== undefined) {
       wallet.bankDetails = bankDetails;
+      await this.vendorModel.updateOne({ owner: new Types.ObjectId(userId) }, { $set: { bankDetails } }, { runValidators: false });
     }
     if (bankAccounts !== undefined) {
       wallet.bankAccounts = bankAccounts;
