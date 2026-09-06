@@ -113,7 +113,8 @@ export class NegotiationService {
     
     // Deduct 20% platform fee from the negotiated delivery fee
     const platformCommission = bid.bidAmount * 0.20;
-    order.platformShare = (order.platformShare || 0) + platformCommission;
+    const oldCommission = order.proposedDeliveryFee ? Math.round(order.proposedDeliveryFee * 0.20) : 0;
+    order.platformShare = (order.platformShare || 0) - oldCommission + platformCommission;
     order.erranderPayout = bid.bidAmount - platformCommission;
     order.erranderShare = order.erranderPayout;
     

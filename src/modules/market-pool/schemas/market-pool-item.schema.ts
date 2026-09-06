@@ -1,9 +1,10 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import * as mongoose from 'mongoose';
 import { Document, Types } from 'mongoose';
 
 @Schema({ timestamps: true })
 export class MarketPoolItem extends Document {
-  @Prop({ type: Types.ObjectId, ref: 'MarketPoolCampaign', required: true })
+  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'MarketPoolCampaign', required: true })
   campaignId: Types.ObjectId;
 
   @Prop({ required: true })
@@ -42,7 +43,7 @@ export class MarketPoolItem extends Document {
   @Prop()
   weightEstimate: string;
 
-  @Prop({ type: [{ userId: { type: Types.ObjectId, ref: 'User' }, rating: Number, comment: String }] })
+  @Prop({ type: [{ userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, rating: Number, comment: String }] })
   reviews: any[];
 }
 

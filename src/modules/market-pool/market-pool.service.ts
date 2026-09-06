@@ -86,8 +86,25 @@ export class MarketPoolService {
     return this.campaignModel.create({ title, startDate, endDate });
   }
 
+  async closeCampaign(id: string): Promise<MarketPoolCampaign> {
+    const campaign = await this.campaignModel.findById(id);
+    if (!campaign) {
+      throw new NotFoundException(`Campaign ${id} not found`);
+    }
+    campaign.status = MarketPoolCampaignStatus.CLOSED;
+    return campaign.save();
+  }
+
   async getActiveCampaign(): Promise<MarketPoolCampaign | null> {
     return this.campaignModel.findOne({ status: MarketPoolCampaignStatus.OPEN }).sort({ createdAt: -1 });
+  }
+
+  async getActiveCampaigns(): Promise<MarketPoolCampaign[]> {
+    return this.campaignModel.find({ status: MarketPoolCampaignStatus.OPEN }).sort({ createdAt: -1 });
+  }
+
+  async getAllCampaigns(): Promise<MarketPoolCampaign[]> {
+    return this.campaignModel.find().sort({ createdAt: -1 });
   }
 
   async addItem(campaignId: string, data: any): Promise<MarketPoolItem> {

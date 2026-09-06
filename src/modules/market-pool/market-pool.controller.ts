@@ -16,6 +16,17 @@ export class MarketPoolController {
     return { campaign, items };
   }
 
+  @Get('active-campaigns')
+  async getActiveCampaigns() {
+    const campaigns = await this.marketPoolService.getActiveCampaigns();
+    const results: any[] = [];
+    for (const campaign of campaigns) {
+      const items = await this.marketPoolService.getCampaignItems(campaign._id.toString());
+      results.push({ campaign, items });
+    }
+    return results;
+  }
+
   @UseGuards(JwtAuthGuard)
   @Get('orders')
   async getUserOrders(@Req() req) {
@@ -71,9 +82,30 @@ export class MarketPoolController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
+  @Get('campaigns')
+  async getAllCampaigns() {
+    return this.marketPoolService.getAllCampaigns();
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   @Post('campaigns')
   async createCampaign(@Body() body: { title: string, startDate: Date, endDate: Date }) {
     return this.marketPoolService.createCampaign(body.title, body.startDate, body.endDate);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Post('campaigns/:id/close')
+  async closeCampaign(@Param('id') campaignId: string) {
+    return this.marketPoolService.closeCampaign(campaignId);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Get('campaigns/:id/items')
+  async getCampaignItems(@Param('id') campaignId: string) {
+    return this.marketPoolService.getCampaignItems(campaignId);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

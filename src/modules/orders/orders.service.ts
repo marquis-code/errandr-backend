@@ -3123,8 +3123,8 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
     });
 
     // Deduct platform fees from Errander's wallet
-    const calculatedPlatformShare = order.platformShare || (order.deliveryFee ? order.deliveryFee * 0.20 : 0);
-    const platformRevenue = (order.serviceFee || 0) + (order.transferFee || 0) + calculatedPlatformShare;
+    const calculatedPlatformShare = order.platformShare || ((order.serviceFee || 0) + (order.deliveryFee ? order.deliveryFee * 0.20 : 0));
+    const platformRevenue = calculatedPlatformShare + (order.transferFee || 0);
     if (platformRevenue > 0) {
       await this.walletsService.forceDebitWallet(
         erranderId,

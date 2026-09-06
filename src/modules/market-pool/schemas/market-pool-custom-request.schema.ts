@@ -1,4 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import * as mongoose from 'mongoose';
 import { Document, Types } from 'mongoose';
 
 export enum CustomRequestStatus {
@@ -9,10 +10,10 @@ export enum CustomRequestStatus {
 
 @Schema({ timestamps: true })
 export class MarketPoolCustomRequest extends Document {
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true })
   userId: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'MarketPoolCampaign', required: true })
+  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'MarketPoolCampaign', required: true })
   campaignId: Types.ObjectId;
 
   @Prop({ required: true })

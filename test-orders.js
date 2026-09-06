@@ -1,13 +1,12 @@
 const mongoose = require('mongoose');
 async function run() {
-  await mongoose.connect('mongodb://localhost:27017/erranders');
-  const user = await mongoose.connection.collection('users').findOne({ email: 'blessingidowu1991@gmail.com' });
-  const vendors = await mongoose.connection.collection('vendors').find({ owner: user._id }).toArray();
-  const vendorIds = vendors.map(v => v._id);
-  const filter = { vendor: { $in: vendorIds }, status: { $nin: ['pending', 'negotiating', 'awaiting_payment'] } };
-  const orders = await mongoose.connection.collection('orders').find(filter).toArray();
-  console.log("Found orders count:", orders.length);
-  console.log("Statuses found:", [...new Set(orders.map(o => o.status))]);
-  await mongoose.disconnect();
+  await mongoose.connect('mongodb+srv://errandr:errandr@errandr.eknah3x.mongodb.net/?appName=errandr');
+  const db = mongoose.connection.db;
+  const orders = await db.collection('marketpoolorders').find({}).toArray();
+  console.log("Total orders:", orders.length);
+  if (orders.length > 0) {
+    console.log("First order:", orders[orders.length - 1]);
+  }
+  process.exit(0);
 }
-run();
+run().catch(console.error);

@@ -1,4 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import * as mongoose from 'mongoose';
 import { Document, Types } from 'mongoose';
 
 export enum MarketPoolOrderStatus {
@@ -14,7 +15,7 @@ export enum MarketPoolOrderStatus {
 
 @Schema({ _id: false })
 export class MarketPoolOrderItem {
-  @Prop({ type: Types.ObjectId, ref: 'MarketPoolItem', required: true })
+  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'MarketPoolItem', required: true })
   itemId: Types.ObjectId;
 
   @Prop({ required: true })
@@ -30,10 +31,10 @@ export const MarketPoolOrderItemSchema = SchemaFactory.createForClass(MarketPool
 
 @Schema({ timestamps: true })
 export class MarketPoolOrder extends Document {
-  @Prop({ type: Types.ObjectId, ref: 'MarketPoolCampaign', required: true })
+  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'MarketPoolCampaign', required: true })
   campaignId: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true })
   userId: Types.ObjectId;
 
   @Prop({ type: [MarketPoolOrderItemSchema], required: true })
@@ -48,7 +49,7 @@ export class MarketPoolOrder extends Document {
   @Prop({ type: String, enum: MarketPoolOrderStatus, default: MarketPoolOrderStatus.PENDING_PAYMENT })
   status: MarketPoolOrderStatus;
 
-  @Prop({ type: String, enum: ['morning', 'afternoon'], default: 'morning' })
+  @Prop({ type: String })
   deliverySlot: string;
 
   @Prop()
