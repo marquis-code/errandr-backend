@@ -17,7 +17,7 @@ export class ExamModeService {
     @InjectModel(VendorAvailability.name) private vendorAvailabilityModel: Model<VendorAvailability>,
     @InjectModel(ContentPlan.name) private contentPlanModel: Model<ContentPlan>,
     @InjectModel(RescheduleRequest.name) private rescheduleRequestModel: Model<RescheduleRequest>,
-    private notificationsGateway: NotificationsGateway,
+    @Inject(forwardRef(() => NotificationsGateway)) private notificationsGateway: NotificationsGateway,
     private notificationsService: NotificationsService,
     private moduleRef: ModuleRef,
   ) {}

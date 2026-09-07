@@ -18,7 +18,7 @@ import { forwardRef } from '@nestjs/common';
       { name: RescheduleRequest.name, schema: RescheduleRequestSchema },
     ]),
     ScheduleModule.forRoot(),
-    NotificationsModule,
+    forwardRef(() => NotificationsModule),
     forwardRef(() => OrdersModule),
   ],
   controllers: [ExamModeController],
