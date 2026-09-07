@@ -1053,6 +1053,8 @@ export class OrdersService {
     const order = await this.orderModel.findById(orderId);
     if (!order) throw new NotFoundException('Order not found');
 
+    const previousStatus = order.status;
+
     order.status = status;
     order.statusHistory.push({
       status,
@@ -1067,7 +1069,7 @@ export class OrdersService {
       { path: 'errander', select: 'email firstName' },
     ]);
 
-    if (status === OrderStatus.DELIVERED) {
+    if (status === OrderStatus.DELIVERED && previousStatus !== OrderStatus.DELIVERED) {
       order.actualDeliveryTime = new Date();
       await this.processErranderPayout(order);
 
@@ -1083,6 +1085,31 @@ export class OrdersService {
         }
       }
       
+      const vendorId = order.vendor as any;
+      await this.vendorModel.findByIdAndUpdate(vendorId, {
+        $inc: { 
+          totalOrders: 1,
+          totalRevenue: order.total 
+        }
+      });
+      
+      // Increment orderCount for items
+      if (order.items && order.items.length > 0) {
+        for (const item of order.items) {
+          if (item.product) {
+            await this.productModel.findByIdAndUpdate(item.product, { $inc: { orderCount: item.quantity } });
+          }
+        }
+      }
+      
+      if ((order as any).menuItems && (order as any).menuItems.length > 0) {
+        for (const mItem of (order as any).menuItems) {
+          if (mItem.menuItem) {
+            await this.menuItemModel.findByIdAndUpdate(mItem.menuItem, { $inc: { orderCount: mItem.quantity } });
+          }
+        }
+      }
+      
       // Detailed Delivery Email with Summary
       if (populated.customer && (populated.customer as any).email) {
         this.emailService.sendOrderDelivered((populated.customer as any).email, populated);
@@ -1090,34 +1117,6 @@ export class OrdersService {
     }
 
     if (populated.customer && (populated.customer as any).email) {
-      // Send receipt and confirmation if moving to CONFIRMED
-      if (status === OrderStatus.DELIVERED && order.status !== OrderStatus.DELIVERED) {
-        const vendorId = order.vendor as any;
-        await this.vendorModel.findByIdAndUpdate(vendorId, {
-          $inc: { 
-            totalOrders: 1,
-            totalRevenue: order.total 
-          }
-        });
-        
-        // Increment orderCount for items
-        if (order.items && order.items.length > 0) {
-          for (const item of order.items) {
-            if (item.product) {
-              await this.productModel.findByIdAndUpdate(item.product, { $inc: { orderCount: item.quantity } });
-            }
-          }
-        }
-        
-        if ((order as any).menuItems && (order as any).menuItems.length > 0) {
-          for (const mItem of (order as any).menuItems) {
-            if (mItem.menuItem) {
-              await this.menuItemModel.findByIdAndUpdate(mItem.menuItem, { $inc: { orderCount: mItem.quantity } });
-            }
-          }
-        }
-      }
-
       if (status === OrderStatus.CONFIRMED) {
         try {
           await this.emailService.sendPaymentReceipt(

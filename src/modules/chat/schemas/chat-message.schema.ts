@@ -30,6 +30,12 @@ export class ChatMessage extends Document {
   @Prop()
   guestName: string;
 
+  @Prop()
+  guestPhone: string;
+
+  @Prop()
+  guestEmail: string;
+
   @Prop({ required: true })
   message: string;
 

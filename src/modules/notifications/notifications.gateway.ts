@@ -223,11 +223,32 @@ export class NotificationsGateway
   }
 
   @SubscribeMessage('joinOrder')
-  @SubscribeMessage('joinAppointment')
-  @SubscribeMessage('chat:join-room')
-  handleJoinRoom(
+  handleJoinOrder(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { orderId?: string; appointmentId?: string; roomId?: string; userId?: string; roomType?: string; pairKey?: string },
+  ) {
+    return this._handleJoinRoom(client, data);
+  }
+
+  @SubscribeMessage('joinAppointment')
+  handleJoinAppointment(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { orderId?: string; appointmentId?: string; roomId?: string; userId?: string; roomType?: string; pairKey?: string },
+  ) {
+    return this._handleJoinRoom(client, data);
+  }
+
+  @SubscribeMessage('chat:join-room')
+  handleChatJoinRoom(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { orderId?: string; appointmentId?: string; roomId?: string; userId?: string; roomType?: string; pairKey?: string },
+  ) {
+    return this._handleJoinRoom(client, data);
+  }
+
+  private _handleJoinRoom(
+    client: Socket,
+    data: { orderId?: string; appointmentId?: string; roomId?: string; userId?: string; roomType?: string; pairKey?: string },
   ) {
     const id = data.roomId || data.appointmentId || data.orderId || data.userId;
     if (data.orderId || (data.roomId && data.roomType === 'order')) {
@@ -246,10 +267,23 @@ export class NotificationsGateway
   }
 
   @SubscribeMessage('sendMessage')
-  @SubscribeMessage('chat:send-message')
-  async handleChatMessage(
+  async handleSendMessage(
     @ConnectedSocket() client: Socket,
-    @MessageBody()
+    @MessageBody() data: any,
+  ) {
+    return this._handleChatMessage(client, data);
+  }
+
+  @SubscribeMessage('chat:send-message')
+  async handleChatSendMessage(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: any,
+  ) {
+    return this._handleChatMessage(client, data);
+  }
+
+  private async _handleChatMessage(
+    client: Socket,
     data: {
       orderId?: string;
       appointmentId?: string;

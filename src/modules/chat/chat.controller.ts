@@ -3,7 +3,7 @@ import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { ChatService } from './chat.service';
 import { JwtAuthGuard, CurrentUser } from '../../common/decorators';
 import { User } from '../users/schemas/user.schema';
-import { Body, Post } from '@nestjs/common';
+import { Body, Post, Put } from '@nestjs/common';
 
 @ApiTags('Chat')
 @Controller('chat')
@@ -80,6 +80,12 @@ export class ChatController {
       roomType: payload.roomType || 'support',
       attachment: payload.attachments?.[0]
     });
+  }
+
+  @Put('rooms/:roomId/messages/read')
+  @ApiOperation({ summary: 'Mark messages in a room as read' })
+  markMessagesAsRead(@Param('roomId') roomId: string, @Body() payload: { userId: string }) {
+    return this.chatService.markMessagesAsRead(roomId, payload.userId);
   }
 
   @Get('support/threads')

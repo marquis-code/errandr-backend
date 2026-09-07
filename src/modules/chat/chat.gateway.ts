@@ -185,7 +185,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         appointmentId,
         service: data.serviceId,
         roomType,
-        senderName: data.senderName
+        senderName: data.senderName,
+        senderPhone: (data as any).senderPhone || (data as any).userPhone,
+        senderEmail: (data as any).senderEmail || (data as any).userEmail
       });
       
       const populated = await savedMessage.populate([

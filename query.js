@@ -1,13 +1,12 @@
 const mongoose = require('mongoose');
+mongoose.connect('mongodb+srv://errandr:errandr@errandr.eknah3x.mongodb.net/?appName=errandr');
+
+const UserSchema = new mongoose.Schema({ email: String, password: String, firstName: String, lastName: String }, { strict: false });
+const User = mongoose.model('User', UserSchema);
 
 async function run() {
-  await mongoose.connect('mongodb://127.0.0.1:27017/erranders');
-  const db = mongoose.connection;
-  const order = await db.collection('orders').findOne({ orderNumber: 'ERR-E9D29F62' });
-  console.log('--- PACKS ---');
-  console.log(JSON.stringify(order?.packs, null, 2));
-  console.log('--- ITEMS ---');
-  console.log(JSON.stringify(order?.items, null, 2));
+  const user = await User.findOne({ email: 'waliatmobolaji909@gmail.com' });
+  console.log(user);
   process.exit(0);
 }
-run().catch(console.error);
+run();

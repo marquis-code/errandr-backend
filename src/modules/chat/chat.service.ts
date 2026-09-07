@@ -42,6 +42,8 @@ export class ChatService {
     attachment?: string;
     replyTo?: string;
     senderName?: string;
+    senderPhone?: string;
+    senderEmail?: string;
   }): Promise<ChatMessage> {
     const isGuestSender = data.senderId?.startsWith('session_');
     const senderObjId = !isGuestSender ? new Types.ObjectId(data.senderId) : undefined;
@@ -55,6 +57,8 @@ export class ChatService {
       sender: senderObjId,
       guestId: isGuestSender ? data.senderId : (isGuestReceiver ? data.receiverId : undefined),
       guestName: isGuestSender ? data.senderName : undefined,
+      guestPhone: isGuestSender ? data.senderPhone : undefined,
+      guestEmail: isGuestSender ? data.senderEmail : undefined,
       receiver: receiverObjId,
       message: data.message,
       messageType: data.messageType || 'text',
@@ -284,8 +288,8 @@ export class ChatService {
   async getSupportThreads(): Promise<any[]> {
     const messages = await this.chatModel
       .find({ roomType: 'support' })
-      .populate('sender', 'firstName lastName avatar email role')
-      .populate('receiver', 'firstName lastName avatar email role')
+      .populate('sender', 'firstName lastName avatar email phone role')
+      .populate('receiver', 'firstName lastName avatar email phone role')
       .sort({ createdAt: -1 });
 
     const threads = new Map<string, any>();
@@ -299,16 +303,25 @@ export class ChatService {
               _id: msg.guestId,
               firstName: msg.guestName || 'Guest',
               lastName: '',
+              email: msg.guestEmail,
+              phone: msg.guestPhone,
               role: 'guest'
             },
             lastMessage: msg.message,
             lastMessageAt: (msg as any).createdAt,
             unreadCount: 0, 
           });
-        } else if (msg.guestName && threads.get(msg.guestId).userData.firstName === 'Guest') {
-          // If we previously set it to 'Guest' because the first message was an admin reply,
-          // update it with the actual guest name found in an older message.
-          threads.get(msg.guestId).userData.firstName = msg.guestName;
+        } else {
+          // If we previously set it to 'Guest', update it with actual guest data
+          if (msg.guestName && threads.get(msg.guestId).userData.firstName === 'Guest') {
+            threads.get(msg.guestId).userData.firstName = msg.guestName;
+          }
+          if (msg.guestPhone && !threads.get(msg.guestId).userData.phone) {
+            threads.get(msg.guestId).userData.phone = msg.guestPhone;
+          }
+          if (msg.guestEmail && !threads.get(msg.guestId).userData.email) {
+            threads.get(msg.guestId).userData.email = msg.guestEmail;
+          }
         }
 
         if (!msg.isRead && (!msg.sender || (msg.sender as any).role !== 'admin')) {
@@ -434,6 +447,30 @@ export class ChatService {
       isRead: true,
       readAt: new Date(),
     });
+  }
+
+  async markMessagesAsRead(roomId: string, userId: string): Promise<void> {
+    if (!userId) return;
+    
+    let receiverId: any = userId;
+    if (Types.ObjectId.isValid(userId)) {
+      receiverId = new Types.ObjectId(userId);
+    }
+
+    const filter: any = {
+      isRead: false,
+      $or: [
+        { receiver: receiverId },
+        { guestId: userId }
+      ]
+    };
+
+    if (Types.ObjectId.isValid(roomId)) {
+       filter.$or.push({ roomType: 'order', order: new Types.ObjectId(roomId) });
+       filter.$or.push({ roomType: 'direct', appointment: new Types.ObjectId(roomId) });
+    }
+
+    await this.chatModel.updateMany(filter, { isRead: true, readAt: new Date() });
   }
 
   async markAllAsRead(orderId: string, userId: string): Promise<void> {
