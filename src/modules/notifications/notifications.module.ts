@@ -1,4 +1,4 @@
-import { Module, Global } from '@nestjs/common';
+import { Module, Global, forwardRef } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { NotificationsGateway } from './notifications.gateway';
 import { NotificationsController } from './notifications.controller';
@@ -8,6 +8,7 @@ import { Order, OrderSchema } from '../orders/schemas/order.schema';
 import { Vendor, VendorSchema } from '../vendors/schemas/vendor.schema';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { SystemSetting, SystemSettingSchema } from '../admin/schemas/system-setting.schema';
+import { ChatModule } from '../chat/chat.module';
 
 @Global()
 @Module({
@@ -18,6 +19,7 @@ import { SystemSetting, SystemSettingSchema } from '../admin/schemas/system-sett
       { name: User.name, schema: UserSchema },
       { name: SystemSetting.name, schema: SystemSettingSchema },
     ]),
+    forwardRef(() => ChatModule),
   ],
   controllers: [NotificationsController],
   providers: [NotificationsService, NotificationsGateway, CronService],

@@ -8,9 +8,10 @@ import {
   ConnectedSocket,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { OnModuleInit, Logger } from '@nestjs/common';
+import { OnModuleInit, Logger, Inject, forwardRef } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { RedisService } from '../redis/redis.service';
+import { ChatService } from '../chat/chat.service';
 
 @WebSocketGateway({
   cors: {
@@ -30,10 +31,11 @@ export class NotificationsGateway
   constructor(
     private notificationsService: NotificationsService,
     private redisService: RedisService,
+    @Inject(forwardRef(() => ChatService))
+    private chatService: ChatService,
   ) {}
 
   async onModuleInit() {
-    // Don't block app startup — set up Redis subscription in background
     this.initRedisSubscription().catch((error) => {
       this.logger.warn('NotificationsGateway: Redis subscription unavailable — real-time notifications will use WebSocket only', error?.message);
     });
@@ -45,7 +47,6 @@ export class NotificationsGateway
     subClient.on('connect', () => this.logger.log('Redis Subscriber: Connected'));
     subClient.on('ready', () => this.logger.log('Redis Subscriber: Ready to receive messages'));
     subClient.on('error', (err) => {
-      // Log once, don't spam
       if (!this['_redisErrorLogged']) {
         this.logger.warn('Redis Subscriber: Connection error (suppressing further logs):', err.message);
         this['_redisErrorLogged'] = true;
@@ -55,7 +56,6 @@ export class NotificationsGateway
       this.logger.warn('Redis Subscriber: Reconnecting...');
     });
 
-    // Timeout the subscribe attempt so it doesn't hang forever
     const subscribeTimeout = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error('Redis subscribe timed out after 5s')), 5000)
     );
@@ -72,7 +72,6 @@ export class NotificationsGateway
     }
 
     subClient.on('pmessage', (pattern, channel, message) => {
-      // Channel format: notification:<userId> or notification:broadcast
       const target = channel.split(':').slice(1).join(':');
       if (!target) return;
 
@@ -80,7 +79,6 @@ export class NotificationsGateway
         const notification = JSON.parse(message);
 
         if (target === 'broadcast:erranders') {
-          // Broadcast to all connected users (erranders)
           if (notification.type === 'ORDER_ACCEPTED') {
             this.server.emit('notification:order-accepted', notification);
             this.logger.log(`[Redis Broadcast] notification:order-accepted sent to all clients`);
@@ -92,7 +90,6 @@ export class NotificationsGateway
             this.logger.log(`[Redis Broadcast] notification:new-order sent to all clients`);
           }
         } else {
-          // Send to specific user
           this.server.to(`user:${target}`).emit('notification:new', notification);
           this.logger.log(`[Redis Directed] Sent notification to user:${target}`);
         }
@@ -103,6 +100,10 @@ export class NotificationsGateway
 
     this.logger.log('NotificationsGateway: Initialized on /realtime');
   }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // CONNECTION LIFECYCLE
+  // ═══════════════════════════════════════════════════════════════════
 
   handleConnection(client: Socket) {
     const userId =
@@ -131,6 +132,10 @@ export class NotificationsGateway
       }
     }
   }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // NOTIFICATION HANDLERS
+  // ═══════════════════════════════════════════════════════════════════
 
   @SubscribeMessage('register')
   handleRegister(
@@ -192,7 +197,6 @@ export class NotificationsGateway
       const room = (client as any).adapter?.rooms?.get(roomName);
       const viewersCount = room?.size || 0;
       
-      // Emit to all clients so the student app can listen and update UI
       this.server.emit('errand:viewers_update', {
         orderId: data.orderId,
         viewersCount
@@ -202,11 +206,203 @@ export class NotificationsGateway
     }
   }
 
-  // ─── Public methods called by other services ───
+  // ═══════════════════════════════════════════════════════════════════
+  // CHAT SUPPORT — handles chat events on the /realtime namespace
+  // Both student and admin frontends connect here, NOT to /chat
+  // ═══════════════════════════════════════════════════════════════════
 
-  /**
-   * Send a notification to a specific user (via their socket room)
-   */
+  @SubscribeMessage('joinSupport')
+  handleJoinSupport(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { userId: string },
+  ) {
+    client.join(`support:${data.userId}`);
+    client.join('admin:support');
+    this.logger.log(`[Chat] Client joined support:${data.userId} and admin:support (socket: ${client.id})`);
+    return { success: true, event: 'joined_support', data: { userId: data.userId } };
+  }
+
+  @SubscribeMessage('joinOrder')
+  @SubscribeMessage('joinAppointment')
+  @SubscribeMessage('chat:join-room')
+  handleJoinRoom(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { orderId?: string; appointmentId?: string; roomId?: string; userId?: string; roomType?: string; pairKey?: string },
+  ) {
+    const id = data.roomId || data.appointmentId || data.orderId || data.userId;
+    if (data.orderId || (data.roomId && data.roomType === 'order')) {
+      const orderRoom = data.pairKey ? `order:${id}:${data.pairKey}` : `order:${id}`;
+      client.join(orderRoom);
+      this.logger.log(`[Chat] Client joined room: ${orderRoom}`);
+    } else if (data.appointmentId || (data.roomId && data.roomType === 'direct' && !data.roomId.includes('_'))) {
+      client.join(`appointment:${id}`);
+    } else if (data.roomType === 'direct') {
+      client.join(`direct:${id}`);
+    } else {
+      client.join(`support:${id}`);
+      client.join('admin:support');
+    }
+    return { success: true, event: 'joined', data: { id } };
+  }
+
+  @SubscribeMessage('sendMessage')
+  @SubscribeMessage('chat:send-message')
+  async handleChatMessage(
+    @ConnectedSocket() client: Socket,
+    @MessageBody()
+    data: {
+      orderId?: string;
+      appointmentId?: string;
+      roomId?: string;
+      senderId: string;
+      receiverId?: string;
+      message?: string;
+      content?: string;
+      messageType?: string;
+      roomType?: string;
+      attachment?: string;
+      replyTo?: string;
+      serviceId?: string;
+      senderName?: string;
+    },
+  ) {
+    const messageContent = data.content || data.message || '';
+    const orderId = data.orderId || (data.roomType === 'order' ? data.roomId : undefined);
+    let appointmentId = data.appointmentId;
+    if (data.roomType === 'direct' && data.roomId && !data.roomId.includes('_')) {
+      appointmentId = data.roomId;
+    }
+    const roomType = data.roomType || (orderId ? 'order' : (appointmentId ? 'direct' : 'support'));
+
+    try {
+      const tempId = new Date().getTime().toString() + Math.random().toString(36).substr(2, 9);
+
+      // Determine target room
+      let targetRoom = `support:${data.senderId}`;
+      if (roomType === 'order' && data.receiverId) {
+        const ids = [data.senderId, data.receiverId].sort();
+        const pairKey = `${ids[0]}_${ids[1]}`;
+        targetRoom = `order:${orderId}:${pairKey}`;
+      } else if (roomType === 'order') {
+        targetRoom = `order:${orderId}`;
+      }
+      if (roomType === 'direct') {
+        targetRoom = appointmentId ? `appointment:${appointmentId}` : `direct:${data.roomId || `${Math.min(data.senderId as any, data.receiverId as any)}_${Math.max(data.senderId as any, data.receiverId as any)}`}`;
+      }
+
+      // Build optimistic message for IMMEDIATE emit
+      const optimisticMessage = {
+        _id: tempId,
+        orderId: orderId || '',
+        appointmentId: appointmentId || '',
+        senderId: data.senderId,
+        receiverId: data.receiverId || '',
+        message: messageContent,
+        content: messageContent,
+        messageType: data.messageType || 'text',
+        roomType,
+        attachment: data.attachment,
+        sender: { _id: data.senderId },
+        receiver: data.receiverId ? { _id: data.receiverId } : undefined,
+        order: orderId,
+        appointment: appointmentId,
+        service: data.serviceId,
+        createdAt: new Date().toISOString(),
+        senderType: 'customer',
+        senderName: data.senderName,
+      };
+
+      // *** EMIT IMMEDIATELY — zero-latency broadcast ***
+      if (roomType === 'support') {
+        this.server.to('admin:support').emit('chat:new-message', optimisticMessage);
+        this.server.to(`support:${data.senderId}`).emit('chat:new-message', optimisticMessage);
+        if (data.receiverId) {
+          this.server.to(`support:${data.receiverId}`).emit('chat:new-message', optimisticMessage);
+        }
+      } else {
+        this.server.to(targetRoom).emit('chat:new-message', optimisticMessage);
+        this.server.to(targetRoom).emit('newMessage', optimisticMessage);
+      }
+
+      // Also emit directly to receiverId's socket if connected
+      if (data.receiverId) {
+        const receiverSockets = this.userSockets.get(data.receiverId);
+        if (receiverSockets) {
+          for (const sid of receiverSockets) {
+            this.server.to(sid).emit('newMessage', optimisticMessage);
+            this.server.to(sid).emit('newMessageNotification', optimisticMessage);
+          }
+        }
+      }
+
+      this.logger.log(`[Chat] INSTANT broadcast tempId=${tempId} from ${data.senderId} to room ${targetRoom}`);
+
+      // NOW save to DB
+      const savedMessage = await this.chatService.createMessage({
+        ...data,
+        message: messageContent,
+        orderId,
+        appointmentId,
+        service: data.serviceId,
+        roomType,
+        senderName: data.senderName,
+      });
+
+      const populated = await savedMessage.populate([
+        { path: 'sender', select: 'firstName lastName avatar role' },
+      ]);
+
+      const msgObj = populated.toObject();
+      const confirmedMessage = {
+        ...msgObj,
+        _id: savedMessage._id,
+        tempId,
+        orderId: orderId || String(msgObj.order || ''),
+        appointmentId: appointmentId || String(msgObj.appointment || ''),
+        senderId: data.senderId || String(msgObj.sender?._id || msgObj.sender || ''),
+        receiverId: data.receiverId || String(msgObj.receiver || ''),
+        content: messageContent,
+        message: messageContent,
+        roomType,
+      };
+
+      // Emit confirmed message to replace optimistic
+      if (roomType === 'support') {
+        this.server.to('admin:support').emit('chat:message-confirmed', confirmedMessage);
+        this.server.to(`support:${data.senderId}`).emit('chat:message-confirmed', confirmedMessage);
+      } else {
+        this.server.to(targetRoom).emit('chat:message-confirmed', confirmedMessage);
+      }
+
+      this.logger.log(`[Chat] CONFIRMED message ${savedMessage._id} saved to DB`);
+      return { success: true, data: confirmedMessage };
+    } catch (error) {
+      this.logger.error(`[Chat] handleChatMessage error: ${error.message}`, error.stack);
+      return { success: false, error: error.message };
+    }
+  }
+
+  @SubscribeMessage('chat:typing')
+  handleChatTyping(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { userId: string; roomId: string; roomType?: string; isTyping: boolean },
+  ) {
+    const roomType = data.roomType || 'support';
+    if (roomType === 'support') {
+      this.server.to('admin:support').emit('chat:user-typing', data);
+      this.server.to(`support:${data.roomId}`).emit('chat:user-typing', data);
+    } else if (roomType === 'order') {
+      this.server.to(`order:${data.roomId}`).emit('chat:user-typing', data);
+    } else {
+      this.server.to(`appointment:${data.roomId}`).emit('chat:user-typing', data);
+    }
+    return { success: true };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // PUBLIC METHODS — called by other services
+  // ═══════════════════════════════════════════════════════════════════
+
   sendToUser(
     userId: string,
     notification: { title: string; body: string; type: string; data?: any },
@@ -217,25 +413,16 @@ export class NotificationsGateway
     this.logger.log(`Emitted notification:new to user:${userId} (${notification.type})`);
   }
 
-  /**
-   * Broadcast a message to all users of a specific role (real-time only)
-   */
   broadcastToRole(role: string, event: string, payload: any) {
     this.server.emit(event, payload);
     this.logger.log(`Broadcasted ${event} to all connected clients (intended for role: ${role})`);
   }
 
-  /**
-   * Broadcast a new order to ALL connected erranders/riders
-   */
   broadcastNewOrder(orderData: any) {
     this.server.emit('notification:new-order', orderData);
     this.logger.log(`Broadcasted notification:new-order to all connected clients`);
   }
 
-  /**
-   * Emit order-accepted event to a specific user
-   */
   sendOrderAccepted(userId: string, data: any) {
     this.server
       .to(`user:${userId}`)
@@ -243,9 +430,6 @@ export class NotificationsGateway
     this.logger.log(`Emitted notification:order-accepted to user:${userId}`);
   }
 
-  /**
-   * Emit order-status-update event to a specific user
-   */
   sendOrderStatusUpdate(userId: string, data: any) {
     this.server
       .to(`user:${userId}`)
@@ -253,9 +437,6 @@ export class NotificationsGateway
     this.logger.log(`Emitted notification:order-status-update to user:${userId}`);
   }
 
-  /**
-   * Get count of currently connected users
-   */
   getConnectedUserCount(): number {
     return this.userSockets.size;
   }
