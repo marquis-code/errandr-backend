@@ -123,7 +123,7 @@ export class ProductsService {
 
       const products = await this.productModel
         .find({ isPrepaidByPlatform: true, isAvailable: true })
-        .populate('vendor', 'storeName logo brandColor isOnline isVisible prepaidPromo businessHours breakPeriod')
+        .populate('vendor', 'storeName logo brandColor isOnline isVisible prepaidPromo businessHours')
         .sort({ createdAt: -1 })
         .lean()
         .exec()
@@ -131,7 +131,7 @@ export class ProductsService {
         
       const packs = await this.packModel
         .find({ isPrepaidByPlatform: true, isActive: true })
-        .populate('vendorId', 'storeName logo brandColor isOnline isVisible prepaidPromo businessHours breakPeriod')
+        .populate('vendorId', 'storeName logo brandColor isOnline isVisible prepaidPromo businessHours')
         .populate('items.itemId')
         .sort({ createdAt: -1 })
         .lean()
@@ -189,7 +189,7 @@ export class ProductsService {
           isVisible: v.isVisible,
           prepaidPromo: v.prepaidPromo,
           businessHours: v.businessHours,
-          breakPeriod: v.breakPeriod,
+          openingTime: v.openingTime,
           isOpen: isOpen,
           statusMessage: message
         });

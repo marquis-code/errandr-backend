@@ -41,6 +41,7 @@ import { GlobalProductsModule } from './modules/global-products/global-products.
 import { PushCampaignsModule } from './modules/push-campaigns/push-campaigns.module';
 import { ExamModeModule } from './modules/exam-mode/exam-mode.module';
 import { MarketPoolModule } from './modules/market-pool/market-pool.module';
+import { DepartmentsModule } from './modules/departments/departments.module';
 
 @Module({
   imports: [
@@ -95,6 +96,7 @@ import { MarketPoolModule } from './modules/market-pool/market-pool.module';
     TrackingModule,
     UploadModule,
     AdminModule,
+    DepartmentsModule,
     NotificationsModule,
     FavoritesModule,
     ReportsModule,

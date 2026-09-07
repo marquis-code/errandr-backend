@@ -79,7 +79,7 @@ export class AuthService {
     if (loginDto.role) {
       query.role = loginDto.role;
     }
-    const users = await this.userModel.find(query);
+    const users = await this.userModel.find(query).populate('adminDepartment');
     
     if (users.length === 0) {
       throw new UnauthorizedException('Invalid credentials');
@@ -361,7 +361,7 @@ export class AuthService {
   }
 
   async getProfile(userId: string) {
-    const user = await this.userModel.findById(userId);
+    const user = await this.userModel.findById(userId).populate('adminDepartment');
     if (!user) throw new NotFoundException('User not found');
     return this.sanitizeUser(user);
   }

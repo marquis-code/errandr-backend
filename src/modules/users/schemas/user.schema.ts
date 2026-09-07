@@ -1,4 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import * as mongoose from 'mongoose';
 import { Document, Types } from 'mongoose';
 
 export enum UserRole {
@@ -139,6 +140,9 @@ export class User extends Document {
 
   @Prop()
   dateOfBirth: Date;
+
+  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'Department', default: null })
+  adminDepartment: Types.ObjectId;
 
   @Prop({ type: Object, default: null })
   vendorOnboardingSession: Record<string, any>;

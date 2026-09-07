@@ -41,7 +41,7 @@ export class FavoritesService {
       })
       .populate({
         path: 'vendor',
-        select: 'storeName logo banner isOnline rating totalRatings category address location isStudentBusiness isFeatured businessType serviceLocation minOrder deliveryFee businessHours breakPeriod openingTime closingTime isOpen',
+        select: 'storeName logo banner isOnline rating totalRatings category address location isStudentBusiness isFeatured businessType serviceLocation minOrder deliveryFee businessHours openingTime closingTime isOpen',
       })
       .sort({ createdAt: -1 });
 

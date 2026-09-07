@@ -561,6 +561,11 @@ export class AppointmentsService {
       status: { $in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED, AppointmentStatus.COMPLETED] }
     });
 
-    return { data: appointments.map(app => app.startTime) };
+    return { 
+      data: appointments.map(app => ({
+        startTime: app.startTime,
+        endTime: app.endTime
+      })) 
+    };
   }
 }

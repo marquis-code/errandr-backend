@@ -1770,7 +1770,7 @@ export class OrdersService {
     const [orders, total] = await Promise.all([
       this.orderModel
         .find({ customer: new Types.ObjectId(customerId) })
-        .populate('vendor', 'storeName logo banner isOnline businessHours breakPeriod openingTime closingTime isOpen')
+        .populate('vendor', 'storeName logo banner isOnline businessHours openingTime closingTime isOpen')
         .populate('errander', 'firstName lastName phone avatar')
         .sort({ createdAt: -1 })
         .skip(skip)
@@ -1882,7 +1882,12 @@ export class OrdersService {
 
   async getErranderOrders(erranderId: string) {
     return this.orderModel
-      .find({ errander: new Types.ObjectId(erranderId) })
+      .find({
+        $or: [
+          { errander: new Types.ObjectId(erranderId) },
+          { 'interception.secondErrander': new Types.ObjectId(erranderId) }
+        ]
+      })
       .populate('vendor', 'storeName logo address location')
       .populate('customer', 'firstName lastName phone avatar deliveryAddress location gender')
       .sort({ createdAt: -1 });

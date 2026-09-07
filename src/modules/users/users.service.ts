@@ -26,7 +26,26 @@ export class UsersService {
           }
         }
       },
-      { $project: { password: 0, walletInfo: 0 } }
+      {
+        $lookup: {
+          from: 'departments',
+          localField: 'adminDepartment',
+          foreignField: '_id',
+          as: 'departmentInfo'
+        }
+      },
+      {
+        $addFields: {
+          adminDepartment: { $arrayElemAt: ['$departmentInfo', 0] }
+        }
+      },
+      {
+        $project: {
+          walletInfo: 0,
+          departmentInfo: 0,
+          password: 0
+        }
+      }
     ]);
     if (!user || user.length === 0) throw new NotFoundException('User not found');
     return user[0];
@@ -111,7 +130,7 @@ export class UsersService {
   async getRecentlyViewedVendors(userId: string): Promise<any[]> {
     const user = await this.userModel.findById(userId).populate({
       path: 'recentlyViewed.vendor',
-      select: 'storeName image banner logo rating category businessType isOnline preOrderOnly deliveryFee preparationTime businessHours breakPeriod'
+      select: 'storeName image banner logo rating category businessType isOnline preOrderOnly deliveryFee preparationTime businessHours'
     });
     if (!user) return [];
 

@@ -48,9 +48,15 @@ export function checkIsOpen(vendor: any): { isOpen: boolean; message: string } {
     return { isOpen: false, message: `Closed (Opens at ${openTime})` };
   }
 
-  if (vendor.breakPeriod?.enabled) {
-    if (currentTime >= vendor.breakPeriod.start && currentTime <= vendor.breakPeriod.end) {
-      return { isOpen: false, message: `Currently on break (Until ${vendor.breakPeriod.end})` };
+  // Check day-specific breaks
+  if (vendor.businessHours && Array.isArray(vendor.businessHours)) {
+    const todaySchedule = vendor.businessHours.find((h: any) => h.day === currentDay);
+    if (todaySchedule && todaySchedule.breaks && Array.isArray(todaySchedule.breaks)) {
+      for (const b of todaySchedule.breaks) {
+        if (currentTime >= b.start && currentTime <= b.end) {
+          return { isOpen: false, message: `Currently on break (Until ${b.end})` };
+        }
+      }
     }
   }
 

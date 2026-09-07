@@ -201,20 +201,14 @@ export class Vendor extends Document {
     open: string;
     close: string;
     isClosed: boolean;
+    breaks?: {
+      start: string;
+      end: string;
+      title?: string;
+    }[];
   }[];
 
-  @Prop({
-    type: {
-      start: { type: String, default: '14:00' },
-      end: { type: String, default: '15:00' },
-      enabled: { type: Boolean, default: false },
-    },
-  })
-  breakPeriod: {
-    start: string;
-    end: string;
-    enabled: boolean;
-  };
+
 
   @Prop({ default: 0 })
   rating: number;

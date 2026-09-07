@@ -334,9 +334,26 @@ export class MarketPoolService {
       { $match: { campaignId: new Types.ObjectId(campaignId), status: { $ne: 'refunded' } } },
       { $unwind: '$items' },
       {
+        $lookup: {
+          from: 'users',
+          localField: 'userId',
+          foreignField: '_id',
+          as: 'user',
+        },
+      },
+      { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+      {
         $group: {
           _id: '$items.itemId',
           totalQuantity: { $sum: '$items.quantity' },
+          students: {
+            $push: {
+              userId: '$userId',
+              firstName: '$user.firstName',
+              lastName: '$user.lastName',
+              quantity: '$items.quantity',
+            },
+          },
         },
       },
       {
