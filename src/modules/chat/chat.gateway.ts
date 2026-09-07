@@ -157,6 +157,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       if (roomType === 'support') {
         this.server.to('admin:support').emit('chat:new-message', optimisticMessage);
         this.server.to(`support:${data.senderId}`).emit('chat:new-message', optimisticMessage);
+        if (data.receiverId) {
+          this.server.to(`support:${data.receiverId}`).emit('chat:new-message', optimisticMessage);
+        }
       } else {
         this.server.to(targetRoom).emit('chat:new-message', optimisticMessage);
         this.server.to(targetRoom).emit('newMessage', optimisticMessage);
