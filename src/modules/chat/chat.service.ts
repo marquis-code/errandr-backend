@@ -41,12 +41,21 @@ export class ChatService {
     roomType?: string;
     attachment?: string;
     replyTo?: string;
+    senderName?: string;
   }): Promise<ChatMessage> {
+    const isGuestSender = data.senderId?.startsWith('session_');
+    const senderObjId = !isGuestSender ? new Types.ObjectId(data.senderId) : undefined;
+    
+    const isGuestReceiver = data.receiverId?.startsWith('session_');
+    const receiverObjId = (data.receiverId && !isGuestReceiver) ? new Types.ObjectId(data.receiverId) : undefined;
+    
     const msg = await this.chatModel.create({
       order: data.orderId ? new Types.ObjectId(data.orderId) : undefined,
       appointment: data.appointmentId ? new Types.ObjectId(data.appointmentId) : undefined,
-      sender: new Types.ObjectId(data.senderId),
-      receiver: data.receiverId ? new Types.ObjectId(data.receiverId) : undefined,
+      sender: senderObjId,
+      guestId: isGuestSender ? data.senderId : (isGuestReceiver ? data.receiverId : undefined),
+      guestName: isGuestSender ? data.senderName : undefined,
+      receiver: receiverObjId,
       message: data.message,
       messageType: data.messageType || 'text',
       roomType: data.roomType || (data.orderId ? 'order' : (data.appointmentId ? 'direct' : 'support')),
@@ -254,14 +263,19 @@ export class ChatService {
   }
 
   async getSupportMessages(userId: string): Promise<ChatMessage[]> {
+    const isGuest = userId.startsWith('session_');
+    const query = isGuest 
+      ? { roomType: 'support', guestId: userId }
+      : {
+          roomType: 'support',
+          $or: [
+            { sender: new Types.ObjectId(userId) },
+            { receiver: new Types.ObjectId(userId) }
+          ]
+        };
+
     return this.chatModel
-      .find({
-        roomType: 'support',
-        $or: [
-          { sender: new Types.ObjectId(userId) },
-          { receiver: new Types.ObjectId(userId) }
-        ]
-      })
+      .find(query)
       .populate('sender', 'firstName lastName avatar role')
       .populate('receiver', 'firstName lastName avatar role')
       .sort({ createdAt: 1 });
@@ -277,6 +291,32 @@ export class ChatService {
     const threads = new Map<string, any>();
 
     for (const msg of messages) {
+      if (msg.guestId) {
+        if (!threads.has(msg.guestId)) {
+          threads.set(msg.guestId, {
+            userId: msg.guestId,
+            userData: {
+              _id: msg.guestId,
+              firstName: msg.guestName || 'Guest',
+              lastName: '',
+              role: 'guest'
+            },
+            lastMessage: msg.message,
+            lastMessageAt: (msg as any).createdAt,
+            unreadCount: 0, 
+          });
+        } else if (msg.guestName && threads.get(msg.guestId).userData.firstName === 'Guest') {
+          // If we previously set it to 'Guest' because the first message was an admin reply,
+          // update it with the actual guest name found in an older message.
+          threads.get(msg.guestId).userData.firstName = msg.guestName;
+        }
+
+        if (!msg.isRead && (!msg.sender || (msg.sender as any).role !== 'admin')) {
+            threads.get(msg.guestId).unreadCount += 1;
+        }
+        continue;
+      }
+
       // Find the non-admin/SYSTEM user in this message
       const sender: any = msg.sender || {};
       const receiver: any = msg.receiver || {};

@@ -103,6 +103,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       attachment?: string;
       replyTo?: string;
       serviceId?: string;
+      senderName?: string;
     },
   ) {
     const messageContent = data.content || data.message || '';
@@ -183,7 +184,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         orderId,
         appointmentId,
         service: data.serviceId,
-        roomType 
+        roomType,
+        senderName: data.senderName
       });
       
       const populated = await savedMessage.populate([

@@ -18,11 +18,17 @@ export class ChatMessage extends Document {
   @Prop({ type: String, enum: ['order', 'support', 'direct'], default: 'order' })
   roomType: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  @Prop({ type: Types.ObjectId, ref: 'User', required: false })
   sender: Types.ObjectId;
 
   @Prop({ type: Types.ObjectId, ref: 'User', required: false })
   receiver: Types.ObjectId;
+
+  @Prop()
+  guestId: string;
+
+  @Prop()
+  guestName: string;
 
   @Prop({ required: true })
   message: string;
