@@ -105,12 +105,13 @@ export class AdminController {
     @Query('sortBy') sortBy?: string,
     @Query('sortOrder') sortOrder?: string,
     @Query('exportAsCsv') exportAsCsv?: string,
+    @Query('type') type?: string,
     @Res({ passthrough: true }) res?: Response,
   ) {
     const isExport = exportAsCsv === 'true';
     const result = await this.adminService.getRecentOrders(
       page, limit, startDate, endDate, status, customerId, vendorId, erranderId,
-      search, sortBy, sortOrder, isExport
+      search, sortBy, sortOrder, isExport, type
     );
 
     if (isExport && res) {

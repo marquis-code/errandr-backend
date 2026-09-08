@@ -244,12 +244,17 @@ export class AdminService {
     search?: string,
     sortBy?: string,
     sortOrder?: string,
-    exportAsCsv?: boolean
+    exportAsCsv?: boolean,
+    type?: string
   ): Promise<any> {
     const query: any = {};
     
     if (status && status !== 'all') {
       query.status = status;
+    }
+    
+    if (type && type !== 'all') {
+      query.type = type;
     }
     
     if (customerId) {
