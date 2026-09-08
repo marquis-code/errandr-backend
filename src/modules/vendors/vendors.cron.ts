@@ -14,6 +14,7 @@ export class VendorsCronService {
 
   constructor(
     @InjectModel(VendorNotification.name) private vendorNotificationModel: Model<VendorNotification>,
+    @InjectModel(Vendor.name) private vendorModel: Model<Vendor>,
     private readonly vendorsService: VendorsService,
     private readonly emailService: EmailService,
     private readonly webPushService: WebPushService,
@@ -77,4 +78,20 @@ export class VendorsCronService {
       }
     }
   }
+
+  // Reset all vendors to online at 1:00 AM every day so that they automatically open at their scheduled time
+  @Cron('0 1 * * *')
+  async resetVendorsOnlineStatus() {
+    try {
+      this.logger.log('Running daily reset of vendors isOnline status...');
+      const result = await this.vendorModel.updateMany(
+        { status: 'approved' },
+        { $set: { isOnline: true } }
+      );
+      this.logger.log(`Successfully reset isOnline to true for ${result.modifiedCount} vendors.`);
+    } catch (error) {
+      this.logger.error(`Failed to reset vendors isOnline status: ${error.message}`);
+    }
+  }
 }
+
