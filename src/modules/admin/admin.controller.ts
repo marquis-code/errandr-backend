@@ -226,4 +226,11 @@ export class AdminController {
   deleteDispatcher(@Param('id') id: string) {
     return this.adminService.deleteDispatcher(id);
   }
+
+  @Get('dispatchers-fastest')
+  @ApiOperation({ summary: 'Get the fastest 4 erranders' })
+  getFastestDispatchers(@Query('limit') limit: string = '4') {
+    const parsedLimit = parseInt(limit) || 4;
+    return this.adminService.getFastestDispatchers(parsedLimit);
+  }
 }

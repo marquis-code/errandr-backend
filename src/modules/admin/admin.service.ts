@@ -568,4 +568,80 @@ export class AdminService {
     const setting = await this.systemSettingModel.findOne({ key });
     return setting ? setting.value : null;
   }
+
+  async getFastestDispatchers(limit: number = 4) {
+    const dispatchers = await this.orderModel.aggregate([
+      { $match: { status: OrderStatus.DELIVERED, errander: { $exists: true, $ne: null } } },
+      { 
+        $addFields: {
+          acceptanceTime: {
+            $let: {
+              vars: {
+                acceptedStatus: {
+                  $arrayElemAt: [
+                    {
+                      $filter: {
+                        input: "$statusHistory",
+                        as: "history",
+                        cond: { $in: ["$$history.status", ["accepted", "confirmed", "preparing", "ready_for_pickup", "picked_up", "in_transit"]] }
+                      }
+                    },
+                    0
+                  ]
+                }
+              },
+              in: { $ifNull: ["$$acceptedStatus.timestamp", "$createdAt"] }
+            }
+          },
+          deliveryTime: {
+            $let: {
+              vars: {
+                deliveredStatus: {
+                  $arrayElemAt: [
+                    {
+                      $filter: {
+                        input: "$statusHistory",
+                        as: "history",
+                        cond: { $eq: ["$$history.status", "delivered"] }
+                      }
+                    },
+                    0
+                  ]
+                }
+              },
+              in: { $ifNull: ["$actualDeliveryTime", { $ifNull: ["$$deliveredStatus.timestamp", "$updatedAt"] }] }
+            }
+          }
+        }
+      },
+      {
+        $addFields: {
+          deliveryDurationMs: { $subtract: ["$deliveryTime", "$acceptanceTime"] }
+        }
+      },
+      {
+        $match: {
+          deliveryDurationMs: { $gt: 0 }
+        }
+      },
+      {
+        $group: {
+          _id: "$errander",
+          averageDeliveryTimeMs: { $avg: "$deliveryDurationMs" },
+          totalDeliveries: { $sum: 1 }
+        }
+      },
+      { $match: { totalDeliveries: { $gte: 1 } } },
+      { $sort: { averageDeliveryTimeMs: 1 } },
+      { $limit: limit }
+    ]);
+
+    const populated = await this.userModel.populate(dispatchers, { path: '_id', select: 'firstName lastName email phone avatar' });
+    
+    return populated.map(d => ({
+      user: d._id,
+      averageDeliveryTimeMs: d.averageDeliveryTimeMs,
+      totalDeliveries: d.totalDeliveries
+    }));
+  }
 }
