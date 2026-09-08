@@ -167,6 +167,13 @@ export class AdminController {
     return this.adminService.getAllDispatchers(parsedPage, parsedLimit);
   }
 
+  @Get('dispatchers-fastest')
+  @ApiOperation({ summary: 'Get the fastest 4 erranders' })
+  getFastestDispatchers(@Query('limit') limit: string = '4') {
+    const parsedLimit = parseInt(limit) || 4;
+    return this.adminService.getFastestDispatchers(parsedLimit);
+  }
+
   @Get('dispatchers/:id')
   @ApiOperation({ summary: 'Get dispatcher details' })
   getDispatcher(@Param('id') id: string) {
@@ -227,10 +234,4 @@ export class AdminController {
     return this.adminService.deleteDispatcher(id);
   }
 
-  @Get('dispatchers-fastest')
-  @ApiOperation({ summary: 'Get the fastest 4 erranders' })
-  getFastestDispatchers(@Query('limit') limit: string = '4') {
-    const parsedLimit = parseInt(limit) || 4;
-    return this.adminService.getFastestDispatchers(parsedLimit);
-  }
 }

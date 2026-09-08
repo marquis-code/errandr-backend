@@ -638,7 +638,7 @@ export class AdminService {
 
     const populated = await this.userModel.populate(dispatchers, { path: '_id', select: 'firstName lastName email phone avatar' });
     
-    return populated.map(d => ({
+    return populated.map((d: any) => ({
       user: d._id,
       averageDeliveryTimeMs: d.averageDeliveryTimeMs,
       totalDeliveries: d.totalDeliveries
