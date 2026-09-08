@@ -33,18 +33,16 @@ export class UploadService {
         ];
       }
 
-      cloudinary.uploader
-        .upload_stream(
-          options,
-          (error, result: UploadApiResponse) => {
-            if (error) return reject(error);
-            resolve({
-              url: result.secure_url,
-              publicId: result.public_id,
-            });
-          },
-        )
-        .end(file.buffer);
+      const b64 = Buffer.from(file.buffer).toString('base64');
+      const dataURI = 'data:' + file.mimetype + ';base64,' + b64;
+      
+      cloudinary.uploader.upload(dataURI, options, (error, result: UploadApiResponse) => {
+        if (error) return reject(error);
+        resolve({
+          url: result.secure_url,
+          publicId: result.public_id,
+        });
+      });
     });
   }
 

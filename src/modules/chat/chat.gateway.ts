@@ -156,11 +156,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       // *** EMIT IMMEDIATELY - zero-latency broadcast ***
       if (roomType === 'support') {
-        this.server.to('admin:support').emit('chat:new-message', optimisticMessage);
-        this.server.to(`support:${data.senderId}`).emit('chat:new-message', optimisticMessage);
+        let broadcast = this.server.to('admin:support').to(`support:${data.senderId}`);
         if (data.receiverId) {
-          this.server.to(`support:${data.receiverId}`).emit('chat:new-message', optimisticMessage);
+          broadcast = broadcast.to(`support:${data.receiverId}`);
         }
+        broadcast.emit('chat:new-message', optimisticMessage);
       } else {
         this.server.to(targetRoom).emit('chat:new-message', optimisticMessage);
         this.server.to(targetRoom).emit('newMessage', optimisticMessage);
