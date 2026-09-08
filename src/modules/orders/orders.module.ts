@@ -34,6 +34,12 @@ import { ErrandersModule } from '../erranders/erranders.module';
 
 import { OrderSchedulerService } from './cron/order-scheduler.service';
 
+import { RecurringOrder, RecurringOrderSchema } from './schemas/recurring-order.schema';
+import { RecurringOrdersService } from './recurring-orders.service';
+import { RecurringOrdersController } from './recurring-orders.controller';
+import { RecurringOrdersCronService } from './recurring-orders-cron.service';
+
+
 @Module({
   imports: [
     MongooseModule.forFeature([
@@ -47,6 +53,7 @@ import { OrderSchedulerService } from './cron/order-scheduler.service';
       { name: SystemSetting.name, schema: SystemSettingSchema },
       { name: ErrandPool.name, schema: ErrandPoolSchema },
       { name: DeliveryBid.name, schema: DeliveryBidSchema },
+      { name: RecurringOrder.name, schema: RecurringOrderSchema },
     ]),
     NotificationsModule,
     ChatModule,
@@ -60,8 +67,8 @@ import { OrderSchedulerService } from './cron/order-scheduler.service';
     forwardRef(() => ExamModeModule),
     forwardRef(() => ErrandersModule),
   ],
-  controllers: [OrdersController, SimulationController],
-  providers: [OrdersService, BatchDeliveryService, OrderSchedulerService, NegotiationService, NegotiationGateway],
-  exports: [OrdersService, BatchDeliveryService, NegotiationService, MongooseModule],
+  controllers: [OrdersController, SimulationController, RecurringOrdersController],
+  providers: [OrdersService, BatchDeliveryService, OrderSchedulerService, NegotiationService, NegotiationGateway, RecurringOrdersService, RecurringOrdersCronService],
+  exports: [OrdersService, BatchDeliveryService, NegotiationService, RecurringOrdersService, MongooseModule],
 })
 export class OrdersModule {}

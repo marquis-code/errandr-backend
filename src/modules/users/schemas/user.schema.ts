@@ -190,6 +190,18 @@ export class User extends Document {
     type: Object,
     default: null
   })
+  deliveryPreferences: {
+    recipientName: string;
+    recipientPhone: string;
+    deliveryMode: string;
+    locationType: string;
+    specificAddress: string;
+  };
+
+  @Prop({
+    type: Object,
+    default: null
+  })
   bankDetails: {
     bankName: string;
     accountName: string;
