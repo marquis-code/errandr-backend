@@ -14,13 +14,13 @@ export class PromoCodesService {
   ) {}
 
   async create(data: any): Promise<PromoCode> {
-    const existing = await this.promoCodeModel.findOne({ code: data.code.toUpperCase() });
+    const existing = await this.promoCodeModel.findOne({ code: data.code.trim().toUpperCase() });
     if (existing) {
       throw new BadRequestException('Promo code already exists');
     }
     const promo = new this.promoCodeModel({
       ...data,
-      code: data.code.toUpperCase(),
+      code: data.code.trim().toUpperCase(),
     });
     const savedPromo = await promo.save();
 
@@ -59,11 +59,11 @@ export class PromoCodesService {
       throw new NotFoundException('Promo code not found');
     }
     if (data.code) {
-      const existing = await this.promoCodeModel.findOne({ code: data.code.toUpperCase(), _id: { $ne: id } });
+      const existing = await this.promoCodeModel.findOne({ code: data.code.trim().toUpperCase(), _id: { $ne: id } });
       if (existing) {
         throw new BadRequestException('Another promo code with this code already exists');
       }
-      data.code = data.code.toUpperCase();
+      data.code = data.code.trim().toUpperCase();
     }
     
     Object.assign(promo, data);
@@ -75,7 +75,7 @@ export class PromoCodesService {
   }
 
   async findByCode(code: string): Promise<PromoCode> {
-    const promo = await this.promoCodeModel.findOne({ code: code.toUpperCase() });
+    const promo = await this.promoCodeModel.findOne({ code: code.trim().toUpperCase() });
     if (!promo) {
       throw new NotFoundException('Promo code not found');
     }
@@ -90,7 +90,7 @@ export class PromoCodesService {
     userOrdersCount?: number,
     orderContext?: { isGroupOrder?: boolean; locationType?: string; isCustomErrand?: boolean }
   ): Promise<PromoCode> {
-    const promo = await this.promoCodeModel.findOne({ code: code.toUpperCase() });
+    const promo = await this.promoCodeModel.findOne({ code: code.trim().toUpperCase() });
     if (!promo) {
       throw new BadRequestException('Invalid promo code');
     }
@@ -154,7 +154,7 @@ export class PromoCodesService {
     userOrdersCount?: number,
     orderContext?: { isGroupOrder?: boolean; locationType?: string; isCustomErrand?: boolean }
   ): Promise<any> {
-    const promo = await this.promoCodeModel.findOne({ code: code.toUpperCase() });
+    const promo = await this.promoCodeModel.findOne({ code: code.trim().toUpperCase() });
     
     if (!promo) {
       return { found: false, promo: null, eligibility: null };
@@ -212,7 +212,7 @@ export class PromoCodesService {
 
   async incrementUsage(code: string) {
     await this.promoCodeModel.updateOne(
-      { code: code.toUpperCase() },
+      { code: code.trim().toUpperCase() },
       { $inc: { usageCount: 1 } }
     );
   }
