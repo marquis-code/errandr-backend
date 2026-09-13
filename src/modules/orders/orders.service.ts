@@ -876,7 +876,6 @@ export class OrdersService {
 
     // Process vendor payout immediately only if paid
     if (order.paymentStatus === PaymentStatus.PAID) {
-      await this.processVendorPayout(order);
 
       // Exam Mode: Handle conflict or proceed normally
       if (conflictDate) {
@@ -1401,29 +1400,6 @@ export class OrdersService {
       this.logger.warn(`Failed to auto-create chat for order ${order.orderNumber}: ${e}`);
     }
 
-    // REAL-TIME VENDOR PAYOUT (only for marketplace orders with a vendor)
-    if (order.vendor) {
-      let vendorEarnings = (order as any).vendorShare;
-      if (!vendorEarnings) {
-        const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
-        const markupPct = errandSetting?.value?.foodMarkupPercentage ?? 5;
-        const MARKUP_FACTOR = 1 + (markupPct / 100);
-        const vendorSubtotal = Math.round(order.subtotal / MARKUP_FACTOR);
-        const vendorPackaging = order.packagingFee || 0; // Vendor gets 100% of packaging fee
-        vendorEarnings = vendorSubtotal + vendorPackaging;
-      }
-      
-      const populatedVendor = await this.vendorModel.findById(order.vendor);
-      if (populatedVendor && populatedVendor.owner) {
-        await this.walletsService.creditWallet(
-          populatedVendor.owner.toString(),
-          vendorEarnings,
-          `Payment for order ${order.orderNumber} (Accepted by vendor)`,
-          order._id.toString(),
-        );
-      }
-    }
-
     return order.populate([
       { path: 'customer', select: 'firstName lastName phone avatar' },
       { path: 'vendor', select: 'storeName logo phone' },
@@ -1604,6 +1580,11 @@ export class OrdersService {
           order._id.toString(),
         );
       }
+    }
+
+    // VENDOR PAYOUT
+    if (order.vendor) {
+      await this.processVendorPayout(order);
     }
 
     // Free up errander or update batch
@@ -2341,7 +2322,6 @@ export class OrdersService {
       }
 
       if (order.status === OrderStatus.CONFIRMED) {
-        await this.processVendorPayout(order);
 
         // Disburse custom errand item cost to the assigned errander
         if (order.type === OrderType.CUSTOM_ERRAND && order.errander) {
@@ -2391,7 +2371,6 @@ export class OrdersService {
       });
       await order.save();
       
-      await this.processVendorPayout(order);
       await this.broadcastNewOrderToErranders(order);
       
       if (order.customer) {
@@ -2686,9 +2665,7 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
         this.logger.error(`Failed to securely create pool on payment confirmation: ${e}`);
       }
     }
-    
-    // Auto-payout vendor since payment is confirmed
-    await this.processVendorPayout(order);
+    // Auto-payout vendor since payment is confirmed (moved to completeOrder)
 
     // Disburse custom errand item cost to the assigned errander
     if (order.type === OrderType.CUSTOM_ERRAND && order.errander) {

@@ -6,12 +6,16 @@ import { OrdersService } from '../orders/orders.service';
 import { WalletsService } from '../wallets/wallets.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { RecurringOrderStatus } from '../orders/schemas/recurring-order.schema';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { User, UserRole } from '../users/schemas/user.schema';
 
 @Processor('recurring-orders-queue')
 export class RecurringOrderProcessor {
   private readonly logger = new Logger(RecurringOrderProcessor.name);
 
   constructor(
+    @InjectModel(User.name) private readonly userModel: Model<User>,
     private readonly recurringOrdersService: RecurringOrdersService,
     private readonly ordersService: OrdersService,
     private readonly walletsService: WalletsService,
@@ -107,6 +111,46 @@ export class RecurringOrderProcessor {
 
     } catch (error) {
       this.logger.error(`Error processing recurring order ${recurringOrderId}: ${error.message}`);
+      throw error;
+    }
+  }
+
+  @Process('send-recurring-reminder')
+  async handleSendRecurringReminder(job: Job<{ recurringOrderId: string, exactTime: string }>) {
+    this.logger.debug(`Sending recurring order reminder: ${job.id}`);
+    const { recurringOrderId, exactTime } = job.data;
+
+    try {
+      const recurringOrder = await this.recurringOrdersService.findById(recurringOrderId);
+      if (!recurringOrder || recurringOrder.status !== RecurringOrderStatus.ACTIVE) {
+        this.logger.debug(`Recurring order ${recurringOrderId} is not active. Skipping reminder.`);
+        return;
+      }
+
+      const customerId = recurringOrder.customer.toString();
+      
+      // Notify User
+      await this.notificationsService.sendNotification(customerId, {
+        title: 'Upcoming Scheduled Order ⏰',
+        body: `Your scheduled Meal Autopilot order is kicking off soon at ${new Date(exactTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}. Make sure your wallet is funded!`,
+        type: 'ORDER_ALERT',
+        skipSms: false
+      });
+
+      // Notify Admins
+      const customerUser = await this.userModel.findById(customerId);
+      const admins = await this.userModel.find({ role: UserRole.ADMIN });
+      for (const admin of admins) {
+        await this.notificationsService.sendNotification(admin._id.toString(), {
+          title: 'System: Scheduled Order Starting Soon',
+          body: `Recurring Order ${recurringOrder._id} for customer ${customerUser?.firstName || 'User'} is scheduled to kick off at ${new Date(exactTime).toLocaleTimeString()}.`,
+          type: 'SYSTEM_ALERT',
+          skipSms: true
+        });
+      }
+
+    } catch (error) {
+      this.logger.error(`Error sending recurring reminder for ${recurringOrderId}: ${error.message}`);
       throw error;
     }
   }

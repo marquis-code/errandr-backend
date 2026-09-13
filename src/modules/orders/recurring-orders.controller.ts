@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Put, Patch, Body, Param, UseGuards, Req } from '@nestjs/common';
+import { Controller, Post, Get, Put, Patch, Body, Param, UseGuards, Req, Query } from '@nestjs/common';
 import { RecurringOrdersService } from './recurring-orders.service';
 import { JwtAuthGuard, RolesGuard, Roles } from '../../common/decorators';
 import { UserRole } from '../users/schemas/user.schema';
@@ -23,6 +23,17 @@ export class RecurringOrdersController {
   @Get()
   async getMyRecurringOrders(@Req() req: any) {
     return this.recurringOrdersService.findByUser(req.user._id);
+  }
+
+  @Get('admin')
+  @Roles(UserRole.ADMIN)
+  async getAdminRecurringOrders(
+    @Query('page') page = 1,
+    @Query('limit') limit = 20,
+    @Query('status') status?: string,
+    @Query('day') day?: string
+  ) {
+    return this.recurringOrdersService.findAllAdmin(Number(page), Number(limit), status, day);
   }
 
   @Get(':id')

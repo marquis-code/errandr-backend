@@ -36,11 +36,12 @@ export class RecurringOrder extends Document {
   @Prop({
     type: [{
       day: { type: String, enum: Object.values(DayOfWeek) },
-      timeWindow: String
+      timeWindow: String,
+      exactTime: String // e.g. "14:30"
     }],
     required: true
   })
-  schedules: { day: DayOfWeek; timeWindow: string }[];
+  schedules: { day: DayOfWeek; timeWindow: string; exactTime?: string }[];
 
   @Prop({ type: String, enum: RecurringOrderStatus, default: RecurringOrderStatus.ACTIVE })
   status: RecurringOrderStatus;

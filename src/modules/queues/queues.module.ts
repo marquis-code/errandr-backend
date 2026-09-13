@@ -6,6 +6,8 @@ import { OrdersModule } from '../orders/orders.module';
 import { WalletsModule } from '../wallets/wallets.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { forwardRef } from '@nestjs/common';
+import { MongooseModule } from '@nestjs/mongoose';
+import { User, UserSchema } from '../users/schemas/user.schema';
 
 @Module({
   imports: [
@@ -15,6 +17,7 @@ import { forwardRef } from '@nestjs/common';
     BullModule.registerQueue({
       name: 'recurring-orders-queue',
     }),
+    MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
     forwardRef(() => OrdersModule),
     forwardRef(() => WalletsModule),
     NotificationsModule,

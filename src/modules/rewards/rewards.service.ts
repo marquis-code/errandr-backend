@@ -5,6 +5,8 @@ import { User, UserRole } from '../users/schemas/user.schema';
 import { Reward, RewardType } from './schemas/reward.schema';
 import { Quest, QuestType } from './schemas/quest.schema';
 import { UserQuest } from './schemas/user-quest.schema';
+import { WalletsService } from '../wallets/wallets.service';
+import { Inject, forwardRef } from '@nestjs/common';
 
 @Injectable()
 export class RewardsService {
@@ -15,6 +17,7 @@ export class RewardsService {
     @InjectModel(Reward.name) private rewardModel: Model<Reward>,
     @InjectModel(Quest.name) private questModel: Model<Quest>,
     @InjectModel(UserQuest.name) private userQuestModel: Model<UserQuest>,
+    @Inject(forwardRef(() => WalletsService)) private walletsService: WalletsService,
   ) {}
 
   async addPoints(userId: string, points: number, reason: string) {
@@ -283,6 +286,37 @@ export class RewardsService {
     await user.save();
 
     return { success: true, isPro: true, remainingPoints: user.points };
+  }
+
+  async redeemToWallet(userId: string, points: number) {
+    const user = await this.userModel.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+    
+    // Minimum 500 points to redeem to wallet
+    if (user.points < points) throw new Error('Insufficient points');
+    if (points < 500) throw new Error('Minimum redemption is 500 points');
+
+    // Simple 1:1 conversion rate
+    const cashValue = points; 
+
+    // Deduct points
+    user.points -= points;
+    await user.save();
+
+    // Credit wallet
+    await this.walletsService.creditWallet(
+      userId,
+      cashValue,
+      `Points Redemption (${points} pts)`,
+      `RED-${Math.random().toString(36).substring(2, 8).toUpperCase()}`
+    );
+
+    return { 
+      success: true, 
+      message: `Successfully redeemed ${points} points for ₦${cashValue} to your wallet!`,
+      cashRedeemed: cashValue,
+      remainingPoints: user.points 
+    };
   }
 
   async updateUserStats(userId: string, update: { 

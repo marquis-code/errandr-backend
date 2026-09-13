@@ -88,4 +88,14 @@ export class RewardsController {
     const userId = user._id;
     return this.rewardsService.redeemProStatus(userId);
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('redeem-wallet')
+  async redeemWallet(
+    @CurrentUser() user: any,
+    @Body() body: { points: number }
+  ) {
+    const userId = user._id;
+    return this.rewardsService.redeemToWallet(userId, body.points);
+  }
 }

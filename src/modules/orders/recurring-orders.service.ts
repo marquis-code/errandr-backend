@@ -88,4 +88,24 @@ export class RecurringOrdersService {
 
     return forecasts;
   }
+
+  async findAllAdmin(page = 1, limit = 20, status?: string, day?: string): Promise<{ data: any[]; total: number }> {
+    const skip = (page - 1) * limit;
+    const query: any = {};
+    if (status) query.status = status;
+    if (day) query['schedules.day'] = day;
+
+    const [data, total] = await Promise.all([
+      this.recurringOrderModel.find(query)
+        .populate('customer', 'firstName lastName email phone')
+        .populate('vendor', 'businessName storeName email phone')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .exec(),
+      this.recurringOrderModel.countDocuments(query).exec()
+    ]);
+
+    return { data, total };
+  }
 }
