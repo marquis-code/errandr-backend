@@ -463,6 +463,9 @@ export class WalletsService {
     const fetchImage = (url: string): Promise<Buffer> => {
       return new Promise((resolve, reject) => {
         https.get(url, (res: any) => {
+          if (res.statusCode !== 200) {
+            return reject(new Error(`Failed to fetch image, status code: ${res.statusCode}`));
+          }
           const data: Buffer[] = [];
           res.on('data', (chunk: Buffer) => data.push(chunk));
           res.on('end', () => resolve(Buffer.concat(data)));
@@ -495,7 +498,7 @@ export class WalletsService {
         doc.rect(0, 0, 595, 140).fill(bgGray);
         
         // Logo
-        if (logoBuffer) {
+        if (logoBuffer && logoBuffer.length > 0) {
           doc.image(logoBuffer, 50, 45, { width: 140 });
         } else {
           doc.fillColor(brandColor).fontSize(28).font('Helvetica-Bold').text('Erranders', 50, 50);

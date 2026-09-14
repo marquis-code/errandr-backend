@@ -228,11 +228,11 @@ export class RewardsService {
     const user = await this.userModel.findById(userId);
     if (!user) throw new NotFoundException('User not found');
     
-    // Logic: 500 points = N250 discount, 1000 points = N500 discount
+    // Logic: 100 points = N100 discount (1:1 ratio) to encourage ecosystem spending
     if (user.points < points) throw new Error('Insufficient points');
-    if (points < 500) throw new Error('Minimum redemption is 500 points');
+    if (points < 100) throw new Error('Minimum redemption is 100 points');
 
-    const discountValue = Math.floor(points / 2); // 2:1 ratio for simplicity
+    const discountValue = points; // 1:1 ratio
     const code = `REDEEM-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
     await this.rewardModel.create({
@@ -253,7 +253,7 @@ export class RewardsService {
     const user = await this.userModel.findById(userId);
     if (!user) throw new NotFoundException('User not found');
     
-    const cost = 1500; // Cost in points for free delivery
+    const cost = 750; // Reduced cost for students to achieve faster
     if (user.points < cost) throw new Error(`Insufficient points. Need ${cost} points.`);
 
     const code = `FREE-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
@@ -296,8 +296,8 @@ export class RewardsService {
     if (user.points < points) throw new Error('Insufficient points');
     if (points < 500) throw new Error('Minimum redemption is 500 points');
 
-    // Simple 1:1 conversion rate
-    const cashValue = points; 
+    // 1:0.5 conversion rate to discourage cash out compared to ecosystem discounts
+    const cashValue = Math.floor(points / 2);
 
     // Deduct points
     user.points -= points;
