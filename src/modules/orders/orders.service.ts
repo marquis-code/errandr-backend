@@ -1197,7 +1197,16 @@ export class OrdersService {
 
     // Check verification level limits
     const targetOrder = await this.orderModel.findById(orderId);
-    if (!targetOrder || ![OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP, OrderStatus.NEGOTIATING].includes(targetOrder.status as any)) {
+    const terminalStatuses = [OrderStatus.DELIVERED, OrderStatus.CANCELLED, OrderStatus.REFUNDED];
+    const erranderAcceptableStatuses = [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP, OrderStatus.NEGOTIATING, OrderStatus.AWAITING_PAYMENT, OrderStatus.AWAITING_PAYMENT_CONFIRMATION];
+    
+    if (!targetOrder) {
+      throw new BadRequestException('Order not found');
+    }
+    if (isAdmin && terminalStatuses.includes(targetOrder.status as any)) {
+      throw new BadRequestException(`Order is in terminal status (${targetOrder.status}) and cannot be assigned`);
+    }
+    if (!isAdmin && !erranderAcceptableStatuses.includes(targetOrder.status as any)) {
       throw new BadRequestException('Order is no longer available');
     }
 
@@ -1256,12 +1265,21 @@ export class OrdersService {
     }
 
     // ATOMIC UPDATE: Only update if no errander is assigned yet and status hasn't changed
+    // Admin bypasses the errander-not-assigned check to force-assign
+    const filter: any = { 
+      _id: new Types.ObjectId(orderId), 
+      status: targetOrder.status 
+    };
+    if (!isAdmin) {
+      // For normal erranders, ensure no one else grabbed it first
+      // Match both missing field AND explicit null (from previous unassign/cancel)
+      filter.$or = [
+        { errander: { $exists: false } },
+        { errander: null },
+      ];
+    }
     const order = await this.orderModel.findOneAndUpdate(
-      { 
-        _id: new Types.ObjectId(orderId), 
-        errander: { $exists: false },
-        status: targetOrder.status 
-      },
+      filter,
       {
         $set: updateSet,
         $push: {
@@ -1874,17 +1892,18 @@ export class OrdersService {
   }
 
   async getAvailableOrders() {
+    const noErranderFilter = { $in: [null, undefined] };
     return this.orderModel
       .find({
         $or: [
           {
             status: { $in: [OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP, OrderStatus.NEGOTIATING] },
-            errander: { $exists: false },
+            errander: noErranderFilter,
             deliveryOption: { $in: ['use_an_errander', null] }
           },
           {
             status: { $in: [OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP, OrderStatus.NEGOTIATING] },
-            errander: { $exists: false },
+            errander: noErranderFilter,
             deliveryOption: { $exists: false }
           },
           {
