@@ -45,9 +45,9 @@ export class MarketPoolController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Post('orders/:id/proof')
-  async uploadProof(@Req() req, @Param('id') orderId: string, @Body('paymentProofUrl') paymentProofUrl: string) {
-    return this.marketPoolService.uploadProof(orderId, req.user._id.toString(), paymentProofUrl);
+  @Post('orders/:id/wallet-pay')
+  async payWithWallet(@Req() req, @Param('id') orderId: string) {
+    return this.marketPoolService.payWithWallet(orderId, req.user._id.toString());
   }
 
   @UseGuards(JwtAuthGuard)
@@ -64,13 +64,6 @@ export class MarketPoolController {
       body.proxyName, 
       body.proxyPhone
     );
-  }
-
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
-  @Put('orders/:id/verify-payment')
-  async verifyPayment(@Param('id') orderId: string, @Body('action') action: 'approve' | 'reject') {
-    return this.marketPoolService.verifyPayment(orderId, action);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

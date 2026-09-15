@@ -344,4 +344,37 @@ export class SettingsController {
     await setting.save();
     return setting.value;
   }
+
+  @Get('payout')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get errander minimum payout settings' })
+  async getPayoutSettings() {
+    let setting = await this.settingModel.findOne({ key: 'errander_minimum_payout' }).exec();
+    if (!setting) {
+      setting = await this.settingModel.create({
+        key: 'errander_minimum_payout',
+        value: { amount: 1000 },
+      });
+    }
+    return setting.value;
+  }
+
+  @Put('payout')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update errander minimum payout amount (admin only)' })
+  async updatePayoutSettings(@Body() body: { amount: number }) {
+    let setting = await this.settingModel.findOne({ key: 'errander_minimum_payout' }).exec();
+    if (!setting) {
+      setting = new this.settingModel({ key: 'errander_minimum_payout' });
+    }
+    setting.value = {
+      amount: Number(body.amount ?? 1000),
+    };
+    setting.markModified('value');
+    await setting.save();
+    return setting.value;
+  }
 }

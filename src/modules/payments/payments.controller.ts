@@ -60,7 +60,17 @@ export class PaymentsController {
       const type = data.metadata?.type;
       const amount = data.amount / 100;
 
-      if (type === 'wallet_topup') {
+      if (type === 'market_pool') {
+        const orderId = data.metadata?.orderId;
+        if (orderId) {
+          try {
+            await this.marketPoolService.payForOrder(orderId, (req.user as any)?._id?.toString() || 'SYSTEM', reference);
+            this.logger.log(`Market pool ${orderId}: payment verified successfully`);
+          } catch (e: any) {
+            this.logger.warn(`Market pool ${orderId} payForOrder failed (may already be processed): ${e.message}`);
+          }
+        }
+      } else if (type === 'wallet_topup') {
         const userId = data.metadata?.userId;
         await this.walletsService.creditWallet(userId, amount, `Wallet Top-up (Ref: ${reference})`, undefined, reference);
       } else {
@@ -225,11 +235,12 @@ export class PaymentsController {
           } else if (type === 'market_pool') {
             const reference = data.reference;
             const orderId = data.metadata?.orderId;
+            const userId = data.metadata?.userId || 'SYSTEM';
             this.logger.log(`Charge success for market pool order: ${orderId} (Ref: ${reference})`);
             try {
-               await this.marketPoolService.verifyPayment(orderId, 'approve');
+               await this.marketPoolService.payForOrder(orderId, userId, reference);
             } catch (err: any) {
-               this.logger.error(`Failed to verify market pool payment ${orderId} from webhook: ${err.message}`);
+               this.logger.error(`Failed to pay market pool order ${orderId} from webhook: ${err.message}`);
             }
           } else if (data.metadata?.appointmentId) {
             const reference = data.reference;

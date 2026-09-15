@@ -60,6 +60,9 @@ export class MarketPoolOrder extends Document {
 
   @Prop()
   paymentProofUrl: string;
+
+  @Prop()
+  paymentReference: string;
 }
 
 export const MarketPoolOrderSchema = SchemaFactory.createForClass(MarketPoolOrder);

@@ -216,44 +216,57 @@ export class MarketPoolService {
     return order;
   }
 
-  async uploadProof(orderId: string, userId: string, paymentProofUrl: string): Promise<MarketPoolOrder> {
-    const order = await this.orderModel.findOne({ _id: orderId, userId });
+  
+  async payForOrder(orderId: string, userId: string, paymentReference: string): Promise<MarketPoolOrder> {
+    // Webhook may pass userId='SYSTEM', so fallback to orderId-only lookup
+    let order = await this.orderModel.findOne({ _id: orderId, userId });
+    if (!order && userId === 'SYSTEM') {
+      order = await this.orderModel.findById(orderId);
+    }
     if (!order) throw new NotFoundException('Order not found');
 
-    if (order.status !== MarketPoolOrderStatus.PENDING_PAYMENT && order.status !== MarketPoolOrderStatus.PAYMENT_VERIFYING) {
-      throw new BadRequestException('Order is not in a valid state for payment proof upload');
+    if (order.status !== MarketPoolOrderStatus.PENDING_PAYMENT) {
+      throw new BadRequestException('Order is already paid or not in valid state');
     }
 
-    order.paymentProofUrl = paymentProofUrl;
-    order.status = MarketPoolOrderStatus.PAYMENT_VERIFYING;
+    order.paymentReference = paymentReference;
+    order.status = MarketPoolOrderStatus.PAID;
     await order.save();
     
-    // Notify admin
+    // Notify student
     const user = await this.userModel.findById(userId);
     if (user) {
-      await this.emailService.sendMarketPoolPaymentUploadedEmail(order._id.toString(), `${user.firstName} ${user.lastName}`, paymentProofUrl);
+      await this.emailService.sendMarketPoolPaymentVerifiedEmail(order._id.toString(), `${user.firstName} ${user.lastName}`);
     }
 
     return order;
   }
 
-  async verifyPayment(orderId: string, action: 'approve' | 'reject'): Promise<MarketPoolOrder> {
-    const order = await this.orderModel.findById(orderId);
+  async payWithWallet(orderId: string, userId: string): Promise<MarketPoolOrder> {
+    const order = await this.orderModel.findOne({ _id: orderId, userId });
     if (!order) throw new NotFoundException('Order not found');
 
-    if (action === 'approve') {
-      order.status = MarketPoolOrderStatus.PAID;
-      // Notify student
-      const user = await this.userModel.findById(order.userId);
-      if (user) {
-        await this.emailService.sendMarketPoolPaymentVerifiedEmail(order._id.toString(), `${user.firstName} ${user.lastName}`);
-      }
-    } else {
-      order.status = MarketPoolOrderStatus.PENDING_PAYMENT;
-      order.paymentProofUrl = ''; // Clear rejected proof
+    if (order.status !== MarketPoolOrderStatus.PENDING_PAYMENT) {
+      throw new BadRequestException('Order is already paid or not in valid state');
     }
 
+    const totalAmount = order.totalItemCost + order.deliveryFee;
+
+    await this.walletsService.debitWallet(
+      userId,
+      totalAmount,
+      `Market Pool Order Payment (#${orderId.slice(-6)})`
+    );
+
+    order.status = MarketPoolOrderStatus.PAID;
+    order.paymentReference = 'WALLET';
     await order.save();
+    
+    const user = await this.userModel.findById(userId);
+    if (user) {
+      await this.emailService.sendMarketPoolPaymentVerifiedEmail(order._id.toString(), `${user.firstName} ${user.lastName}`);
+    }
+
     return order;
   }
 
