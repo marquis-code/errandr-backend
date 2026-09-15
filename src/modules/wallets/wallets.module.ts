@@ -11,6 +11,7 @@ import { User, UserSchema } from '../users/schemas/user.schema';
 import { WalletsCronService } from './wallets.cron';
 import { Order, OrderSchema } from '../orders/schemas/order.schema';
 import { Vendor, VendorSchema } from '../vendors/schemas/vendor.schema';
+import { SystemSetting, SystemSettingSchema } from '../admin/schemas/system-setting.schema';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { Vendor, VendorSchema } from '../vendors/schemas/vendor.schema';
       { name: User.name, schema: UserSchema },
       { name: Order.name, schema: OrderSchema },
       { name: Vendor.name, schema: VendorSchema },
+      { name: SystemSetting.name, schema: SystemSettingSchema },
     ]),
     forwardRef(() => PaymentsModule),
     EmailModule,

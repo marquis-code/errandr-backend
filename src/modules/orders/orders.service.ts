@@ -2059,7 +2059,7 @@ export class OrdersService {
     
     const erranderUserId = fullOrder.errander.toString();
     
-    if (erranderUserId && fullOrder.type !== OrderType.CUSTOM_ERRAND) {
+    if (erranderUserId) {
       const hasInterception = fullOrder.interception && (fullOrder.interception.status === 'accepted' || fullOrder.interception.status === 'completed');
       if (hasInterception && fullOrder.interception!.secondErrander) {
         const firstShare = erranderEarnings * 0.6;
@@ -2688,9 +2688,12 @@ async getOrdersForVendorOwner(ownerId: string, status?: OrderStatus, page = 1, l
 
     // Disburse custom errand item cost to the assigned errander
     if (order.type === OrderType.CUSTOM_ERRAND && order.errander) {
-      const erranderWallet = await this.walletsService.getOrCreateWallet(order.errander.toString());
-      if (erranderWallet.bankDetails?.accountNumber) {
-        await this.disburseItemCost(order, order.errander.toString(), erranderWallet.bankDetails);
+      const itemCost = (order.customDetails?.estimatedItemCost || 0) + (order.customDetails?.itemCostBuffer || 0);
+      if (itemCost > 0) {
+        await this.walletsService.autoPayoutItemCost(order.errander.toString(), itemCost, order.orderNumber);
+        order.itemCostDisbursementStatus = 'transferred';
+        order.itemCostTransferReference = `ITEM-${order.orderNumber}`;
+        await order.save();
       }
     }
 

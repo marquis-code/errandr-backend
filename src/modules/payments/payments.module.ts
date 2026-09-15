@@ -6,12 +6,14 @@ import { WalletsModule } from '../wallets/wallets.module';
 import { EmailModule } from '../email/email.module';
 import { AppointmentsModule } from '../appointments/appointments.module';
 import { UsersModule } from '../users/users.module';
+import { MarketPoolModule } from '../market-pool/market-pool.module';
 
 @Module({
   imports: [
     forwardRef(() => OrdersModule),
     forwardRef(() => WalletsModule),
     forwardRef(() => AppointmentsModule),
+    forwardRef(() => MarketPoolModule),
     EmailModule,
     UsersModule,
   ],

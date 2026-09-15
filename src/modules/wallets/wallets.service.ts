@@ -8,6 +8,7 @@ import { EmailService } from '../email/email.service';
 import { User } from '../users/schemas/user.schema';
 import { Order } from '../orders/schemas/order.schema';
 import { Vendor } from '../vendors/schemas/vendor.schema';
+import { SystemSetting } from '../admin/schemas/system-setting.schema';
 import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
@@ -18,6 +19,7 @@ export class WalletsService {
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(Order.name) private orderModel: Model<Order>,
     @InjectModel(Vendor.name) private vendorModel: Model<any>,
+    @InjectModel(SystemSetting.name) private systemSettingModel: Model<SystemSetting>,
     @Inject(forwardRef(() => PaystackService)) private paystackService: PaystackService,
     private emailService: EmailService,
   ) {}
@@ -270,6 +272,13 @@ export class WalletsService {
   async withdrawFunds(userId: string, amount: number, userEmail: string, userName: string, selectedBankAccount?: { accountNumber: string, bankCode: string }, isInstant?: boolean): Promise<void> {
     const wallet = await this.getWallet(userId);
 
+    const setting = await this.systemSettingModel.findOne({ key: 'errander_minimum_payout' });
+    const minPayout = setting?.value?.amount ? Number(setting.value.amount) : 1000; // default 1000
+
+    if (amount < minPayout) {
+      throw new Error(`Minimum payout amount is ₦${minPayout}`);
+    }
+
     if (wallet.balance < amount) {
       throw new Error('Insufficient balance in wallet');
     }
@@ -295,11 +304,11 @@ export class WalletsService {
       amount,
       type: TransactionType.DEBIT,
       status: TransactionStatus.PENDING,
-      description: `Withdrawal request: ${reference}`,
+      description: isInstant ? `Instant withdrawal request: ${reference}` : `Withdrawal request: ${reference}`,
       reference,
       metadata: { 
         isPayoutRequest: true,
-        isInstant: true,
+        isInstant: !!isInstant,
         userName,
         userEmail,
         bankCode: targetBankCode, 
@@ -307,26 +316,28 @@ export class WalletsService {
       },
     });
 
-    // Process immediately for all users
-    try {
-      if (userEmail) {
-        await this.emailService.sendWithdrawalRequested(userEmail, amount, reference);
-      }
-      await this.approvePayoutRequest(transaction._id.toString());
-    } catch (error: any) {
-      // Rollback if instant payout fails
-      wallet.balance += amount;
-      await wallet.save();
-      await this.userModel.findByIdAndUpdate(userId, { $inc: { walletBalance: amount } });
-      transaction.status = TransactionStatus.FAILED;
-      transaction.description = `Instant withdrawal failed: ${error.message}`;
-      await transaction.save();
+    if (userEmail) {
+      await this.emailService.sendWithdrawalRequested(userEmail, amount, reference).catch(e => console.warn(`Failed to send withdrawal requested email: ${e.message}`));
+    }
 
-      if (userEmail) {
-        await this.emailService.sendPayoutFailed(userEmail, amount, error.message || 'Processing failed');
-      }
+    if (isInstant) {
+      try {
+        await this.approvePayoutRequest(transaction._id.toString());
+      } catch (error: any) {
+        // Rollback if instant payout fails
+        wallet.balance += amount;
+        await wallet.save();
+        await this.userModel.findByIdAndUpdate(userId, { $inc: { walletBalance: amount } });
+        transaction.status = TransactionStatus.FAILED;
+        transaction.description = `Instant withdrawal failed: ${error.message}`;
+        await transaction.save();
 
-      throw error;
+        if (userEmail) {
+          await this.emailService.sendPayoutFailed(userEmail, amount, error.message || 'Processing failed').catch(e => console.warn(`Failed to send payout failed email: ${e.message}`));
+        }
+
+        throw error;
+      }
     }
   }
 
@@ -385,6 +396,78 @@ export class WalletsService {
     };
     // Keep it pending until webhook confirms, but update metadata
     await transaction.save();
+  }
+
+  async autoPayoutItemCost(userId: string, amount: number, reference: string): Promise<void> {
+    const wallet = await this.getWallet(userId);
+    const user = await this.userModel.findById(userId);
+
+    // Credit wallet for accounting
+    await this.creditWallet(userId, amount, `Item Cost Funding: ${reference}`, reference);
+
+    // If no bank details, leave it in wallet for manual withdrawal
+    if (!wallet.bankDetails?.accountNumber || !wallet.bankDetails?.bankCode) {
+      console.warn(`User ${userId} has no bank details. Item cost left in wallet.`);
+      return; // Leave in wallet
+    }
+
+    const isTestKey = process.env.PAYSTACK_SECRET_KEY?.startsWith('sk_test');
+    const useMock = Boolean(isTestKey || process.env.USE_MOCK_PAYOUT === 'true');
+
+    if (useMock) {
+      console.log(`Mock auto-payout of item cost ${amount} for ${userId}`);
+      return;
+    }
+
+    try {
+      // Create transfer recipient
+      const recipient = await this.paystackService.createTransferRecipient({
+        name: user?.firstName ? `${user.firstName} ${user.lastName}` : 'Erranders User',
+        account_number: wallet.bankDetails.accountNumber,
+        bank_code: wallet.bankDetails.bankCode,
+      });
+
+      // Debit wallet for auto-transfer
+      wallet.balance -= amount;
+      await wallet.save();
+      await this.userModel.findByIdAndUpdate(userId, { $inc: { walletBalance: -amount } });
+
+      const transactionRef = `ITEM-${reference}-${Date.now().toString().slice(-4)}`;
+
+      // Create PENDING transaction record
+      const transaction = await this.transactionModel.create({
+        wallet: wallet._id,
+        amount,
+        type: TransactionType.DEBIT,
+        status: TransactionStatus.PENDING,
+        description: `Auto-Transfer Item Cost: ${reference}`,
+        reference: transactionRef,
+        metadata: { 
+          isPayoutRequest: true,
+          isInstant: false, // Set false to avoid 1% fee, but we execute immediately
+          autoTransfer: true,
+        },
+      });
+
+      // Execute transfer instantly (no 1% fee deduction!)
+      const transfer = await this.paystackService.initiateTransfer({
+        amount,
+        reference: transactionRef,
+        recipient: recipient.recipient_code,
+        reason: 'Item Cost Funding',
+      });
+      
+      if ((transfer as any).status !== true && (transfer as any).status !== 'success') {
+        throw new Error((transfer as any).message || 'Transfer initiation failed via Paystack');
+      }
+
+    } catch (e: any) {
+      console.error(`Auto-payout failed for user ${userId}: ${e.message}`);
+      // If transfer fails, rollback the debit so they can manually withdraw
+      wallet.balance += amount;
+      await wallet.save();
+      await this.userModel.findByIdAndUpdate(userId, { $inc: { walletBalance: amount } });
+    }
   }
 
   async markPayoutAsPaid(transactionId: string): Promise<void> {

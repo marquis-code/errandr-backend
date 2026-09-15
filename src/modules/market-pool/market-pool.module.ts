@@ -30,5 +30,6 @@ import { NotificationsModule } from '../notifications/notifications.module';
   ],
   controllers: [MarketPoolController],
   providers: [MarketPoolService],
+  exports: [MarketPoolService],
 })
 export class MarketPoolModule {}

@@ -14,6 +14,7 @@ import { User } from '../users/schemas/user.schema';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { EmailService } from '../email/email.service';
+import { MarketPoolService } from '../market-pool/market-pool.service';
 
 @ApiTags('Payments')
 @Controller('payments')
@@ -27,6 +28,7 @@ export class PaymentsController {
     @Inject(forwardRef(() => WalletsService)) private readonly walletsService: WalletsService,
     @Inject(forwardRef(() => AppointmentsService)) private readonly appointmentsService: AppointmentsService,
     private readonly emailService: EmailService,
+    @Inject(forwardRef(() => MarketPoolService)) private readonly marketPoolService: MarketPoolService,
     @InjectModel(User.name) private readonly userModel: Model<User>,
   ) {}
 
@@ -220,6 +222,15 @@ export class PaymentsController {
               reference,
             );
             this.logger.log(`Wallet credited successfully for user: ${userId}`);
+          } else if (type === 'market_pool') {
+            const reference = data.reference;
+            const orderId = data.metadata?.orderId;
+            this.logger.log(`Charge success for market pool order: ${orderId} (Ref: ${reference})`);
+            try {
+               await this.marketPoolService.verifyPayment(orderId, 'approve');
+            } catch (err: any) {
+               this.logger.error(`Failed to verify market pool payment ${orderId} from webhook: ${err.message}`);
+            }
           } else if (data.metadata?.appointmentId) {
             const reference = data.reference;
             const appointmentId = data.metadata.appointmentId;
