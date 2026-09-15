@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { MarketPoolCampaign, MarketPoolCampaignStatus } from './schemas/market-pool-campaign.schema';
@@ -24,7 +24,7 @@ export class MarketPoolService {
     @InjectModel(MarketPoolCategory.name) private categoryModel: Model<MarketPoolCategory>,
     @InjectModel(SystemSetting.name) private systemSettingModel: Model<SystemSetting>,
     @InjectModel(User.name) private userModel: Model<User>,
-    private walletsService: WalletsService,
+    @Inject(forwardRef(() => WalletsService)) private walletsService: WalletsService,
     private emailService: EmailService,
     private notificationsService: NotificationsService,
   ) {}

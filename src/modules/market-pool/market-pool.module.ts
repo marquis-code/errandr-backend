@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { MarketPoolController } from './market-pool.controller';
 import { MarketPoolService } from './market-pool.service';
@@ -23,7 +23,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
       { name: MarketPoolCategory.name, schema: MarketPoolCategorySchema },
       { name: SystemSetting.name, schema: SystemSettingSchema },
     ]),
-    WalletsModule,
+    forwardRef(() => WalletsModule),
     EmailModule,
     UsersModule,
     NotificationsModule,
