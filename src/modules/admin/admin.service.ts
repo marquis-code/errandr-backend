@@ -348,6 +348,7 @@ export class AdminService {
         .populate('customer', 'firstName lastName email phone')
         .populate('vendor', 'storeName phone')
         .populate('errander', 'firstName lastName phone vehicleType plateNumber')
+        .populate('interception.secondErrander', 'firstName lastName phone avatar')
         .sort(sort);
 
       const header = ['ID', 'Order Number', 'Date', 'Customer', 'Vendor', 'Status', 'Total', 'Delivery Fee'].join(',');
@@ -377,6 +378,7 @@ export class AdminService {
         .populate('customer', 'firstName lastName email phone')
         .populate('vendor', 'storeName phone')
         .populate('errander', 'firstName lastName phone vehicleType plateNumber')
+        .populate('interception.secondErrander', 'firstName lastName phone avatar')
         .sort(sort)
         .skip(limit > 0 ? skip : 0)
         .limit(limit > 0 ? limit : 0),
