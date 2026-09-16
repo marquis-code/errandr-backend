@@ -1,7 +1,7 @@
 const axios = require('axios');
 (async () => {
   try {
-    const res = await axios.post('https://api.erranders.org/api/v1/auth/login', {
+    const res = await axios.post('http://localhost:3005/api/v1/auth/login', {
       email: 'abahmarquis@gmail.com',
       password: 'password123'
     });
@@ -41,7 +41,7 @@ const axios = require('axios');
       "isMysteryBox": false,
       "isDormDelivery": false,
       "total": 1300,
-      "deliveryOption": "immediate",
+      "deliveryOption": "use_an_errander",
       "deliveryMode": "room_delivery",
       "recipientName": "abah marquis",
       "recipientPhone": "08147626503",
@@ -51,7 +51,7 @@ const axios = require('axios');
       "locationType": "inside_campus"
     };
 
-    const orderRes = await axios.post('https://api.erranders.org/api/v1/orders', orderPayload, {
+    const orderRes = await axios.post('http://localhost:3005/api/v1/orders', orderPayload, {
       headers: { Authorization: `Bearer ${token}` }
     });
     console.log("Order created:", orderRes.data);

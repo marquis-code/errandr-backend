@@ -151,7 +151,49 @@ export class AdminService {
   }
 
   async getVendors() {
-    return this.vendorModel.find().populate('owner', 'firstName lastName email phone').sort({ createdAt: -1 });
+    return this.vendorModel.aggregate([
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'owner',
+          foreignField: '_id',
+          as: 'ownerDetails'
+        }
+      },
+      {
+        $unwind: { path: '$ownerDetails', preserveNullAndEmptyArrays: true }
+      },
+      {
+        $lookup: {
+          from: 'wallets',
+          localField: 'owner',
+          foreignField: 'owner',
+          as: 'walletInfo'
+        }
+      },
+      {
+        $addFields: {
+          walletBalance: { $ifNull: [{ $arrayElemAt: ['$walletInfo.balance', 0] }, 0] },
+          owner: {
+            _id: '$ownerDetails._id',
+            firstName: '$ownerDetails.firstName',
+            lastName: '$ownerDetails.lastName',
+            email: '$ownerDetails.email',
+            phone: '$ownerDetails.phone',
+            avatar: '$ownerDetails.avatar'
+          }
+        }
+      },
+      {
+        $project: {
+          ownerDetails: 0,
+          walletInfo: 0
+        }
+      },
+      {
+        $sort: { createdAt: -1 }
+      }
+    ]);
   }
 
   async getVendor(id: string) {
