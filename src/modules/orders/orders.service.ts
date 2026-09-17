@@ -1573,31 +1573,29 @@ export class OrdersService {
 
     // ERRANDER PAYOUT
     const erranderEarnings = order.erranderPayout || order.deliveryFee;
-    if (order.type !== OrderType.CUSTOM_ERRAND) {
-      const hasInterception = order.interception && (order.interception.status === 'accepted' || order.interception.status === 'completed');
-      if (hasInterception && order.interception!.secondErrander) {
-        const firstShare = erranderEarnings * 0.6;
-        const secondShare = erranderEarnings * 0.4;
-        await this.walletsService.creditWallet(
-          order.errander.toString(),
-          firstShare,
-          `Delivery earnings (60% Interception) for order ${order.orderNumber}`,
-          order._id.toString(),
-        );
-        await this.walletsService.creditWallet(
-          order.interception!.secondErrander.toString(),
-          secondShare,
-          `Delivery earnings (40% Interception) for order ${order.orderNumber}`,
-          order._id.toString(),
-        );
-      } else {
-        await this.walletsService.creditWallet(
-          erranderId,
-          erranderEarnings,
-          `Delivery earnings for order ${order.orderNumber}`,
-          order._id.toString(),
-        );
-      }
+    const hasInterception = order.interception && (order.interception.status === 'accepted' || order.interception.status === 'completed');
+    if (hasInterception && order.interception!.secondErrander) {
+      const firstShare = erranderEarnings * 0.6;
+      const secondShare = erranderEarnings * 0.4;
+      await this.walletsService.creditWallet(
+        order.errander.toString(),
+        firstShare,
+        `Delivery earnings (60% Interception) for order ${order.orderNumber}`,
+        order._id.toString(),
+      );
+      await this.walletsService.creditWallet(
+        order.interception!.secondErrander.toString(),
+        secondShare,
+        `Delivery earnings (40% Interception) for order ${order.orderNumber}`,
+        order._id.toString(),
+      );
+    } else {
+      await this.walletsService.creditWallet(
+        erranderId,
+        erranderEarnings,
+        `Delivery earnings for order ${order.orderNumber}`,
+        order._id.toString(),
+      );
     }
 
     // VENDOR PAYOUT
@@ -1704,31 +1702,29 @@ export class OrdersService {
 
     // ERRANDER PAYOUT
     const erranderEarnings = order.erranderPayout || order.deliveryFee;
-    if (order.type !== OrderType.CUSTOM_ERRAND) {
-      const hasInterception = order.interception && (order.interception.status === 'accepted' || order.interception.status === 'completed');
-      if (hasInterception && order.interception!.secondErrander) {
-        const firstShare = erranderEarnings * 0.6;
-        const secondShare = erranderEarnings * 0.4;
-        await this.walletsService.creditWallet(
-          order.errander.toString(),
-          firstShare,
-          `Delivery earnings (60% Interception) for order ${order.orderNumber}`,
-          order._id.toString(),
-        );
-        await this.walletsService.creditWallet(
-          order.interception!.secondErrander.toString(),
-          secondShare,
-          `Delivery earnings (40% Interception) for order ${order.orderNumber}`,
-          order._id.toString(),
-        );
-      } else {
-        await this.walletsService.creditWallet(
-          erranderId,
-          erranderEarnings,
-          `Delivery earnings for order ${order.orderNumber}`,
-          order._id.toString(),
-        );
-      }
+    const hasInterception = order.interception && (order.interception.status === 'accepted' || order.interception.status === 'completed');
+    if (hasInterception && order.interception!.secondErrander) {
+      const firstShare = erranderEarnings * 0.6;
+      const secondShare = erranderEarnings * 0.4;
+      await this.walletsService.creditWallet(
+        order.errander.toString(),
+        firstShare,
+        `Delivery earnings (60% Interception) for order ${order.orderNumber}`,
+        order._id.toString(),
+      );
+      await this.walletsService.creditWallet(
+        order.interception!.secondErrander.toString(),
+        secondShare,
+        `Delivery earnings (40% Interception) for order ${order.orderNumber}`,
+        order._id.toString(),
+      );
+    } else {
+      await this.walletsService.creditWallet(
+        erranderId,
+        erranderEarnings,
+        `Delivery earnings for order ${order.orderNumber}`,
+        order._id.toString(),
+      );
     }
 
     // Free up errander or update batch
