@@ -3745,7 +3745,7 @@ export class OrdersService {
     }
 
     // Validation: must be the assigned errander
-    const orderErranderId = order.errander?.toString();
+    const orderErranderId = (order.errander as any)?._id ? (order.errander as any)._id.toString() : order.errander?.toString();
     if (!orderErranderId || orderErranderId !== erranderId) {
       throw new BadRequestException('You are not assigned to this order');
     }
