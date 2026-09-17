@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, UseGuards, Logger, Inject, forwardRef, Headers, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, UseGuards, Logger, Inject, forwardRef, Headers, Req, BadRequestException } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { Request } from 'express';
 import { ConfigService } from '@nestjs/config';
@@ -42,8 +42,12 @@ export class PaymentsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Resolve bank account (via Paystack)' })
-  resolveAccount(@Body() body: { account_number: string; bank_code: string }) {
-    return this.paystackService.resolveAccount(body.account_number, body.bank_code);
+  resolveAccount(@Body() body: { account_number: string; bank_code?: string; account_bank?: string }) {
+    const bankCode = body.bank_code || body.account_bank;
+    if (!bankCode) {
+      throw new BadRequestException('bank_code is required');
+    }
+    return this.paystackService.resolveAccount(body.account_number, bankCode);
   }
 
   @Get('verify')
