@@ -1348,7 +1348,7 @@ export class OrdersService {
       // ONLY INITIATE TRANSFER IF CUSTOMER HAS ALREADY PAID (e.g. upfront payment).
       // If the customer hasn't paid yet (negotiated order), this transfer will happen during payment verification.
       if (order.paymentStatus === PaymentStatus.PAID) {
-        await this.disburseItemCost(order, erranderId, bankDetails, erranderUser);
+        // Custom Errand payout to vendor should happen via store app
       }
     }
 
@@ -2342,7 +2342,7 @@ export class OrdersService {
         if (order.type === OrderType.CUSTOM_ERRAND && order.errander) {
           const erranderWallet = await this.walletsService.getOrCreateWallet(order.errander.toString());
           if (erranderWallet.bankDetails?.accountNumber) {
-            await this.disburseItemCost(order, order.errander.toString(), erranderWallet.bankDetails);
+            // Replaced with in-app vendor payout transfer
           }
         }
 
@@ -2686,7 +2686,7 @@ export class OrdersService {
     if (order.type === OrderType.CUSTOM_ERRAND && order.errander) {
       const itemCost = (order.customDetails?.estimatedItemCost || 0) + (order.customDetails?.itemCostBuffer || 0);
       if (itemCost > 0) {
-        await this.walletsService.autoPayoutItemCost(order.errander.toString(), itemCost, order.orderNumber);
+        // Replaced with in-app vendor payout transfer
         order.itemCostDisbursementStatus = 'transferred';
         order.itemCostTransferReference = `ITEM-${order.orderNumber}`;
         await order.save();
@@ -3720,68 +3720,6 @@ export class OrdersService {
     }
   }
 
-  async disburseItemCost(order: Order, erranderId: string, bankDetails: any, erranderUser?: any): Promise<void> {
-    if (order.itemCostDisbursementStatus === 'transferred') return; // Already done
-
-    const itemCost = order.customDetails?.estimatedItemCost || 0;
-    const itemCostBuffer = order.customDetails?.itemCostBuffer || 0;
-    const totalToDisburse = itemCost + itemCostBuffer;
-    if (totalToDisburse <= 0) return;
-
-    const transferRef = `ITEM-${order.orderNumber}-${uuidv4().slice(0, 6).toUpperCase()}`;
-
-    try {
-      const recipient = await this.paystackService.createTransferRecipient({
-        name: bankDetails.accountName || erranderUser?.firstName || 'Errander',
-        account_number: bankDetails.accountNumber,
-        bank_code: bankDetails.bankCode,
-      });
-
-      const transfer = await this.paystackService.initiateTransfer({
-        amount: totalToDisburse,
-        reference: transferRef,
-        recipient: recipient.recipient_code,
-        reason: `Item cost for errand ${order.orderNumber}`,
-      });
-
-      if ((transfer as any).status === true || (transfer as any).status === 'success') {
-        order.itemCostDisbursementStatus = 'transferred';
-        order.itemCostTransferReference = transferRef;
-        if ((order as any).save) await (order as any).save();
-        else await this.orderModel.findByIdAndUpdate(order._id, {
-          itemCostDisbursementStatus: 'transferred',
-          itemCostTransferReference: transferRef
-        });
-        this.logger.log(`Item cost ₦${itemCost} transferred to errander ${erranderId} bank for order ${order.orderNumber}`);
-      } else {
-        throw new Error((transfer as any).message || 'Transfer failed');
-      }
-    } catch (transferError: any) {
-      this.logger.error(`Item cost transfer failed for order ${order.orderNumber}: ${transferError.message}`);
-
-      const isTestKey = process.env.PAYSTACK_SECRET_KEY?.startsWith('sk_test');
-      const useMock = Boolean(isTestKey || process.env.USE_MOCK_PAYOUT === 'true');
-
-      if (useMock) {
-        order.itemCostDisbursementStatus = 'transferred';
-        order.itemCostTransferReference = `MOCK-${transferRef}`;
-        if ((order as any).save) await (order as any).save();
-        else await this.orderModel.findByIdAndUpdate(order._id, {
-          itemCostDisbursementStatus: 'transferred',
-          itemCostTransferReference: `MOCK-${transferRef}`
-        });
-        this.logger.log(`[MOCK] Item cost ₦${itemCost} mock-transferred for order ${order.orderNumber}`);
-      } else {
-        order.itemCostDisbursementStatus = 'failed';
-        if ((order as any).save) await (order as any).save();
-        else await this.orderModel.findByIdAndUpdate(order._id, { itemCostDisbursementStatus: 'failed' });
-        // NOTE: We don't rollback the order here because payment was already made by the customer. 
-        // We log an error for manual admin intervention.
-        this.logger.error(`CRITICAL: Failed to transfer item cost to errander ${erranderId} for paid order ${(order as any)._id}`);
-      }
-    }
-  }
-
   async updateIssues(orderId: string, issues: string): Promise<Order> {
     const order = await this.orderModel.findById(orderId);
     if (!order) {
@@ -3790,4 +3728,150 @@ export class OrdersService {
     order.issues = issues;
     return (order as any).save();
   }
-}
+
+  async disburseToVendor(
+    orderId: string,
+    erranderId: string,
+    vendorBankDetails: { accountNumber: string; bankCode: string; bankName: string; accountName: string },
+    amount: number,
+    itemsPhoto?: string,
+  ): Promise<Order> {
+    const order = await this.orderModel.findById(orderId);
+    if (!order) throw new NotFoundException('Order not found');
+
+    // Validation: must be a custom errand
+    if (order.type !== OrderType.CUSTOM_ERRAND) {
+      throw new BadRequestException('Only custom errands support vendor disbursement');
+    }
+
+    // Validation: must be the assigned errander
+    const orderErranderId = order.errander?.toString();
+    if (!orderErranderId || orderErranderId !== erranderId) {
+      throw new BadRequestException('You are not assigned to this order');
+    }
+
+    // Validation: must be paid
+    if (order.paymentStatus !== PaymentStatus.PAID) {
+      throw new BadRequestException('Order has not been paid yet');
+    }
+
+    // Validation: must not already be disbursed
+    if (order.itemCostDisbursementStatus === 'transferred') {
+      throw new BadRequestException('Vendor has already been paid for this order');
+    }
+
+    // Validation: order must be in active state (confirmed or ready_for_pickup or picked_up)
+    const validStatuses = [OrderStatus.CONFIRMED, OrderStatus.READY_FOR_PICKUP, OrderStatus.PICKED_UP];
+    if (!validStatuses.includes(order.status as OrderStatus)) {
+      throw new BadRequestException(`Cannot process vendor payment in status: ${order.status}`);
+    }
+
+    // FRAUD PREVENTION: Block self-transfers — errander cannot send money to their own bank
+    const erranderWallet = await this.walletsService.getOrCreateWallet(erranderId);
+    if (erranderWallet.bankDetails?.accountNumber && erranderWallet.bankDetails?.bankCode) {
+      if (
+        erranderWallet.bankDetails.accountNumber === vendorBankDetails.accountNumber &&
+        erranderWallet.bankDetails.bankCode === vendorBankDetails.bankCode
+      ) {
+        throw new BadRequestException('You cannot transfer to your own bank account. Please enter the vendor\'s bank details.');
+      }
+    }
+
+    const itemCost = order.customDetails?.estimatedItemCost || 0;
+    const itemCostBuffer = order.customDetails?.itemCostBuffer || 0;
+    const maxAllowedDisbursement = itemCost + itemCostBuffer;
+    
+    if (maxAllowedDisbursement <= 0) {
+      throw new BadRequestException('No item cost to disburse');
+    }
+    
+    const transferAmount = Number(amount);
+    
+    if (!transferAmount || isNaN(transferAmount) || transferAmount <= 0) {
+      throw new BadRequestException('Invalid transfer amount');
+    }
+    
+    if (transferAmount > maxAllowedDisbursement) {
+      throw new BadRequestException(`Cannot transfer more than the customer paid (₦${maxAllowedDisbursement.toLocaleString()})`);
+    }
+
+    const transferRef = `VENDOR-${order.orderNumber}-${uuidv4().slice(0, 6).toUpperCase()}`;
+
+    // Store items photo and actual item cost
+    if (itemsPhoto) {
+      order.itemsPhoto = itemsPhoto;
+    }
+    order.actualItemCost = transferAmount; // Automatically reconcile since the errander transferred exactly this amount
+
+    const isTestKey = process.env.PAYSTACK_SECRET_KEY?.startsWith('sk_test');
+    const useMock = Boolean(isTestKey || process.env.USE_MOCK_PAYOUT === 'true');
+
+    try {
+      const recipient = await this.paystackService.createTransferRecipient({
+        name: vendorBankDetails.accountName,
+        account_number: vendorBankDetails.accountNumber,
+        bank_code: vendorBankDetails.bankCode,
+      });
+
+      const transfer = await this.paystackService.initiateTransfer({
+        amount: transferAmount,
+        reference: transferRef,
+        recipient: recipient.recipient_code,
+        reason: `Vendor payment for errand ${order.orderNumber}`,
+      });
+
+      if ((transfer as any).status === true || (transfer as any).status === 'success') {
+        order.itemCostDisbursementStatus = 'transferred';
+        order.itemCostTransferReference = transferRef;
+        order.vendorPaymentDetails = {
+          bankName: vendorBankDetails.bankName,
+          bankCode: vendorBankDetails.bankCode,
+          accountNumber: vendorBankDetails.accountNumber,
+          accountName: vendorBankDetails.accountName,
+          transferReference: transferRef,
+          transferredAt: new Date(),
+        };
+        await (order as any).save();
+        this.logger.log(`Vendor paid ₦${transferAmount} for order ${order.orderNumber} → ${vendorBankDetails.accountName} (${vendorBankDetails.bankName})`);
+      } else {
+        throw new Error((transfer as any).message || 'Transfer failed');
+      }
+    } catch (transferError: any) {
+      this.logger.error(`Vendor transfer failed for order ${order.orderNumber}: ${transferError.message}`);
+
+      if (useMock) {
+        order.itemCostDisbursementStatus = 'transferred';
+        order.itemCostTransferReference = `MOCK-${transferRef}`;
+        order.vendorPaymentDetails = {
+          bankName: vendorBankDetails.bankName,
+          bankCode: vendorBankDetails.bankCode,
+          accountNumber: vendorBankDetails.accountNumber,
+          accountName: vendorBankDetails.accountName,
+          transferReference: `MOCK-${transferRef}`,
+          transferredAt: new Date(),
+        };
+        await (order as any).save();
+        this.logger.log(`[MOCK] Vendor paid ₦${transferAmount} mock-transferred for order ${order.orderNumber}`);
+      } else {
+        order.itemCostDisbursementStatus = 'failed';
+        await (order as any).save();
+        throw new BadRequestException(`Vendor transfer failed: ${transferError.message}. Please try again or contact support.`);
+      }
+    }
+
+    // Notify the customer that the vendor has been paid
+    try {
+      await this.notificationsService.sendNotification(order.customer.toString(), {
+        title: 'Vendor Paid! 🛒',
+        body: `Your errander has paid ₦${transferAmount.toLocaleString()} to ${vendorBankDetails.accountName} (${vendorBankDetails.bankName}) for your items.`,
+        type: 'VENDOR_PAID',
+        data: { orderId: order._id.toString() },
+      });
+    } catch (e) {
+      this.logger.error(`Failed to notify customer about vendor payment: ${e}`);
+    }
+
+    return order;
+  }
+
+  }

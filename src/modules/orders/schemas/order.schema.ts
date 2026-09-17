@@ -531,6 +531,28 @@ export class Order extends Document {
 
   @Prop()
   abandonmentFeedback: string;
+
+  @Prop({
+    type: {
+      bankName: String,
+      bankCode: String,
+      accountNumber: String,
+      accountName: String,
+      transferReference: String,
+      transferredAt: Date,
+    },
+  })
+  vendorPaymentDetails: {
+    bankName: string;
+    bankCode: string;
+    accountNumber: string;
+    accountName: string;
+    transferReference: string;
+    transferredAt: Date;
+  };
+
+  @Prop()
+  itemsPhoto: string;
 }
 
 export const OrderSchema = SchemaFactory.createForClass(Order);

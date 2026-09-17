@@ -245,6 +245,30 @@ async getMyVendorOrders(
     return this.ordersService.payForCustomErrand(id, (user._id as unknown) as string, body.paymentReference);
   }
 
+  @Post(':id/disburse-to-vendor')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Transfer item cost directly to vendor bank account (errander-triggered)' })
+  disburseToVendor(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+    @Body() body: { accountNumber: string; bankCode: string; bankName: string; accountName: string; itemsPhoto?: string; amount: number },
+  ) {
+    this.logger.log(`disburseToVendor() id=${id} user=${user._id} amount=${body.amount}`);
+    return this.ordersService.disburseToVendor(
+      id,
+      (user._id as unknown) as string,
+      {
+        accountNumber: body.accountNumber,
+        bankCode: body.bankCode,
+        bankName: body.bankName,
+        accountName: body.accountName,
+      },
+      body.amount,
+      body.itemsPhoto,
+    );
+  }
+
   @Put(':id/custom/fee')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
