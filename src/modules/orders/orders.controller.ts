@@ -201,6 +201,48 @@ async getMyVendorOrders(
     }
   }
 
+  @Post(':id/items/:itemId/unavailable')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Mark an item as unavailable and process instant refund' })
+  markItemUnavailable(
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @CurrentUser() user: User
+  ) {
+    this.logger.log(`markItemUnavailable() id=${id} itemId=${itemId} user=${user._id}`);
+    return this.ordersService.markItemUnavailable(id, itemId, user._id.toString());
+  }
+
+  @Post(':id/items/:itemId/substitute/request')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Rider requests to substitute an unavailable item' })
+  requestItemSubstitute(
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @Body('substituteItemId') substituteItemId: string,
+    @CurrentUser() user: User
+  ) {
+    this.logger.log(`requestItemSubstitute() id=${id} itemId=${itemId} substitute=${substituteItemId} user=${user._id}`);
+    return this.ordersService.requestItemSubstitute(id, itemId, substituteItemId, user._id.toString());
+  }
+
+  @Post(':id/items/:itemId/substitute/resolve')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Student accepts or declines an item substitute' })
+  resolveItemSubstitute(
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @Body('accept') accept: boolean,
+    @Body('substituteItemId') substituteItemId: string,
+    @CurrentUser() user: User
+  ) {
+    this.logger.log(`resolveItemSubstitute() id=${id} itemId=${itemId} accept=${accept} user=${user._id}`);
+    return this.ordersService.resolveItemSubstitute(id, itemId, accept, substituteItemId, user._id.toString());
+  }
+
   @Put(':id/status')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
