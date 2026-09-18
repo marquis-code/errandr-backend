@@ -174,4 +174,15 @@ export class WalletsController {
     );
     return { success: true, message: 'Wallet debited successfully' };
   }
+
+  @Put('admin/preferences/:userId')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({ summary: 'Update payout preferences and bank details for a user (Admin)' })
+  updatePreferencesByAdmin(
+    @Param('userId') userId: string,
+    @Body() body: UpdatePreferencesDto,
+  ) {
+    return this.walletsService.updatePreferences(userId, body.preference, body.bankDetails, body.metadata, body.bankAccounts);
+  }
 }

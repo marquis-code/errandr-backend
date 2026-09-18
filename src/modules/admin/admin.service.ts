@@ -142,7 +142,8 @@ export class AdminService {
           },
           totalEarned: {
             $ifNull: [ { $arrayElemAt: ['$walletInfo.totalEarned', 0] }, 0 ] 
-          }
+          },
+          wallet: { $arrayElemAt: ['$walletInfo', 0] }
         }
       },
       { $project: { password: 0, walletInfo: 0 } }
