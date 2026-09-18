@@ -4168,6 +4168,22 @@ export class OrdersService {
       }
     }
 
+    if (!itemFound && order.packs) {
+      for (const pack of order.packs) {
+        for (const item of pack.items) {
+          const subDocId = (item as any)._id?.toString();
+          const productRef = item.product?.toString();
+          if (subDocId === itemId || productRef === itemId) {
+            if (item.price !== (substituteObj as any).price) throw new BadRequestException('Substitute must be the exact same price');
+            originalItemName = item.name;
+            itemFound = true;
+            break;
+          }
+        }
+        if (itemFound) break;
+      }
+    }
+
     if (!itemFound) throw new NotFoundException('Original item not found in order');
 
     this.notificationsService.sendNotification(order.customer.toString(), {
@@ -4236,6 +4252,29 @@ export class OrdersService {
           itemFound = true;
           break;
         }
+      }
+    }
+
+        if (!itemFound && order.packs) {
+      for (const pack of order.packs) {
+        for (const item of pack.items) {
+          const subDocId = (item as any)._id?.toString();
+          const productRef = item.product?.toString();
+          if (subDocId === itemId || productRef === itemId) {
+            if (item.status === 'unavailable' || item.status === 'substituted') {
+              throw new BadRequestException('Item already handled');
+            }
+            item.status = 'substituted';
+            item.substitutedWith = {
+              product: substituteObj._id,
+              name: substituteObj.name
+            };
+            item.name = `${substituteObj.name} (Substituted for ${item.name})`;
+            itemFound = true;
+            break;
+          }
+        }
+        if (itemFound) break;
       }
     }
 
