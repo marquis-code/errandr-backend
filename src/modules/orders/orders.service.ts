@@ -4139,13 +4139,9 @@ export class OrdersService {
       const menuItemRef = itemObj.menuItem?.toString();
       if (subDocId === itemId || menuItemRef === itemId) {
         
-        const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
-        const markupPct = errandSetting?.value?.foodMarkupPercentage ?? 5;
-        const factor = 1 + (markupPct / 100);
-        
         let substitutePrice = (substituteObj as any).price;
         if (substitutePrice === undefined && (substituteObj as any).pricePerPortion !== undefined) {
-          substitutePrice = Math.ceil((substituteObj as any).pricePerPortion * factor);
+          substitutePrice = (substituteObj as any).pricePerPortion;
         }
         
         if (itemObj.price !== substitutePrice)
