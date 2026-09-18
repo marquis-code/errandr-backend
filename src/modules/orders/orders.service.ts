@@ -4114,7 +4114,8 @@ export class OrdersService {
     const substituteObj = substituteMenu || substituteProd;
     
     if (!substituteObj) throw new NotFoundException('Substitute item not found in store');
-    if ((substituteObj as any).vendor?.toString() !== order.vendor?.toString()) {
+    const subVendorId = (substituteObj as any).vendorId || (substituteObj as any).vendor;
+    if (subVendorId?.toString() !== order.vendor?.toString()) {
       throw new BadRequestException('Substitute must be from the same vendor');
     }
     substituteName = substituteObj.name;
