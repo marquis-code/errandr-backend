@@ -526,85 +526,100 @@ export class WalletsService {
         doc.on('end', () => resolve(Buffer.concat(buffers)));
 
         const brandColor = '#FF5C1A';
-        const darkGray = '#111827';
-        const lightGray = '#6b7280';
-        const borderGray = '#e5e7eb';
-        const bgGray = '#f9fafb';
+        const brandBlue = '#0D1B2A'; // A dark navy blue for text
+        const lightGray = '#9CA3AF';
+        const borderGray = '#E5E7EB';
 
-        // --- Header Section ---
-        doc.rect(0, 0, 595, 140).fill(bgGray);
-        
-        // Logo
+        // --- Logo & Top Right Element ---
         if (logoBuffer && logoBuffer.length > 0) {
-          doc.image(logoBuffer, 50, 45, { width: 140 });
+          doc.image(logoBuffer, 50, 40, { width: 140 });
         } else {
-          doc.fillColor(brandColor).fontSize(28).font('Helvetica-Bold').text('Erranders', 50, 50);
+          doc.fillColor(brandColor).fontSize(28).font('Helvetica-Bold').text('Erranders', 50, 45);
         }
 
-        // Receipt Title
-        doc.fillColor(darkGray)
-           .fontSize(32)
-           .font('Helvetica-Bold')
-           .text('RECEIPT', 0, 50, { align: 'right', width: 545 });
+        // Top right decorative slash and text
+        doc.moveTo(480, 40).lineTo(440, 90).lineWidth(4).strokeColor(brandColor).stroke();
+        doc.fillColor(brandColor).fontSize(10).font('Helvetica-Bold').text('more than logistics', 460, 80, { width: 100 });
 
-        // Receipt Date & Reference
+        // --- Title ---
+        doc.fillColor(brandBlue)
+           .fontSize(24)
+           .font('Helvetica-Bold')
+           .text('Transaction Receipt', 0, 130, { align: 'center', width: 595 });
+
+        // --- Subtitle ---
+        const generationDate = new Date().toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace(',', '');
         doc.fillColor(lightGray)
            .fontSize(10)
            .font('Helvetica')
-           .text(`Date: ${new Date((transaction as any).createdAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`, 0, 90, { align: 'right', width: 545 })
-           .text(`Reference: ${transaction.reference || transaction._id.toString()}`, 0, 105, { align: 'right', width: 545 });
+           .text(`Generated from Erranders on ${generationDate}`, 0, 160, { align: 'center', width: 595 });
 
-        // --- Divider ---
-        doc.moveTo(50, 140).lineTo(545, 140).lineWidth(2).strokeColor(brandColor).stroke();
+        // --- Helper for Rows ---
+        let currentY = 200;
+        const leftX = 80;
+        const rightX = 250;
+        
+        const drawRow = (label: string, value: string | string[], valueColor: string = brandBlue) => {
+          doc.fillColor(brandColor).fontSize(11).font('Helvetica-Bold').text(label, leftX, currentY);
+          
+          doc.fillColor(valueColor).fontSize(11).font('Helvetica');
+          if (Array.isArray(value)) {
+            value.forEach((v, index) => {
+              if (index === 0) doc.font('Helvetica-Bold'); else doc.font('Helvetica');
+              doc.text(v, rightX, currentY + (index * 15));
+            });
+            currentY += (value.length * 15) + 15;
+          } else {
+            doc.text(value, rightX, currentY, { width: 280 });
+            currentY += doc.heightOfString(value, { width: 280 }) + 15;
+          }
+          
+          doc.moveTo(leftX, currentY - 5).lineTo(515, currentY - 5).lineWidth(0.5).strokeColor(borderGray).stroke();
+          currentY += 15;
+        };
 
-        // --- Customer / User Info ---
-        doc.moveDown(4);
-        const userInfoY = 180;
+        // --- Data Extraction ---
+        const txDate = new Date((transaction as any).createdAt).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace(',', '');
+        
         const walletOwner: any = transaction.wallet && (transaction.wallet as any).owner;
         const userName = walletOwner ? `${walletOwner.firstName} ${walletOwner.lastName}` : (transaction.metadata?.userName || 'Erranders User');
-        const userEmail = walletOwner ? walletOwner.email : (transaction.metadata?.userEmail || '');
-
-        doc.fillColor(lightGray).fontSize(10).font('Helvetica-Bold').text('BILLED TO / USER:', 50, userInfoY);
-        doc.fillColor(darkGray).fontSize(14).text(userName, 50, userInfoY + 15);
-        if (userEmail) {
-          doc.fillColor(lightGray).fontSize(10).font('Helvetica').text(userEmail, 50, userInfoY + 32);
+        
+        const isDebit = transaction.type === 'debit';
+        const sender = isDebit ? userName : 'Erranders Inc.';
+        
+        let beneficiary: string | string[] = isDebit ? 'Erranders Inc.' : userName;
+        
+        // If it's a payout to a bank, show bank details
+        if (transaction.metadata?.isPayoutRequest) {
+          beneficiary = [
+            userName,
+            transaction.metadata.accountNumber || '',
+            transaction.metadata.bankCode ? `Bank Code: ${transaction.metadata.bankCode}` : ''
+          ].filter(Boolean);
         }
 
-        // Company Info
-        doc.fillColor(lightGray).fontSize(10).font('Helvetica-Bold').text('FROM:', 350, userInfoY);
-        doc.fillColor(darkGray).fontSize(14).text('Erranders Inc.', 350, userInfoY + 15);
-        doc.fillColor(lightGray).fontSize(10).font('Helvetica').text('Logistics & Delivery Platform', 350, userInfoY + 32);
-        doc.text('support@erranders.com', 350, userInfoY + 47);
-
-        // --- Main Details Table ---
-        const tableTop = 300;
-        doc.rect(50, tableTop, 495, 30).fill(brandColor);
-        doc.fillColor('#FFFFFF').fontSize(10).font('Helvetica-Bold');
-        doc.text('DESCRIPTION', 70, tableTop + 10);
-        doc.text('TYPE', 350, tableTop + 10);
-        doc.text('STATUS', 450, tableTop + 10);
-
-        doc.rect(50, tableTop + 30, 495, 50).fill('#FFFFFF').strokeColor(borderGray).lineWidth(1).stroke();
-        doc.fillColor(darkGray).fontSize(10).font('Helvetica');
-        
-        doc.text(transaction.description || 'Wallet Transaction', 70, tableTop + 45, { width: 270 });
-        doc.text(transaction.type.toUpperCase(), 350, tableTop + 45);
-        doc.text(transaction.status.toUpperCase(), 450, tableTop + 45);
-
-        // --- Amount Box ---
-        const amountY = tableTop + 120;
-        doc.rect(345, amountY, 200, 70).fill(bgGray).strokeColor(borderGray).lineWidth(1).stroke();
-        doc.fillColor(lightGray).fontSize(10).font('Helvetica-Bold').text('TOTAL AMOUNT', 360, amountY + 15);
-        
-        const amountPrefix = transaction.type === 'debit' ? '-' : '+';
-        const amountColor = transaction.type === 'debit' ? '#ef4444' : '#10b981'; // Red for debit, Green for credit
-        doc.fillColor(amountColor).fontSize(20).text(`${amountPrefix} N${transaction.amount.toLocaleString()}`, 360, amountY + 35);
+        // --- Draw Rows ---
+        drawRow('Transaction Amount', `N${transaction.amount.toLocaleString()}`);
+        drawRow('Transaction Type', transaction.type.toUpperCase());
+        drawRow('Transaction Date', txDate);
+        drawRow('Sender', sender);
+        drawRow('Beneficiary', beneficiary);
+        drawRow('Remark', transaction.description || 'Wallet Transaction');
+        drawRow('Transaction Reference', transaction.reference || transaction._id.toString());
+        drawRow('Transaction Status', transaction.status.toUpperCase(), transaction.status === TransactionStatus.COMPLETED ? brandBlue : '#ef4444');
 
         // --- Footer ---
-        doc.moveTo(50, 700).lineTo(545, 700).lineWidth(1).strokeColor(borderGray).stroke();
-        doc.fillColor(lightGray).fontSize(10).font('Helvetica').text('Thank you for using Erranders!', 50, 720, { align: 'center', width: 495 });
-        doc.text('This is an electronically generated receipt and does not require a signature.', 50, 735, { align: 'center', width: 495 });
+        currentY += 20;
+        doc.fillColor(lightGray).fontSize(9).font('Helvetica')
+           .text('If you have any questions or would like more information, please call our 24-hour Contact Centre on ', leftX, currentY, { continued: true })
+           .fillColor(brandBlue).text('0700 000 0000', { continued: true })
+           .fillColor(lightGray).text(' or send an email to ')
+           .fillColor(brandBlue).text('support@erranders.com', { underline: true });
            
+        doc.fillColor(lightGray).text('Thank you for choosing Erranders.', leftX, currentY + 30);
+        
+        doc.fillColor(borderGray).text('Logistics | Delivery | Escrow | Food', leftX, currentY + 60);
+
         doc.end();
       } catch (err) {
         reject(err);
