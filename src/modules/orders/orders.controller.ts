@@ -265,6 +265,31 @@ async getMyVendorOrders(
     return this.ordersService.acceptOrder(id, (user._id as unknown) as string);
   }
 
+  
+  @Post(':id/custom/topup/request')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Errander requests top-up for custom errand' })
+  requestCustomTopup(@Param('id') id: string, @CurrentUser() user: User, @Body() body: { amount: number }) {
+    return this.ordersService.requestCustomTopup(id, user._id.toString(), body.amount);
+  }
+
+  @Post(':id/custom/topup/pay')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Customer pays requested top-up for custom errand' })
+  payCustomTopup(@Param('id') id: string, @CurrentUser() user: User) {
+    return this.ordersService.payCustomTopup(id, user._id.toString());
+  }
+
+  @Post(':id/custom/cancel')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Errander cancels custom errand due to unavailability' })
+  cancelCustomErrand(@Param('id') id: string, @CurrentUser() user: User, @Body() body: { reason: string; photoProof: string }) {
+    return this.ordersService.cancelCustomErrand(id, user._id.toString(), body.reason, body.photoProof);
+  }
+
   @Put(':id/custom/accept')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

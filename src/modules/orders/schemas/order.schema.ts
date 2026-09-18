@@ -46,6 +46,11 @@ export enum DeliveryOption {
 
 @Schema({ timestamps: true })
 export class Order extends Document {
+  @Prop({ type: String })
+  cancellationPhotoProof: string;
+
+  @Prop({ type: Number, default: 0 })
+  pendingTopupAmount: number;
   @Prop({ required: true, unique: true })
   orderNumber: string;
 

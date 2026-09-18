@@ -20,7 +20,7 @@ export class EmailService {
   private resend: Resend | null;
   private fromEmail = '"Erranders" <notifications@erranders.org>';
   private primaryColor = '#FF5C1A';
-  private logoUrl = 'https://res.cloudinary.com/marquis/image/upload/v1784062203/logo-light_pyjwmn-removebg-preview_y3jvvg.png';
+  private logoUrl = 'https://res.cloudinary.com/dfpabtrke/image/upload/v1789756765/logo-light_viqheq.png';
 
   constructor(
     private configService: ConfigService,

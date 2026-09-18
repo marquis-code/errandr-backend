@@ -2588,6 +2588,131 @@ export class OrdersService {
     return { success: true, message: 'Order cancelled successfully', order };
   }
 
+  
+  async requestCustomTopup(orderId: string, erranderId: string, amount: number): Promise<Order> {
+    const order = await this.orderModel.findById(orderId).populate('customer');
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.type !== OrderType.CUSTOM_ERRAND) throw new BadRequestException('Not a custom errand');
+    if (order.errander?.toString() !== erranderId && order.errander?.toString() !== (await this.erranderModel.findOne({user: erranderId}))?._id.toString()) {
+      throw new BadRequestException('Only assigned errander can request top-up');
+    }
+    if (amount <= 0) throw new BadRequestException('Amount must be positive');
+
+    order.pendingTopupAmount = amount;
+    await order.save();
+
+    // Notify customer
+    const customerId = order.customer?._id || order.customer;
+    this.notificationsGateway.sendToUser(customerId.toString(), {
+      type: 'CUSTOM_ERRAND_TOPUP_REQUEST',
+      title: 'Action Required: Top-up Needed',
+      body: `Your Errander needs an extra ₦${amount.toLocaleString()} to complete your errand.`,
+      data: { orderId: order._id, amount }
+    });
+
+    return order;
+  }
+
+  async payCustomTopup(orderId: string, customerId: string): Promise<Order> {
+    const order = await this.orderModel.findById(orderId);
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.type !== OrderType.CUSTOM_ERRAND) throw new BadRequestException('Not a custom errand');
+    if ((order.customer?._id || order.customer)?.toString() !== customerId) throw new BadRequestException('Unauthorized');
+    if (!order.pendingTopupAmount || order.pendingTopupAmount <= 0) throw new BadRequestException('No top-up pending');
+
+    const amount = order.pendingTopupAmount;
+
+    // Debit Wallet
+    await this.walletsService.forceDebitWallet(
+      customerId,
+      amount,
+      `Top-up for custom errand #${order.orderNumber}`
+    );
+
+    // Update order
+    order.pendingTopupAmount = 0;
+    if (order.customDetails) {
+      order.customDetails.estimatedItemCost = (order.customDetails.estimatedItemCost || 0) + amount;
+    }
+    order.subtotal = (order.subtotal || 0) + amount;
+    order.total = (order.total || 0) + amount;
+    await order.save();
+
+    // Notify errander
+    const erranderProfile = await this.erranderModel.findById(order.errander);
+    if (erranderProfile) {
+      this.notificationsGateway.sendToUser(erranderProfile.user.toString(), {
+        type: 'CUSTOM_ERRAND_TOPUP_PAID',
+        title: 'Top-up Received',
+        body: `The customer paid the extra ₦${amount.toLocaleString()}. You can now buy the item.`,
+        data: { orderId: order._id }
+      });
+    }
+
+    return order;
+  }
+
+  async cancelCustomErrand(orderId: string, erranderId: string, reason: string, photoProof: string): Promise<Order> {
+    const order = await this.orderModel.findById(orderId).populate('customer');
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.type !== OrderType.CUSTOM_ERRAND) throw new BadRequestException('Not a custom errand');
+    if (order.errander?.toString() !== erranderId && order.errander?.toString() !== (await this.erranderModel.findOne({user: erranderId}))?._id.toString()) {
+      throw new BadRequestException('Only assigned errander can cancel');
+    }
+
+    if (!photoProof) throw new BadRequestException('Photo proof is required to cancel a custom errand');
+
+    const customerId = (order.customer?._id || order.customer)?.toString();
+    const deliveryFee = order.deliveryFee || 0;
+    const refundAmount = (order.total || 0) - deliveryFee;
+
+    // Refund Customer (Total Amount minus delivery fee)
+    if (refundAmount > 0) {
+      await this.walletsService.creditWallet(
+        customerId,
+        refundAmount,
+        `Refund: Custom errand #${order.orderNumber} cancelled (Item Unavailable). Delivery fee retained.`,
+        order._id.toString()
+      );
+    }
+
+    // Payout Errander (Delivery Fee)
+    if (deliveryFee > 0) {
+      await this.walletsService.creditWallet(
+        erranderId,
+        deliveryFee,
+        `Payout: Base fare for cancelled custom errand #${order.orderNumber}`,
+        order._id.toString()
+      );
+    }
+    
+    order.cancellationPhotoProof = photoProof;
+
+    // Mark Cancelled
+    order.status = OrderStatus.CANCELLED;
+    await order.save();
+
+    // Free errander
+    const erranderProfile = await this.erranderModel.findOne({ $or: [{ user: erranderId }, { _id: erranderId }] });
+    if (erranderProfile) {
+      if (erranderProfile.currentOrder?.toString() === orderId) {
+        (erranderProfile as any).currentOrder = null;
+        erranderProfile.status = ErranderStatus.AVAILABLE;
+        await erranderProfile.save();
+      }
+    }
+
+    // Notify customer
+    this.notificationsGateway.sendToUser(customerId, {
+      type: 'ORDER_CANCELLED',
+      title: 'Errand Cancelled',
+      body: `Your Errander cancelled the errand: ${reason}. You have been fully refunded ₦${refundAmount.toLocaleString()}.`,
+      data: { orderId: order._id }
+    });
+
+    return order;
+  }
+
   async acceptCustomErrand(orderId: string, erranderId: string): Promise<Order> {
     const order = await this.orderModel.findById(orderId);
     if (!order) throw new NotFoundException('Order not found');

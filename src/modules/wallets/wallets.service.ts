@@ -512,7 +512,7 @@ export class WalletsService {
 
     let logoBuffer: Buffer | null = null;
     try {
-      logoBuffer = await fetchImage('https://res.cloudinary.com/marquis/image/upload/v1784062203/logo-light_pyjwmn-removebg-preview_y3jvvg.png');
+      logoBuffer = await fetchImage('https://res.cloudinary.com/dfpabtrke/image/upload/v1789756765/logo-light_viqheq.png');
     } catch (e) {
       console.error('Failed to fetch logo for receipt', e);
     }
