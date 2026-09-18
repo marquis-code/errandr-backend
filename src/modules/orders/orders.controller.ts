@@ -214,10 +214,23 @@ async getMyVendorOrders(
     return this.ordersService.markItemUnavailable(id, itemId, user._id.toString());
   }
 
+  @Post(':id/substitute/request')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Rider requests to substitute an unavailable item (itemId in body)' })
+  requestItemSubstituteV2(
+    @Param('id') id: string,
+    @Body() body: { itemId: string; substituteItemId: string; itemName?: string },
+    @CurrentUser() user: User
+  ) {
+    this.logger.log(`requestItemSubstituteV2() orderId=${id} itemId=${body.itemId} substituteItemId=${body.substituteItemId} itemName=${body.itemName} user=${user._id}`);
+    return this.ordersService.requestItemSubstitute(id, body.itemId, body.substituteItemId, user._id.toString(), body.itemName);
+  }
+
   @Post(':id/items/:itemId/substitute/request')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Rider requests to substitute an unavailable item' })
+  @ApiOperation({ summary: 'Rider requests to substitute an unavailable item (legacy)' })
   requestItemSubstitute(
     @Param('id') id: string,
     @Param('itemId') itemId: string,
@@ -228,10 +241,23 @@ async getMyVendorOrders(
     return this.ordersService.requestItemSubstitute(id, itemId, substituteItemId, user._id.toString());
   }
 
+  @Post(':id/substitute/resolve')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Student accepts or declines an item substitute (itemId in body)' })
+  resolveItemSubstituteV2(
+    @Param('id') id: string,
+    @Body() body: { itemId: string; accept: boolean; substituteItemId: string; itemName?: string },
+    @CurrentUser() user: User
+  ) {
+    this.logger.log(`resolveItemSubstituteV2() orderId=${id} itemId=${body.itemId} accept=${body.accept} user=${user._id}`);
+    return this.ordersService.resolveItemSubstitute(id, body.itemId, body.accept, body.substituteItemId, user._id.toString(), body.itemName);
+  }
+
   @Post(':id/items/:itemId/substitute/resolve')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Student accepts or declines an item substitute' })
+  @ApiOperation({ summary: 'Student accepts or declines an item substitute (legacy)' })
   resolveItemSubstitute(
     @Param('id') id: string,
     @Param('itemId') itemId: string,

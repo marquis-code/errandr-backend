@@ -4086,7 +4086,7 @@ export class OrdersService {
     return order;
   }
 
-  async requestItemSubstitute(orderId: string, itemId: string, substituteItemId: string, userId: string) {
+  async requestItemSubstitute(orderId: string, itemId: string, substituteItemId: string, userId: string, itemName?: string) {
     const order = await this.orderModel.findById(orderId);
     if (!order) throw new NotFoundException('Order not found');
     if (order.errander?.toString() !== userId) throw new BadRequestException('Only errander can suggest substitute');
@@ -4107,59 +4107,62 @@ export class OrdersService {
 
     let itemFound = false;
     
-    // DEBUG: Log all item IDs in the order to understand the mismatch
-    console.log(`[SUBSTITUTE DEBUG] Looking for itemId=${itemId} in order ${orderId}`);
-    console.log(`[SUBSTITUTE DEBUG] menuItems count=${order.menuItems?.length || 0}`);
-    for (const item of order.menuItems) {
-      console.log(`[SUBSTITUTE DEBUG] menuItem: _id=${(item as any)._id} menuItem=${item.menuItem} name=${item.name}`);
-    }
-    console.log(`[SUBSTITUTE DEBUG] items count=${order.items?.length || 0}`);
-    for (const item of order.items) {
-      console.log(`[SUBSTITUTE DEBUG] item: _id=${(item as any)._id} product=${item.product} name=${item.name}`);
-    }
-
+    // Convert to plain JSON to guarantee all _id fields are accessible
     const jsonOrder = order.toJSON();
     
+    // Log everything for debugging
+    console.log(`[SUBSTITUTE] Looking for itemId=${itemId} itemName=${itemName} in order ${orderId}`);
+    console.log(`[SUBSTITUTE] menuItems: ${JSON.stringify(jsonOrder.menuItems?.map((i: any) => ({ _id: i._id, menuItem: i.menuItem, name: i.name })))}`);
+    console.log(`[SUBSTITUTE] items: ${JSON.stringify(jsonOrder.items?.map((i: any) => ({ _id: i._id, product: i.product, name: i.name })))}`);
+    console.log(`[SUBSTITUTE] packs: ${JSON.stringify(jsonOrder.packs?.map((p: any) => ({ name: p.name, items: p.items?.map((i: any) => ({ _id: i._id, product: i.product, name: i.name })) })))}`);
+
+    // Helper: check if an item matches by _id, ref, or name
+    const matches = (item: any) => {
+      if (!item) return false;
+      const id1 = item._id?.toString();
+      const id2 = item.menuItem?.toString();
+      const id3 = item.product?.toString();
+      if (id1 === itemId || id2 === itemId || id3 === itemId) return true;
+      // Name-based fallback if itemName was provided
+      if (itemName && item.name?.toLowerCase() === itemName.toLowerCase()) return true;
+      return false;
+    };
+
+    // Search menuItems
     if (!itemFound && jsonOrder.menuItems) {
-      const idx = jsonOrder.menuItems.findIndex((i: any) => i._id?.toString() === itemId || i.menuItem?.toString() === itemId);
-      if (idx !== -1) {
-        const jsonItem = jsonOrder.menuItems[idx];
-        let substitutePrice = (substituteObj as any).price;
-        if (substitutePrice === undefined && (substituteObj as any).pricePerPortion !== undefined) {
-          substitutePrice = (substituteObj as any).pricePerPortion;
-        }
-        if (jsonItem.price !== substitutePrice) throw new BadRequestException('Substitute must be the exact same price');
-        originalItemName = jsonItem.name;
+      const found = jsonOrder.menuItems.find((i: any) => matches(i));
+      if (found) {
+        originalItemName = found.name;
         itemFound = true;
       }
     }
     
+    // Search items
     if (!itemFound && jsonOrder.items) {
-      const idx = jsonOrder.items.findIndex((i: any) => i._id?.toString() === itemId || i.product?.toString() === itemId);
-      if (idx !== -1) {
-        const jsonItem = jsonOrder.items[idx];
-        if (jsonItem.price !== (substituteObj as any).price) throw new BadRequestException('Substitute must be the exact same price');
-        originalItemName = jsonItem.name;
+      const found = jsonOrder.items.find((i: any) => matches(i));
+      if (found) {
+        originalItemName = found.name;
         itemFound = true;
       }
     }
 
+    // Search packs
     if (!itemFound && jsonOrder.packs) {
-      for (let pIdx = 0; pIdx < jsonOrder.packs.length; pIdx++) {
-        const pack = jsonOrder.packs[pIdx];
+      for (const pack of jsonOrder.packs) {
         if (!pack.items) continue;
-        const idx = pack.items.findIndex((i: any) => i._id?.toString() === itemId || i.product?.toString() === itemId);
-        if (idx !== -1) {
-          const jsonItem = pack.items[idx];
-          if (jsonItem.price !== (substituteObj as any).price) throw new BadRequestException('Substitute must be the exact same price');
-          originalItemName = jsonItem.name;
+        const found = pack.items.find((i: any) => matches(i));
+        if (found) {
+          originalItemName = found.name;
           itemFound = true;
           break;
         }
       }
     }
 
-    if (!itemFound) throw new NotFoundException('Original item not found in order');
+    if (!itemFound) {
+      console.error(`[SUBSTITUTE FAILED] Could not find item. itemId=${itemId} itemName=${itemName}`);
+      throw new NotFoundException('Original item not found in order');
+    }
 
     this.notificationsService.sendNotification(order.customer.toString(), {
       title: 'Substitute Suggested 🔄',
@@ -4178,7 +4181,7 @@ export class OrdersService {
     return { success: true, message: 'Substitute request sent to student' };
   }
 
-  async resolveItemSubstitute(orderId: string, itemId: string, accept: boolean, substituteItemId: string, userId: string) {
+  async resolveItemSubstitute(orderId: string, itemId: string, accept: boolean, substituteItemId: string, userId: string, itemName?: string) {
     const order = await this.orderModel.findById(orderId);
     if (!order) throw new NotFoundException('Order not found');
     if (order.customer?.toString() !== userId) throw new BadRequestException('Only student can resolve substitute');
@@ -4198,44 +4201,44 @@ export class OrdersService {
     let itemFound = false;
     const jsonOrder = order.toJSON();
     
+    // Helper: check if an item matches by _id, ref, or name
+    const matches = (item: any) => {
+      if (!item) return false;
+      const id1 = item._id?.toString();
+      const id2 = item.menuItem?.toString();
+      const id3 = item.product?.toString();
+      if (id1 === itemId || id2 === itemId || id3 === itemId) return true;
+      if (itemName && item.name?.toLowerCase() === itemName.toLowerCase()) return true;
+      return false;
+    };
+    
     // Check menuItems
     if (!itemFound && jsonOrder.menuItems) {
-      const idx = jsonOrder.menuItems.findIndex((i: any) => i._id?.toString() === itemId || i.menuItem?.toString() === itemId);
+      const idx = jsonOrder.menuItems.findIndex((i: any) => matches(i));
       if (idx !== -1) {
         const jsonItem = jsonOrder.menuItems[idx];
         const docItem = order.menuItems[idx] as any;
-        const type = 'menuItems';
-        
         if (docItem.status === 'unavailable' || docItem.status === 'substituted') {
           throw new BadRequestException('Item already handled');
         }
         docItem.status = 'substituted';
-        docItem.substitutedWith = {
-          [type === 'menuItems' ? 'menuItem' : 'product']: substituteObj._id,
-          name: substituteObj.name
-        };
+        docItem.substitutedWith = { menuItem: substituteObj._id, name: substituteObj.name };
         docItem.name = `${substituteObj.name} (Substituted for ${jsonItem.name})`;
         itemFound = true;
-        if (itemFound) { } // Prevent unused warnings if blocks are empty
       }
     }
 
     // Check items
     if (!itemFound && jsonOrder.items) {
-      const idx = jsonOrder.items.findIndex((i: any) => i._id?.toString() === itemId || i.product?.toString() === itemId);
+      const idx = jsonOrder.items.findIndex((i: any) => matches(i));
       if (idx !== -1) {
         const jsonItem = jsonOrder.items[idx];
         const docItem = order.items[idx] as any;
-        const type = 'items';
-        
         if (docItem.status === 'unavailable' || docItem.status === 'substituted') {
           throw new BadRequestException('Item already handled');
         }
         docItem.status = 'substituted';
-        docItem.substitutedWith = {
-          [type === 'menuItems' ? 'menuItem' : 'product']: substituteObj._id,
-          name: substituteObj.name
-        };
+        docItem.substitutedWith = { product: substituteObj._id, name: substituteObj.name };
         docItem.name = `${substituteObj.name} (Substituted for ${jsonItem.name})`;
         itemFound = true;
       }
@@ -4246,20 +4249,15 @@ export class OrdersService {
       for (let pIdx = 0; pIdx < jsonOrder.packs.length; pIdx++) {
         const pack = jsonOrder.packs[pIdx];
         if (!pack.items) continue;
-        const idx = pack.items.findIndex((i: any) => i._id?.toString() === itemId || i.product?.toString() === itemId);
+        const idx = pack.items.findIndex((i: any) => matches(i));
         if (idx !== -1) {
           const jsonItem = pack.items[idx];
           const docItem = (order.packs as any)[pIdx].items[idx] as any;
-          const type = 'packs';
-          
           if (docItem.status === 'unavailable' || docItem.status === 'substituted') {
             throw new BadRequestException('Item already handled');
           }
           docItem.status = 'substituted';
-          docItem.substitutedWith = {
-            [type === 'menuItems' ? 'menuItem' : 'product']: substituteObj._id,
-            name: substituteObj.name
-          };
+          docItem.substitutedWith = { product: substituteObj._id, name: substituteObj.name };
           docItem.name = `${substituteObj.name} (Substituted for ${jsonItem.name})`;
           itemFound = true;
           break;
