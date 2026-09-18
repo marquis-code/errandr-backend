@@ -158,6 +158,7 @@ export class Order extends Document {
         name: String,
         items: [
           {
+            _id: { type: Types.ObjectId, auto: true },
             product: { type: Types.ObjectId, ref: 'Product' },
             name: String,
             price: Number,

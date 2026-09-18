@@ -4133,9 +4133,10 @@ export class OrdersService {
       console.log(`[SUBSTITUTE DEBUG] item: _id=${(item as any)._id} product=${item.product} name=${item.name}`);
     }
 
-    for (const item of order.menuItems) {
-      const subDocId = (item as any)._id?.toString();
-      const menuItemRef = item.menuItem?.toString();
+    for (const rawItem of order.menuItems) {
+      const itemObj = (rawItem as any).toObject ? (rawItem as any).toObject() : rawItem;
+      const subDocId = itemObj._id?.toString() || (rawItem as any).get?.('_id')?.toString();
+      const menuItemRef = itemObj.menuItem?.toString();
       if (subDocId === itemId || menuItemRef === itemId) {
         
         const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
@@ -4147,21 +4148,22 @@ export class OrdersService {
           substitutePrice = Math.ceil((substituteObj as any).pricePerPortion * factor);
         }
         
-        if (item.price !== substitutePrice)
+        if (itemObj.price !== substitutePrice)
  throw new BadRequestException('Substitute must be the exact same price');
-        originalItemName = item.name;
+        originalItemName = itemObj.name;
         itemFound = true;
         break;
       }
     }
     
     if (!itemFound) {
-      for (const item of order.items) {
-        const subDocId = (item as any)._id?.toString();
-        const productRef = item.product?.toString();
+      for (const rawItem of order.items) {
+        const itemObj = (rawItem as any).toObject ? (rawItem as any).toObject() : rawItem;
+        const subDocId = itemObj._id?.toString() || (rawItem as any).get?.('_id')?.toString();
+        const productRef = itemObj.product?.toString();
         if (subDocId === itemId || productRef === itemId) {
-          if (item.price !== (substituteObj as any).price) throw new BadRequestException('Substitute must be the exact same price');
-          originalItemName = item.name;
+          if (itemObj.price !== (substituteObj as any).price) throw new BadRequestException('Substitute must be the exact same price');
+          originalItemName = itemObj.name;
           itemFound = true;
           break;
         }
@@ -4170,12 +4172,13 @@ export class OrdersService {
 
     if (!itemFound && order.packs) {
       for (const pack of order.packs) {
-        for (const item of pack.items) {
-          const subDocId = (item as any)._id?.toString();
-          const productRef = item.product?.toString();
+        for (const rawItem of pack.items) {
+          const itemObj = (rawItem as any).toObject ? (rawItem as any).toObject() : rawItem;
+          const subDocId = itemObj._id?.toString() || (rawItem as any).get?.('_id')?.toString();
+          const productRef = itemObj.product?.toString();
           if (subDocId === itemId || productRef === itemId) {
-            if (item.price !== (substituteObj as any).price) throw new BadRequestException('Substitute must be the exact same price');
-            originalItemName = item.name;
+            if (itemObj.price !== (substituteObj as any).price) throw new BadRequestException('Substitute must be the exact same price');
+            originalItemName = itemObj.name;
             itemFound = true;
             break;
           }
