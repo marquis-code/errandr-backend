@@ -273,14 +273,27 @@ export class WalletsService {
     const wallet = await this.getWallet(userId);
 
     const setting = await this.systemSettingModel.findOne({ key: 'errander_minimum_payout' });
-    const minPayout = setting?.value?.amount ? Number(setting.value.amount) : 1000; // default 1000
+    let minPayout = setting?.value?.amount ? Number(setting.value.amount) : 1000; // default 1000
+    let processingFee = 0;
+
+    if (isInstant || wallet.payoutPreference === PayoutPreference.DAILY) {
+      minPayout = Math.max(minPayout, 5000); // Higher threshold for daily/instant
+      processingFee = 50; // Flat fee for daily/instant sweeps
+    } else if (wallet.payoutPreference === PayoutPreference.MONTHLY) {
+      minPayout = 100; // Lower threshold for monthly
+    }
 
     if (amount < minPayout) {
-      throw new Error(`Minimum payout amount is ₦${minPayout}`);
+      throw new Error(`Minimum payout amount for this settlement frequency is ₦${minPayout}`);
     }
 
     if (wallet.balance < amount) {
       throw new Error('Insufficient balance in wallet');
+    }
+
+    const transferAmount = amount - processingFee;
+    if (transferAmount <= 0) {
+      throw new Error('Withdrawal amount is too low to cover the processing fee');
     }
 
     const targetBankCode = selectedBankAccount?.bankCode || wallet.bankDetails?.bankCode;
@@ -293,15 +306,27 @@ export class WalletsService {
     // Generate a reference
     const reference = `WD-${uuidv4().slice(0, 8).toUpperCase()}`;
 
-    // Debit Wallet to lock funds
+    // Debit Wallet to lock full amount (transfer + fee)
     wallet.balance -= amount;
     await wallet.save();
     await this.userModel.findByIdAndUpdate(userId, { $inc: { walletBalance: -amount } });
 
-    // Log Transaction as PENDING (Queued for automated processing)
+    // Log the fee transaction if applicable
+    if (processingFee > 0) {
+      await this.transactionModel.create({
+        wallet: wallet._id,
+        amount: processingFee,
+        type: TransactionType.DEBIT,
+        status: TransactionStatus.COMPLETED,
+        description: isInstant ? 'Instant withdrawal processing fee' : 'Daily settlement processing fee',
+        reference: `FEE-${reference}`,
+      });
+    }
+
+    // Log Transaction for the net payout (Queued for automated processing)
     const transaction = await this.transactionModel.create({
       wallet: wallet._id,
-      amount,
+      amount: transferAmount,
       type: TransactionType.DEBIT,
       status: TransactionStatus.PENDING,
       description: isInstant ? `Instant withdrawal request: ${reference}` : `Withdrawal request: ${reference}`,
@@ -312,12 +337,13 @@ export class WalletsService {
         userName,
         userEmail,
         bankCode: targetBankCode, 
-        accountNumber: targetAccountNumber 
+        accountNumber: targetAccountNumber,
+        feeDeducted: processingFee
       },
     });
 
     if (userEmail) {
-      await this.emailService.sendWithdrawalRequested(userEmail, amount, reference).catch(e => console.warn(`Failed to send withdrawal requested email: ${e.message}`));
+      await this.emailService.sendWithdrawalRequested(userEmail, transferAmount, reference).catch(e => console.warn(`Failed to send withdrawal requested email: ${e.message}`));
     }
 
     if (isInstant) {

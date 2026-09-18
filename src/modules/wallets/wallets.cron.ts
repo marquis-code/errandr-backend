@@ -28,6 +28,12 @@ export class WalletsCronService {
     await this.triggerSweepsForPreference(PayoutPreference.WEEKLY);
   }
 
+  @Cron('0 23 28 * *') // 11:00 PM on the 28th of every month
+  async triggerMonthlySweeps() {
+    this.logger.log('Triggering automated monthly sweeps...');
+    await this.triggerSweepsForPreference(PayoutPreference.MONTHLY);
+  }
+
   private async triggerSweepsForPreference(preference: PayoutPreference) {
     try {
       const wallets = await this.walletModel.find({
