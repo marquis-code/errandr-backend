@@ -1,7 +1,18 @@
 const axios = require('axios');
-async function run() {
-  const res = await axios.get('http://localhost:3006/api/v1/products/all-promos');
-  const data = Array.isArray(res.data) ? res.data : (res.data.data || []);
-  console.log(JSON.stringify(data.map(p => ({name: p.name, slotsLeft: p.slotsLeft})), null, 2));
-}
-run();
+const mongoose = require('mongoose');
+const dotenv = require('dotenv');
+dotenv.config();
+
+mongoose.connect(process.env.MONGODB_URI)
+  .then(async () => {
+    const db = mongoose.connection.db;
+    const vendor = await db.collection('vendors').findOne({ storeName: /Iyabo/i });
+    if (!vendor) {
+      console.log('Vendor not found');
+      process.exit(0);
+    }
+    
+    // Login as a user to get token, or we can just mock a token or call the service directly
+    // Let's just directly call the service logic instead
+    process.exit(0);
+  });

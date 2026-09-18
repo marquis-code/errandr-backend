@@ -4122,7 +4122,18 @@ export class OrdersService {
     let itemFound = false;
     for (const item of order.menuItems) {
       if ((item as any)._id?.toString() === itemId || item.menuItem?.toString() === itemId) {
-        if (item.price !== (substituteObj as any).price) throw new BadRequestException('Substitute must be the exact same price');
+        
+        const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
+        const markupPct = errandSetting?.value?.foodMarkupPercentage ?? 5;
+        const factor = 1 + (markupPct / 100);
+        
+        let substitutePrice = (substituteObj as any).price;
+        if (substitutePrice === undefined && (substituteObj as any).pricePerPortion !== undefined) {
+          substitutePrice = Math.ceil((substituteObj as any).pricePerPortion * factor);
+        }
+        
+        if (item.price !== substitutePrice)
+ throw new BadRequestException('Substitute must be the exact same price');
         originalItemName = item.name;
         itemFound = true;
         break;
