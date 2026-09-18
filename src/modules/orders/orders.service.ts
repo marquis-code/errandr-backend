@@ -4121,8 +4121,22 @@ export class OrdersService {
     substituteName = substituteObj.name;
 
     let itemFound = false;
+    
+    // DEBUG: Log all item IDs in the order to understand the mismatch
+    console.log(`[SUBSTITUTE DEBUG] Looking for itemId=${itemId} in order ${orderId}`);
+    console.log(`[SUBSTITUTE DEBUG] menuItems count=${order.menuItems?.length || 0}`);
     for (const item of order.menuItems) {
-      if ((item as any)._id?.toString() === itemId || item.menuItem?.toString() === itemId) {
+      console.log(`[SUBSTITUTE DEBUG] menuItem: _id=${(item as any)._id} menuItem=${item.menuItem} name=${item.name}`);
+    }
+    console.log(`[SUBSTITUTE DEBUG] items count=${order.items?.length || 0}`);
+    for (const item of order.items) {
+      console.log(`[SUBSTITUTE DEBUG] item: _id=${(item as any)._id} product=${item.product} name=${item.name}`);
+    }
+
+    for (const item of order.menuItems) {
+      const subDocId = (item as any)._id?.toString();
+      const menuItemRef = item.menuItem?.toString();
+      if (subDocId === itemId || menuItemRef === itemId) {
         
         const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
         const markupPct = errandSetting?.value?.foodMarkupPercentage ?? 5;
@@ -4143,7 +4157,9 @@ export class OrdersService {
     
     if (!itemFound) {
       for (const item of order.items) {
-        if ((item as any)._id?.toString() === itemId || item.product?.toString() === itemId) {
+        const subDocId = (item as any)._id?.toString();
+        const productRef = item.product?.toString();
+        if (subDocId === itemId || productRef === itemId) {
           if (item.price !== (substituteObj as any).price) throw new BadRequestException('Substitute must be the exact same price');
           originalItemName = item.name;
           itemFound = true;
