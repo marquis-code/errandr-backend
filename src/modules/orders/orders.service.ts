@@ -4009,75 +4009,60 @@ export class OrdersService {
 
     let itemFound = false;
     let refundedAmount = 0;
+    const jsonOrder = order.toJSON();
     
-    for (const item of order.menuItems) {
-      if ((item as any)._id?.toString() === itemId || item.menuItem?.toString() === itemId) {
-        if (item.status === 'unavailable') throw new BadRequestException('Item already marked unavailable');
-        item.status = 'unavailable';
+    // Check menuItems
+    if (!itemFound && jsonOrder.menuItems) {
+      const idx = jsonOrder.menuItems.findIndex((i: any) => i._id?.toString() === itemId || i.menuItem?.toString() === itemId);
+      if (idx !== -1) {
+        const jsonItem = jsonOrder.menuItems[idx];
+        const docItem = order.menuItems[idx] as any;
+        if (docItem.status === 'unavailable') throw new BadRequestException('Item already marked unavailable');
+        docItem.status = 'unavailable';
         itemFound = true;
-        refundedAmount = item.subtotal;
-        await this.menuItemModel.findByIdAndUpdate(item.menuItem, { isAvailable: false }).catch(() => {});
-        break;
+        refundedAmount = jsonItem.subtotal;
+        await this.menuItemModel.findByIdAndUpdate(jsonItem.menuItem, { isAvailable: false }).catch(() => {});
       }
     }
-    
-    if (!itemFound) {
-      for (const item of order.items) {
-        if ((item as any)._id?.toString() === itemId || item.product?.toString() === itemId) {
-          if (item.status === 'unavailable') throw new BadRequestException('Item already marked unavailable');
-          item.status = 'unavailable';
+
+    // Check items
+    if (!itemFound && jsonOrder.items) {
+      const idx = jsonOrder.items.findIndex((i: any) => i._id?.toString() === itemId || i.product?.toString() === itemId);
+      if (idx !== -1) {
+        const jsonItem = jsonOrder.items[idx];
+        const docItem = order.items[idx] as any;
+        if (docItem.status === 'unavailable') throw new BadRequestException('Item already marked unavailable');
+        docItem.status = 'unavailable';
+        itemFound = true;
+        refundedAmount = jsonItem.subtotal;
+        await this.productModel.findByIdAndUpdate(jsonItem.product, { isAvailable: false }).catch(() => {});
+      }
+    }
+
+    // Check packs
+    if (!itemFound && jsonOrder.packs) {
+      for (let pIdx = 0; pIdx < jsonOrder.packs.length; pIdx++) {
+        const pack = jsonOrder.packs[pIdx];
+        if (!pack.items) continue;
+        const idx = pack.items.findIndex((i: any) => i._id?.toString() === itemId || i.product?.toString() === itemId);
+        if (idx !== -1) {
+          const jsonItem = pack.items[idx];
+          const docItem = (order.packs as any)[pIdx].items[idx] as any;
+          if (docItem.status === 'unavailable') throw new BadRequestException('Item already marked unavailable');
+          docItem.status = 'unavailable';
           itemFound = true;
-          refundedAmount = item.subtotal;
-          await this.productModel.findByIdAndUpdate(item.product, { isAvailable: false }).catch(() => {});
+          refundedAmount = jsonItem.subtotal;
+          await this.productModel.findByIdAndUpdate(jsonItem.product, { isAvailable: false }).catch(() => {});
           break;
         }
       }
     }
-    
-    if (!itemFound) throw new NotFoundException('Item not found in order');
 
-    order.subtotal -= refundedAmount;
-    order.total -= refundedAmount;
-    
-    if (refundedAmount > 0) {
-      // 1. Debit the vendor if they've already been paid
-      if (order.paymentStatus === 'paid' && order.vendor) {
-        const fullOrder = await this.orderModel.findById(orderId).populate('vendor');
-        if (fullOrder && fullOrder.vendor) {
-          const ownerId = (fullOrder.vendor as any).owner;
-          if (ownerId) {
-            const markupPct = fullOrder.foodMarkupPercentage || 5;
-            const vendorRefundShare = Math.round(refundedAmount / (1 + (markupPct / 100)));
-            
-            // Debit the vendor's wallet
-            await this.walletsService.debitWallet(
-              ownerId.toString(),
-              vendorRefundShare,
-              `Reversal for unavailable item in Order #${order.orderNumber}`,
-              order._id.toString()
-            ).catch(e => this.logger.error(`Failed to debit vendor ${ownerId} for ${vendorRefundShare}`, e));
-            
-            // Deduct from order vendor share
-            order.vendorShare = Math.max(0, (order.vendorShare || 0) - vendorRefundShare);
-            
-            // Deduct from platform share
-            order.platformShare = Math.max(0, (order.platformShare || 0) - (refundedAmount - vendorRefundShare));
-          }
-        }
-      }
+    if (!itemFound) throw new NotFoundException('Original item not found in order');
 
-      // 2. Refund the student
-      const customer = await this.userModel.findById(order.customer);
-      if (customer) {
-        await this.walletsService.creditWallet(
-          customer._id.toString(),
-          refundedAmount,
-          `Refund for unavailable item in Order #${order.orderNumber}`,
-          'refund',
-          order._id.toString()
-        );
-        
-        this.notificationsService.sendNotification(customer._id.toString(), {
+
+
+    this.notificationsService.sendNotification(customer._id.toString(), {
           title: 'Item Refunded 💸',
           body: `An item was out of stock. ₦${refundedAmount} has been instantly refunded to your Erranders Wallet!`,
           type: 'order_refund',
@@ -4133,53 +4118,44 @@ export class OrdersService {
       console.log(`[SUBSTITUTE DEBUG] item: _id=${(item as any)._id} product=${item.product} name=${item.name}`);
     }
 
-    for (const rawItem of order.menuItems) {
-      const itemObj = (rawItem as any).toObject ? (rawItem as any).toObject() : rawItem;
-      const subDocId = itemObj._id?.toString() || (rawItem as any).get?.('_id')?.toString();
-      const menuItemRef = itemObj.menuItem?.toString();
-      if (subDocId === itemId || menuItemRef === itemId) {
-        
+    const jsonOrder = order.toJSON();
+    
+    if (!itemFound && jsonOrder.menuItems) {
+      const idx = jsonOrder.menuItems.findIndex((i: any) => i._id?.toString() === itemId || i.menuItem?.toString() === itemId);
+      if (idx !== -1) {
+        const jsonItem = jsonOrder.menuItems[idx];
         let substitutePrice = (substituteObj as any).price;
         if (substitutePrice === undefined && (substituteObj as any).pricePerPortion !== undefined) {
           substitutePrice = (substituteObj as any).pricePerPortion;
         }
-        
-        if (itemObj.price !== substitutePrice)
- throw new BadRequestException('Substitute must be the exact same price');
-        originalItemName = itemObj.name;
+        if (jsonItem.price !== substitutePrice) throw new BadRequestException('Substitute must be the exact same price');
+        originalItemName = jsonItem.name;
         itemFound = true;
-        break;
       }
     }
     
-    if (!itemFound) {
-      for (const rawItem of order.items) {
-        const itemObj = (rawItem as any).toObject ? (rawItem as any).toObject() : rawItem;
-        const subDocId = itemObj._id?.toString() || (rawItem as any).get?.('_id')?.toString();
-        const productRef = itemObj.product?.toString();
-        if (subDocId === itemId || productRef === itemId) {
-          if (itemObj.price !== (substituteObj as any).price) throw new BadRequestException('Substitute must be the exact same price');
-          originalItemName = itemObj.name;
-          itemFound = true;
-          break;
-        }
+    if (!itemFound && jsonOrder.items) {
+      const idx = jsonOrder.items.findIndex((i: any) => i._id?.toString() === itemId || i.product?.toString() === itemId);
+      if (idx !== -1) {
+        const jsonItem = jsonOrder.items[idx];
+        if (jsonItem.price !== (substituteObj as any).price) throw new BadRequestException('Substitute must be the exact same price');
+        originalItemName = jsonItem.name;
+        itemFound = true;
       }
     }
 
-    if (!itemFound && order.packs) {
-      for (const pack of order.packs) {
-        for (const rawItem of pack.items) {
-          const itemObj = (rawItem as any).toObject ? (rawItem as any).toObject() : rawItem;
-          const subDocId = itemObj._id?.toString() || (rawItem as any).get?.('_id')?.toString();
-          const productRef = itemObj.product?.toString();
-          if (subDocId === itemId || productRef === itemId) {
-            if (itemObj.price !== (substituteObj as any).price) throw new BadRequestException('Substitute must be the exact same price');
-            originalItemName = itemObj.name;
-            itemFound = true;
-            break;
-          }
+    if (!itemFound && jsonOrder.packs) {
+      for (let pIdx = 0; pIdx < jsonOrder.packs.length; pIdx++) {
+        const pack = jsonOrder.packs[pIdx];
+        if (!pack.items) continue;
+        const idx = pack.items.findIndex((i: any) => i._id?.toString() === itemId || i.product?.toString() === itemId);
+        if (idx !== -1) {
+          const jsonItem = pack.items[idx];
+          if (jsonItem.price !== (substituteObj as any).price) throw new BadRequestException('Substitute must be the exact same price');
+          originalItemName = jsonItem.name;
+          itemFound = true;
+          break;
         }
-        if (itemFound) break;
       }
     }
 
@@ -4220,60 +4196,74 @@ export class OrdersService {
     if (!substituteObj) throw new NotFoundException('Substitute item not found');
 
     let itemFound = false;
-    for (const item of order.menuItems) {
-      if ((item as any)._id?.toString() === itemId || item.menuItem?.toString() === itemId) {
-        if (item.status === 'unavailable' || item.status === 'substituted') {
+    const jsonOrder = order.toJSON();
+    
+    // Check menuItems
+    if (!itemFound && jsonOrder.menuItems) {
+      const idx = jsonOrder.menuItems.findIndex((i: any) => i._id?.toString() === itemId || i.menuItem?.toString() === itemId);
+      if (idx !== -1) {
+        const jsonItem = jsonOrder.menuItems[idx];
+        const docItem = order.menuItems[idx] as any;
+        const type = 'menuItems';
+        
+        if (docItem.status === 'unavailable' || docItem.status === 'substituted') {
           throw new BadRequestException('Item already handled');
         }
-        item.status = 'substituted';
-        item.substitutedWith = {
-          menuItem: substituteObj._id,
+        docItem.status = 'substituted';
+        docItem.substitutedWith = {
+          [type === 'menuItems' ? 'menuItem' : 'product']: substituteObj._id,
           name: substituteObj.name
         };
-        item.name = `${substituteObj.name} (Substituted for ${item.name})`;
+        docItem.name = `${substituteObj.name} (Substituted for ${jsonItem.name})`;
         itemFound = true;
-        break;
-      }
-    }
-    
-    if (!itemFound) {
-      for (const item of order.items) {
-        if ((item as any)._id?.toString() === itemId || item.product?.toString() === itemId) {
-          if (item.status === 'unavailable' || item.status === 'substituted') {
-            throw new BadRequestException('Item already handled');
-          }
-          item.status = 'substituted';
-          item.substitutedWith = {
-            product: substituteObj._id as any,
-            name: substituteObj.name
-          };
-          item.name = `${substituteObj.name} (Substituted for ${item.name})`;
-          itemFound = true;
-          break;
-        }
+        if (itemFound) { } // Prevent unused warnings if blocks are empty
       }
     }
 
-        if (!itemFound && order.packs) {
-      for (const pack of order.packs) {
-        for (const item of pack.items) {
-          const subDocId = (item as any)._id?.toString();
-          const productRef = item.product?.toString();
-          if (subDocId === itemId || productRef === itemId) {
-            if (item.status === 'unavailable' || item.status === 'substituted') {
-              throw new BadRequestException('Item already handled');
-            }
-            item.status = 'substituted';
-            item.substitutedWith = {
-              product: substituteObj._id,
-              name: substituteObj.name
-            };
-            item.name = `${substituteObj.name} (Substituted for ${item.name})`;
-            itemFound = true;
-            break;
-          }
+    // Check items
+    if (!itemFound && jsonOrder.items) {
+      const idx = jsonOrder.items.findIndex((i: any) => i._id?.toString() === itemId || i.product?.toString() === itemId);
+      if (idx !== -1) {
+        const jsonItem = jsonOrder.items[idx];
+        const docItem = order.items[idx] as any;
+        const type = 'items';
+        
+        if (docItem.status === 'unavailable' || docItem.status === 'substituted') {
+          throw new BadRequestException('Item already handled');
         }
-        if (itemFound) break;
+        docItem.status = 'substituted';
+        docItem.substitutedWith = {
+          [type === 'menuItems' ? 'menuItem' : 'product']: substituteObj._id,
+          name: substituteObj.name
+        };
+        docItem.name = `${substituteObj.name} (Substituted for ${jsonItem.name})`;
+        itemFound = true;
+      }
+    }
+
+    // Check packs
+    if (!itemFound && jsonOrder.packs) {
+      for (let pIdx = 0; pIdx < jsonOrder.packs.length; pIdx++) {
+        const pack = jsonOrder.packs[pIdx];
+        if (!pack.items) continue;
+        const idx = pack.items.findIndex((i: any) => i._id?.toString() === itemId || i.product?.toString() === itemId);
+        if (idx !== -1) {
+          const jsonItem = pack.items[idx];
+          const docItem = (order.packs as any)[pIdx].items[idx] as any;
+          const type = 'packs';
+          
+          if (docItem.status === 'unavailable' || docItem.status === 'substituted') {
+            throw new BadRequestException('Item already handled');
+          }
+          docItem.status = 'substituted';
+          docItem.substitutedWith = {
+            [type === 'menuItems' ? 'menuItem' : 'product']: substituteObj._id,
+            name: substituteObj.name
+          };
+          docItem.name = `${substituteObj.name} (Substituted for ${jsonItem.name})`;
+          itemFound = true;
+          break;
+        }
       }
     }
 
