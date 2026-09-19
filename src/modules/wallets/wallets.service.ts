@@ -403,25 +403,53 @@ export class WalletsService {
     const payoutAmount = isInstant ? Math.round(transaction.amount * 0.99) : transaction.amount;
 
     // Initiate Paystack Transfer
-    const transfer = await this.paystackService.initiateTransfer({
-      amount: payoutAmount,
-      reference: transaction.reference as string,
-      recipient: recipient.recipient_code,
-      reason: `Withdrawal from Erranders Wallet - ${transaction.reference}`,
-    });
+    try {
+      const transfer = await this.paystackService.initiateTransfer({
+        amount: payoutAmount,
+        reference: transaction.reference as string,
+        recipient: recipient.recipient_code,
+        reason: `Withdrawal from Erranders Wallet - ${transaction.reference}`,
+      });
 
-    if ((transfer as any).status !== true && (transfer as any).status !== 'success') {
-      throw new Error((transfer as any).message || 'Transfer initiation failed via Paystack');
+      if ((transfer as any).status !== true && (transfer as any).status !== 'success') {
+        throw new Error((transfer as any).message || 'Transfer initiation failed via Paystack');
+      }
+
+      transaction.metadata = { 
+        ...transaction.metadata, 
+        paystackReference: transaction.reference, 
+        transferCode: (transfer as any).data?.transfer_code,
+        approvedAt: new Date().toISOString()
+      };
+      // Keep it pending until webhook confirms, but update metadata
+      await transaction.save();
+    } catch (error: any) {
+      // If Paystack rejects it immediately (e.g. insufficient funds in business wallet)
+      transaction.status = TransactionStatus.FAILED;
+      transaction.description = `Payout failed: ${error.message}`;
+      await transaction.save();
+
+      // Refund the wallet balance
+      const wallet = transaction.wallet as any;
+      if (wallet) {
+        wallet.balance += transaction.amount;
+        await wallet.save();
+        
+        // Refund the user's walletBalance
+        if (wallet.owner) {
+          await this.userModel.findByIdAndUpdate(wallet.owner._id || wallet.owner, { 
+            $inc: { walletBalance: transaction.amount } 
+          });
+        }
+      }
+
+      const ownerEmail = transaction.metadata?.userEmail || (wallet.owner && wallet.owner.email);
+      if (ownerEmail) {
+        await this.emailService.sendPayoutFailed(ownerEmail, transaction.amount, error.message || 'Processing failed').catch(e => console.warn(`Failed to send payout failed email: ${e.message}`));
+      }
+
+      throw error;
     }
-
-    transaction.metadata = { 
-      ...transaction.metadata, 
-      paystackReference: transaction.reference, 
-      transferCode: (transfer as any).data?.transfer_code,
-      approvedAt: new Date().toISOString()
-    };
-    // Keep it pending until webhook confirms, but update metadata
-    await transaction.save();
   }
 
   async markPayoutAsPaid(transactionId: string): Promise<void> {
@@ -675,6 +703,13 @@ export class WalletsService {
     if (wallet) {
       wallet.balance += transaction.amount;
       await wallet.save();
+
+      // Refund the user's walletBalance
+      if (wallet.owner) {
+        await this.userModel.findByIdAndUpdate(wallet.owner, { 
+          $inc: { walletBalance: transaction.amount } 
+        });
+      }
     }
 
     const owner = (transaction.wallet as any)?.owner;

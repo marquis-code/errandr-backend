@@ -1,0 +1,63 @@
+--- src/modules/orders/orders.service.ts
++++ src/modules/orders/orders.service.ts
+@@ -4193,42 +4193,51 @@
+ 
+     // Search menuItems
+     if (!itemFound && jsonOrder.menuItems) {
+       const idx = jsonOrder.menuItems.findIndex((i: any) => matches(i));
+       if (idx !== -1) {
+         const found = jsonOrder.menuItems[idx];
+         originalItemName = found.name;
+-        (order.menuItems[idx] as any).status = 'pending_substitute';
+-        (order.menuItems[idx] as any).substituteOptions = substituteOptions;
++        const menuItems = [...order.menuItems];
++        (menuItems[idx] as any).status = 'pending_substitute';
++        (menuItems[idx] as any).substituteOptions = substituteOptions;
++        order.set('menuItems', menuItems);
+         itemFound = true;
+       }
+     }
+     
+     // Search items
+     if (!itemFound && jsonOrder.items) {
+       const idx = jsonOrder.items.findIndex((i: any) => matches(i));
+       if (idx !== -1) {
+         const found = jsonOrder.items[idx];
+         originalItemName = found.name;
+-        (order.items[idx] as any).status = 'pending_substitute';
+-        (order.items[idx] as any).substituteOptions = substituteOptions;
++        const items = [...order.items];
++        (items[idx] as any).status = 'pending_substitute';
++        (items[idx] as any).substituteOptions = substituteOptions;
++        order.set('items', items);
+         itemFound = true;
+       }
+     }
+ 
+     // Search packs
+-    if (!itemFound && jsonOrder.packs) {
++    // ALWAYS search packs even if itemFound because items can be duplicated across order.items and order.packs
++    if (jsonOrder.packs) {
++      const packs = [...order.packs];
+       for (let pIdx = 0; pIdx < jsonOrder.packs.length; pIdx++) {
+-        const pack = jsonOrder.packs[pIdx];
++        const pack = packs[pIdx];
+         if (!pack.items) continue;
+         const idx = pack.items.findIndex((i: any) => matches(i));
+         if (idx !== -1) {
+           const found = pack.items[idx];
+           originalItemName = found.name;
+-          ((order.packs as any)[pIdx].items as any)[idx].status = 'pending_substitute';
+-          ((order.packs as any)[pIdx].items as any)[idx].substituteOptions = substituteOptions;
++          
++          pack.items = [...pack.items];
++          pack.items[idx].status = 'pending_substitute';
++          pack.items[idx].substituteOptions = substituteOptions;
+           itemFound = true;
+-          break;
+         }
+       }
++      order.set('packs', packs);
+     }
+ 
+     if (!itemFound) {

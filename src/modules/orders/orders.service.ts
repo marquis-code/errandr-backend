@@ -4300,11 +4300,12 @@ export class OrdersService {
       return false;
     };
     
-    if (!itemFound && jsonOrder.menuItems) {
+    if (jsonOrder.menuItems) {
       const idx = jsonOrder.menuItems.findIndex((i: any) => matches(i));
       if (idx !== -1) {
         const jsonItem = jsonOrder.menuItems[idx];
-        const docItem = order.menuItems[idx] as any;
+        const menuItems = [...order.menuItems];
+        const docItem = menuItems[idx] as any;
         if (docItem.status === 'unavailable' || docItem.status === 'substituted') {
           throw new BadRequestException('Item already handled');
         }
@@ -4316,15 +4317,18 @@ export class OrdersService {
         docItem.name = substituteObj.name;
         docItem.price = (substituteObj as any).price || (substituteObj as any).pricePerPortion;
         docItem.subtotal = ((substituteObj as any).price || (substituteObj as any).pricePerPortion) * quantity;
+        
+        order.set('menuItems', menuItems);
         itemFound = true;
       }
     }
 
-    if (!itemFound && jsonOrder.items) {
+    if (jsonOrder.items) {
       const idx = jsonOrder.items.findIndex((i: any) => matches(i));
       if (idx !== -1) {
         const jsonItem = jsonOrder.items[idx];
-        const docItem = order.items[idx] as any;
+        const items = [...order.items];
+        const docItem = items[idx] as any;
         if (docItem.status === 'unavailable' || docItem.status === 'substituted') {
           throw new BadRequestException('Item already handled');
         }
@@ -4336,18 +4340,23 @@ export class OrdersService {
         docItem.name = substituteObj.name;
         docItem.price = (substituteObj as any).price || (substituteObj as any).pricePerPortion;
         docItem.subtotal = ((substituteObj as any).price || (substituteObj as any).pricePerPortion) * quantity;
+        
+        order.set('items', items);
         itemFound = true;
       }
     }
 
-    if (!itemFound && jsonOrder.packs) {
+    if (jsonOrder.packs) {
+      const packs = [...order.packs];
       for (let pIdx = 0; pIdx < jsonOrder.packs.length; pIdx++) {
         const pack = jsonOrder.packs[pIdx];
         if (!pack.items) continue;
         const idx = pack.items.findIndex((i: any) => matches(i));
         if (idx !== -1) {
           const jsonItem = pack.items[idx];
-          const docItem = (order.packs as any)[pIdx].items[idx] as any;
+          packs[pIdx].items = [...packs[pIdx].items];
+          const docItem = packs[pIdx].items[idx] as any;
+          
           if (docItem.status === 'unavailable' || docItem.status === 'substituted') {
             throw new BadRequestException('Item already handled');
           }
@@ -4361,14 +4370,15 @@ export class OrdersService {
           docItem.subtotal = ((substituteObj as any).price || (substituteObj as any).pricePerPortion) * quantity;
           
           // Re-calculate pack subtotal
-          const packItems = (order.packs as any)[pIdx].items;
-          const newPackSubtotal = packItems.reduce((acc, curr) => acc + (curr.subtotal || 0), 0);
-          (order.packs as any)[pIdx].subtotal = newPackSubtotal;
+          const packItems = packs[pIdx].items;
+          const newPackSubtotal = packItems.reduce((acc: any, curr: any) => acc + (curr.subtotal || 0), 0);
+          (packs[pIdx] as any).subtotal = newPackSubtotal;
           
           itemFound = true;
-          break;
+          break; // Stop searching this pack, but keep going for other packs
         }
       }
+      order.set('packs', packs);
     }
 
     if (!itemFound) throw new NotFoundException('Original item not found in order');
