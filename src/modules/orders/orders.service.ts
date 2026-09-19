@@ -4191,29 +4191,36 @@ export class OrdersService {
 
     // Search menuItems
     if (!itemFound && jsonOrder.menuItems) {
-      const found = jsonOrder.menuItems.find((i: any) => matches(i));
-      if (found) {
+      const idx = jsonOrder.menuItems.findIndex((i: any) => matches(i));
+      if (idx !== -1) {
+        const found = jsonOrder.menuItems[idx];
         originalItemName = found.name;
+        (order.menuItems[idx] as any).status = 'pending_substitute';
         itemFound = true;
       }
     }
     
     // Search items
     if (!itemFound && jsonOrder.items) {
-      const found = jsonOrder.items.find((i: any) => matches(i));
-      if (found) {
+      const idx = jsonOrder.items.findIndex((i: any) => matches(i));
+      if (idx !== -1) {
+        const found = jsonOrder.items[idx];
         originalItemName = found.name;
+        (order.items[idx] as any).status = 'pending_substitute';
         itemFound = true;
       }
     }
 
     // Search packs
     if (!itemFound && jsonOrder.packs) {
-      for (const pack of jsonOrder.packs) {
+      for (let pIdx = 0; pIdx < jsonOrder.packs.length; pIdx++) {
+        const pack = jsonOrder.packs[pIdx];
         if (!pack.items) continue;
-        const found = pack.items.find((i: any) => matches(i));
-        if (found) {
+        const idx = pack.items.findIndex((i: any) => matches(i));
+        if (idx !== -1) {
+          const found = pack.items[idx];
           originalItemName = found.name;
+          ((order.packs as any)[pIdx].items as any)[idx].status = 'pending_substitute';
           itemFound = true;
           break;
         }
@@ -4224,6 +4231,8 @@ export class OrdersService {
       console.error(`[SUBSTITUTE FAILED] Could not find item. itemId=${itemId} itemName=${itemName}`);
       throw new NotFoundException('Original item not found in order');
     }
+
+    await order.save();
 
     const multiOptionText = substituteOptions.length > 1 ? `or ${substituteOptions.length - 1} other options ` : '';
 

@@ -130,7 +130,7 @@ export class Order extends Document {
           },
         ],
         subtotal: Number,
-        status: { type: String, enum: ['active', 'unavailable', 'substituted'], default: 'active' },
+        status: { type: String, enum: ['active', 'unavailable', 'substituted', 'pending_substitute'], default: 'active' },
         substitutedWith: {
           product: { type: Types.ObjectId, ref: 'Product' },
           name: String,
@@ -149,7 +149,7 @@ export class Order extends Document {
     quantity: number;
     customizations: { name: string; selected: string; price: number }[];
     subtotal: number;
-    status?: 'active' | 'unavailable' | 'substituted';
+    status?: 'active' | 'unavailable' | 'substituted' | 'pending_substitute';
     substitutedWith?: { product: Types.ObjectId; name: string; originalName?: string; note?: string };
   }[];
 
@@ -174,7 +174,7 @@ export class Order extends Document {
                 price: Number,
               },
             ],
-            status: { type: String, enum: ['active', 'unavailable', 'substituted'], default: 'active' },
+            status: { type: String, enum: ['active', 'unavailable', 'substituted', 'pending_substitute'], default: 'active' },
             substitutedWith: {
               product: { type: Types.ObjectId, ref: 'Product' },
               name: String,
@@ -197,7 +197,7 @@ export class Order extends Document {
       image: string;
       quantity: number;
       subtotal: number;
-      status?: 'active' | 'unavailable' | 'substituted';
+      status?: 'active' | 'unavailable' | 'substituted' | 'pending_substitute';
       substitutedWith?: { product: Types.ObjectId; name: string; originalName?: string; note?: string };
       customizations?: { name: string; selected: string; price: number }[];
     }[];
@@ -232,7 +232,7 @@ export class Order extends Document {
           price: Number,
         },
         subtotal: Number,
-        status: { type: String, enum: ['active', 'unavailable', 'substituted'], default: 'active' },
+        status: { type: String, enum: ['active', 'unavailable', 'substituted', 'pending_substitute'], default: 'active' },
         substitutedWith: {
           menuItem: { type: Types.ObjectId, ref: 'MenuItem' },
           name: String,
@@ -260,7 +260,7 @@ export class Order extends Document {
     }[];
     selectedPack?: { name: string; price: number };
     subtotal: number;
-    status?: 'active' | 'unavailable' | 'substituted';
+    status?: 'active' | 'unavailable' | 'substituted' | 'pending_substitute';
     substitutedWith?: { menuItem: Types.ObjectId; name: string; originalName?: string; note?: string };
   }[];
 
