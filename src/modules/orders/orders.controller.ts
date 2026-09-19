@@ -220,11 +220,11 @@ async getMyVendorOrders(
   @ApiOperation({ summary: 'Rider requests to substitute an unavailable item (itemId in body)' })
   requestItemSubstituteV2(
     @Param('id') id: string,
-    @Body() body: { itemId: string; substituteItemId: string; itemName?: string },
+    @Body() body: { itemId: string; substituteItemId?: string; substituteItemIds?: string[]; itemName?: string },
     @CurrentUser() user: User
   ) {
-    this.logger.log(`requestItemSubstituteV2() orderId=${id} itemId=${body.itemId} substituteItemId=${body.substituteItemId} itemName=${body.itemName} user=${user._id}`);
-    return this.ordersService.requestItemSubstitute(id, body.itemId, body.substituteItemId, user._id.toString(), body.itemName);
+    this.logger.log(`requestItemSubstituteV2() orderId=${id} itemId=${body.itemId} substituteItemIds=${body.substituteItemIds?.join(',')} substituteItemId=${body.substituteItemId} itemName=${body.itemName} user=${user._id}`);
+    return this.ordersService.requestItemSubstitute(id, body.itemId, body.substituteItemId || '', user._id.toString(), body.itemName, body.substituteItemIds);
   }
 
   @Post(':id/items/:itemId/substitute/request')

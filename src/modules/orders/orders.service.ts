@@ -1,5 +1,5 @@
 import {
-  Injectable, NotFoundException, BadRequestException, Inject, forwardRef, Logger, ForbiddenException, InternalServerErrorException
+  Injectable, NotFoundException, BadRequestException, Inject, forwardRef, Logger, ForbiddenException, InternalServerErrorException, HttpException
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -4131,24 +4131,38 @@ export class OrdersService {
     return order;
   }
 
-  async requestItemSubstitute(orderId: string, itemId: string, substituteItemId: string, userId: string, itemName?: string) {
+  async requestItemSubstitute(orderId: string, itemId: string, substituteItemId: string, userId: string, itemName?: string, substituteItemIds?: string[]) {
     const order = await this.orderModel.findById(orderId);
     if (!order) throw new NotFoundException('Order not found');
     if (order.errander?.toString() !== userId) throw new BadRequestException('Only errander can suggest substitute');
 
     let originalItemName = '';
-    let substituteName = '';
     
-    const substituteMenu = await this.menuItemModel.findById(substituteItemId);
-    const substituteProd = await this.productModel.findById(substituteItemId);
-    const substituteObj = substituteMenu || substituteProd;
+    // Normalize to an array of IDs
+    const idsToFetch = substituteItemIds?.length ? substituteItemIds : (substituteItemId ? [substituteItemId] : []);
+    if (idsToFetch.length === 0) throw new BadRequestException('At least one substitute item must be provided');
+
+    const substituteOptions: any[] = [];
     
-    if (!substituteObj) throw new NotFoundException('Substitute item not found in store');
-    const subVendorId = (substituteObj as any).vendorId || (substituteObj as any).vendor;
-    if (subVendorId?.toString() !== order.vendor?.toString()) {
-      throw new BadRequestException('Substitute must be from the same vendor');
+    for (const sId of idsToFetch) {
+      const substituteMenu = await this.menuItemModel.findById(sId);
+      const substituteProd = await this.productModel.findById(sId);
+      const substituteObj = substituteMenu || substituteProd;
+      
+      if (!substituteObj) throw new NotFoundException(`Substitute item ${sId} not found in store`);
+      const subVendorId = (substituteObj as any).vendorId || (substituteObj as any).vendor;
+      if (subVendorId?.toString() !== order.vendor?.toString()) {
+        throw new BadRequestException('Substitute must be from the same vendor');
+      }
+      substituteOptions.push({
+        _id: substituteObj._id.toString(),
+        name: substituteObj.name,
+        price: (substituteObj as any).price,
+        image: substituteObj.image
+      });
     }
-    substituteName = substituteObj.name;
+    // Let's keep a primary name for the push notification title
+    const primarySubstituteName = substituteOptions[0].name;
 
     let itemFound = false;
     
@@ -4209,18 +4223,20 @@ export class OrdersService {
       throw new NotFoundException('Original item not found in order');
     }
 
+    const multiOptionText = substituteOptions.length > 1 ? `or ${substituteOptions.length - 1} other options ` : '';
+
     this.notificationsService.sendNotification(order.customer.toString(), {
       title: 'Substitute Suggested 🔄',
-      body: `${originalItemName} is out of stock. Your Errander suggested ${substituteName} instead. Please review!`,
+      body: `${originalItemName} is out of stock. Your Errander suggested ${primarySubstituteName} ${multiOptionText}instead. Please review!`,
       type: 'substitute_request',
-      data: { orderId: order._id.toString(), itemId, substituteItemId }
+      data: { orderId: order._id.toString(), itemId, substituteItemId: idsToFetch[0] }
     }).catch(() => {});
     
     this.notificationsGateway.sendToUser(order.customer.toString(), {
       type: 'SUBSTITUTE_REQUEST',
       title: 'Review Substitute',
-      body: `${originalItemName} is unavailable. Accept ${substituteName} instead?`,
-      data: { orderId: order._id, itemId, substituteItemId, originalItemName, substituteName }
+      body: `${originalItemName} is unavailable. Accept ${primarySubstituteName} ${multiOptionText}instead?`,
+      data: { orderId: order._id, itemId, substituteItemId: idsToFetch[0], substituteItemIds: idsToFetch, substituteOptions, originalItemName, substituteName: primarySubstituteName }
     });
 
     return { success: true, message: 'Substitute request sent to student' };
@@ -4244,9 +4260,10 @@ export class OrdersService {
     if (!substituteObj) throw new NotFoundException('Substitute item not found');
 
     let itemFound = false;
+    let originalItemPrice = 0;
+    let quantity = 1;
     const jsonOrder = order.toJSON();
     
-    // Helper: check if an item matches by _id, ref, or name
     const matches = (item: any) => {
       if (!item) return false;
       const id1 = item._id?.toString();
@@ -4257,7 +4274,6 @@ export class OrdersService {
       return false;
     };
     
-    // Check menuItems
     if (!itemFound && jsonOrder.menuItems) {
       const idx = jsonOrder.menuItems.findIndex((i: any) => matches(i));
       if (idx !== -1) {
@@ -4266,14 +4282,18 @@ export class OrdersService {
         if (docItem.status === 'unavailable' || docItem.status === 'substituted') {
           throw new BadRequestException('Item already handled');
         }
+        originalItemPrice = jsonItem.price || 0;
+        quantity = jsonItem.quantity || 1;
+        
         docItem.status = 'substituted';
         docItem.substitutedWith = { menuItem: substituteObj._id, name: substituteObj.name };
         docItem.name = `${substituteObj.name} (Substituted for ${jsonItem.name})`;
+        docItem.price = (substituteObj as any).price;
+        docItem.subtotal = (substituteObj as any).price * quantity;
         itemFound = true;
       }
     }
 
-    // Check items
     if (!itemFound && jsonOrder.items) {
       const idx = jsonOrder.items.findIndex((i: any) => matches(i));
       if (idx !== -1) {
@@ -4282,14 +4302,18 @@ export class OrdersService {
         if (docItem.status === 'unavailable' || docItem.status === 'substituted') {
           throw new BadRequestException('Item already handled');
         }
+        originalItemPrice = jsonItem.price || 0;
+        quantity = jsonItem.quantity || 1;
+        
         docItem.status = 'substituted';
         docItem.substitutedWith = { product: substituteObj._id, name: substituteObj.name };
         docItem.name = `${substituteObj.name} (Substituted for ${jsonItem.name})`;
+        docItem.price = (substituteObj as any).price;
+        docItem.subtotal = (substituteObj as any).price * quantity;
         itemFound = true;
       }
     }
 
-    // Check packs
     if (!itemFound && jsonOrder.packs) {
       for (let pIdx = 0; pIdx < jsonOrder.packs.length; pIdx++) {
         const pack = jsonOrder.packs[pIdx];
@@ -4301,9 +4325,20 @@ export class OrdersService {
           if (docItem.status === 'unavailable' || docItem.status === 'substituted') {
             throw new BadRequestException('Item already handled');
           }
+          originalItemPrice = jsonItem.price || 0;
+          quantity = jsonItem.quantity || 1;
+          
           docItem.status = 'substituted';
           docItem.substitutedWith = { product: substituteObj._id, name: substituteObj.name };
           docItem.name = `${substituteObj.name} (Substituted for ${jsonItem.name})`;
+          docItem.price = (substituteObj as any).price;
+          docItem.subtotal = (substituteObj as any).price * quantity;
+          
+          // Re-calculate pack subtotal
+          const packItems = (order.packs as any)[pIdx].items;
+          const newPackSubtotal = packItems.reduce((acc, curr) => acc + (curr.subtotal || 0), 0);
+          (order.packs as any)[pIdx].subtotal = newPackSubtotal;
+          
           itemFound = true;
           break;
         }
@@ -4311,6 +4346,77 @@ export class OrdersService {
     }
 
     if (!itemFound) throw new NotFoundException('Original item not found in order');
+
+    const originalSubtotal = originalItemPrice * quantity;
+    const newSubtotal = (substituteObj as any).price * quantity;
+    const priceDiff = newSubtotal - originalSubtotal;
+
+    // Handle Financial Implications
+    if (priceDiff > 0) {
+      // Must charge extra
+      const wallet = await this.walletsService.getWallet(order.customer.toString());
+      if (!wallet || wallet.balance < priceDiff) {
+        throw new HttpException('PaymentRequired: Insufficient wallet balance to cover the substitute difference.', 402);
+      }
+      // Debit student
+      await this.walletsService.debitWallet(
+        order.customer.toString(),
+        priceDiff,
+        `Extra charge for substitute item: ${substituteObj.name}`,
+        order._id.toString()
+      );
+    } else if (priceDiff < 0) {
+      // Refund difference
+      const refundAmount = Math.abs(priceDiff);
+      await this.walletsService.creditWallet(
+        order.customer.toString(),
+        refundAmount,
+        `Refund for cheaper substitute item: ${substituteObj.name}`,
+        'refund',
+        order._id.toString()
+      );
+    }
+
+    // Update order totals
+    if (priceDiff !== 0) {
+      order.subtotal += priceDiff;
+      order.total += priceDiff;
+      
+      // Update vendor share if already paid
+      if (order.vendor) {
+        const fullOrder = await this.orderModel.findById(orderId).populate('vendor');
+        if (fullOrder && fullOrder.vendor) {
+          const ownerId = (fullOrder.vendor as any).owner;
+          if (ownerId) {
+            const markupPct = fullOrder.foodMarkupPercentage || 5;
+            const vendorDiffShare = Math.round(priceDiff / (1 + (markupPct / 100)));
+            order.vendorShare = Math.max(0, (order.vendorShare || 0) + vendorDiffShare);
+            order.platformShare = Math.max(0, (order.platformShare || 0) + (priceDiff - vendorDiffShare));
+            
+            if (order.paymentStatus === 'paid') {
+              if (priceDiff > 0) {
+                // Credit vendor the extra
+                await this.walletsService.creditWallet(
+                  ownerId.toString(),
+                  vendorDiffShare,
+                  `Additional payment for substitute in Order #${order.orderNumber}`,
+                  'credit',
+                  order._id.toString()
+                ).catch(() => {});
+              } else {
+                // Debit vendor the refund
+                await this.walletsService.debitWallet(
+                  ownerId.toString(),
+                  Math.abs(vendorDiffShare),
+                  `Reversal for cheaper substitute in Order #${order.orderNumber}`,
+                  order._id.toString()
+                ).catch(() => {});
+              }
+            }
+          }
+        }
+      }
+    }
 
     await order.save();
 
