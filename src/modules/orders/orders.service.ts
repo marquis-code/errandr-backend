@@ -4157,7 +4157,7 @@ export class OrdersService {
       substituteOptions.push({
         _id: substituteObj._id.toString(),
         name: substituteObj.name,
-        price: (substituteObj as any).price,
+        price: (substituteObj as any).price || (substituteObj as any).pricePerPortion,
         image: substituteObj.image
       });
     }
@@ -4288,8 +4288,8 @@ export class OrdersService {
         docItem.status = 'substituted';
         docItem.substitutedWith = { menuItem: substituteObj._id, name: substituteObj.name };
         docItem.name = `${substituteObj.name} (Substituted for ${jsonItem.name})`;
-        docItem.price = (substituteObj as any).price;
-        docItem.subtotal = (substituteObj as any).price * quantity;
+        docItem.price = (substituteObj as any).price || (substituteObj as any).pricePerPortion;
+        docItem.subtotal = ((substituteObj as any).price || (substituteObj as any).pricePerPortion) * quantity;
         itemFound = true;
       }
     }
@@ -4308,8 +4308,8 @@ export class OrdersService {
         docItem.status = 'substituted';
         docItem.substitutedWith = { product: substituteObj._id, name: substituteObj.name };
         docItem.name = `${substituteObj.name} (Substituted for ${jsonItem.name})`;
-        docItem.price = (substituteObj as any).price;
-        docItem.subtotal = (substituteObj as any).price * quantity;
+        docItem.price = (substituteObj as any).price || (substituteObj as any).pricePerPortion;
+        docItem.subtotal = ((substituteObj as any).price || (substituteObj as any).pricePerPortion) * quantity;
         itemFound = true;
       }
     }
@@ -4331,8 +4331,8 @@ export class OrdersService {
           docItem.status = 'substituted';
           docItem.substitutedWith = { product: substituteObj._id, name: substituteObj.name };
           docItem.name = `${substituteObj.name} (Substituted for ${jsonItem.name})`;
-          docItem.price = (substituteObj as any).price;
-          docItem.subtotal = (substituteObj as any).price * quantity;
+          docItem.price = (substituteObj as any).price || (substituteObj as any).pricePerPortion;
+          docItem.subtotal = ((substituteObj as any).price || (substituteObj as any).pricePerPortion) * quantity;
           
           // Re-calculate pack subtotal
           const packItems = (order.packs as any)[pIdx].items;
@@ -4348,7 +4348,7 @@ export class OrdersService {
     if (!itemFound) throw new NotFoundException('Original item not found in order');
 
     const originalSubtotal = originalItemPrice * quantity;
-    const newSubtotal = (substituteObj as any).price * quantity;
+    const newSubtotal = ((substituteObj as any).price || (substituteObj as any).pricePerPortion) * quantity;
     const priceDiff = newSubtotal - originalSubtotal;
 
     // Handle Financial Implications
