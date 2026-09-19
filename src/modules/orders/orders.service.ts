@@ -4103,8 +4103,8 @@ export class OrdersService {
           customer._id.toString(),
           refundedAmount,
           `Refund for unavailable item in Order #${order.orderNumber}`,
-          'refund',
-          order._id.toString()
+          order._id.toString(),
+          `refund_item_${itemId}_${Date.now()}`
         );
         
         this.notificationsService.sendNotification(customer._id.toString(), {
@@ -4372,8 +4372,8 @@ export class OrdersService {
         order.customer.toString(),
         refundAmount,
         `Refund for cheaper substitute item: ${substituteObj.name}`,
-        'refund',
-        order._id.toString()
+        order._id.toString(),
+        `refund_sub_${itemId}_${Date.now()}`
       );
     }
 
@@ -4400,8 +4400,8 @@ export class OrdersService {
                   ownerId.toString(),
                   vendorDiffShare,
                   `Additional payment for substitute in Order #${order.orderNumber}`,
-                  'credit',
-                  order._id.toString()
+                  order._id.toString(),
+                  `credit_sub_${itemId}_${Date.now()}`
                 ).catch(() => {});
               } else {
                 // Debit vendor the refund
