@@ -133,7 +133,9 @@ export class Order extends Document {
         status: { type: String, enum: ['active', 'unavailable', 'substituted'], default: 'active' },
         substitutedWith: {
           product: { type: Types.ObjectId, ref: 'Product' },
-          name: String
+          name: String,
+          originalName: String,
+          note: String
         }
       },
     ],
@@ -148,7 +150,7 @@ export class Order extends Document {
     customizations: { name: string; selected: string; price: number }[];
     subtotal: number;
     status?: 'active' | 'unavailable' | 'substituted';
-    substitutedWith?: { product: Types.ObjectId; name: string };
+    substitutedWith?: { product: Types.ObjectId; name: string; originalName?: string; note?: string };
   }[];
 
   @Prop({
@@ -224,7 +226,9 @@ export class Order extends Document {
         status: { type: String, enum: ['active', 'unavailable', 'substituted'], default: 'active' },
         substitutedWith: {
           menuItem: { type: Types.ObjectId, ref: 'MenuItem' },
-          name: String
+          name: String,
+          originalName: String,
+          note: String
         }
       },
     ],
@@ -248,7 +252,7 @@ export class Order extends Document {
     selectedPack?: { name: string; price: number };
     subtotal: number;
     status?: 'active' | 'unavailable' | 'substituted';
-    substitutedWith?: { menuItem: Types.ObjectId; name: string };
+    substitutedWith?: { menuItem: Types.ObjectId; name: string; originalName?: string; note?: string };
   }[];
 
   @Prop({ required: true })

@@ -247,11 +247,11 @@ async getMyVendorOrders(
   @ApiOperation({ summary: 'Student accepts or declines an item substitute (itemId in body)' })
   resolveItemSubstituteV2(
     @Param('id') id: string,
-    @Body() body: { itemId: string; accept: boolean; substituteItemId: string; itemName?: string },
+    @Body() body: { itemId: string; accept: boolean; substituteItemId: string; itemName?: string; note?: string },
     @CurrentUser() user: User
   ) {
     this.logger.log(`resolveItemSubstituteV2() orderId=${id} itemId=${body.itemId} accept=${body.accept} user=${user._id}`);
-    return this.ordersService.resolveItemSubstitute(id, body.itemId, body.accept, body.substituteItemId, user._id.toString(), body.itemName);
+    return this.ordersService.resolveItemSubstitute(id, body.itemId, body.accept, body.substituteItemId, user._id.toString(), body.itemName, body.note);
   }
 
   @Post(':id/items/:itemId/substitute/resolve')
@@ -263,10 +263,11 @@ async getMyVendorOrders(
     @Param('itemId') itemId: string,
     @Body('accept') accept: boolean,
     @Body('substituteItemId') substituteItemId: string,
+    @Body('note') note: string,
     @CurrentUser() user: User
   ) {
-    this.logger.log(`resolveItemSubstitute() id=${id} itemId=${itemId} accept=${accept} user=${user._id}`);
-    return this.ordersService.resolveItemSubstitute(id, itemId, accept, substituteItemId, user._id.toString());
+    this.logger.log(`resolveItemSubstitute() orderId=${id} itemId=${itemId} accept=${accept} user=${user._id}`);
+    return this.ordersService.resolveItemSubstitute(id, itemId, accept, substituteItemId, user._id.toString(), undefined, note);
   }
 
   @Put(':id/status')

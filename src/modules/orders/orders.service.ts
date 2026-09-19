@@ -4244,7 +4244,7 @@ export class OrdersService {
     return { success: true, message: 'Substitute request sent to student' };
   }
 
-  async resolveItemSubstitute(orderId: string, itemId: string, accept: boolean, substituteItemId: string, userId: string, itemName?: string) {
+  async resolveItemSubstitute(orderId: string, itemId: string, accept: boolean, substituteItemId: string, userId: string, itemName?: string, note?: string) {
     const order = await this.orderModel.findById(orderId);
     if (!order) throw new NotFoundException('Order not found');
     if (order.customer?.toString() !== userId) throw new BadRequestException('Only student can resolve substitute');
@@ -4288,8 +4288,8 @@ export class OrdersService {
         quantity = jsonItem.quantity || 1;
         
         docItem.status = 'substituted';
-        docItem.substitutedWith = { menuItem: substituteObj._id, name: substituteObj.name };
-        docItem.name = `${substituteObj.name} (Substituted for ${jsonItem.name})`;
+        docItem.substitutedWith = { menuItem: substituteObj._id, name: substituteObj.name, originalName: jsonItem.name, note: note || '' };
+        docItem.name = substituteObj.name;
         docItem.price = (substituteObj as any).price || (substituteObj as any).pricePerPortion;
         docItem.subtotal = ((substituteObj as any).price || (substituteObj as any).pricePerPortion) * quantity;
         itemFound = true;
@@ -4308,8 +4308,8 @@ export class OrdersService {
         quantity = jsonItem.quantity || 1;
         
         docItem.status = 'substituted';
-        docItem.substitutedWith = { product: substituteObj._id, name: substituteObj.name };
-        docItem.name = `${substituteObj.name} (Substituted for ${jsonItem.name})`;
+        docItem.substitutedWith = { product: substituteObj._id, name: substituteObj.name, originalName: jsonItem.name, note: note || '' };
+        docItem.name = substituteObj.name;
         docItem.price = (substituteObj as any).price || (substituteObj as any).pricePerPortion;
         docItem.subtotal = ((substituteObj as any).price || (substituteObj as any).pricePerPortion) * quantity;
         itemFound = true;
@@ -4331,8 +4331,8 @@ export class OrdersService {
           quantity = jsonItem.quantity || 1;
           
           docItem.status = 'substituted';
-          docItem.substitutedWith = { product: substituteObj._id, name: substituteObj.name };
-          docItem.name = `${substituteObj.name} (Substituted for ${jsonItem.name})`;
+          docItem.substitutedWith = { product: substituteObj._id, name: substituteObj.name, originalName: jsonItem.name, note: note || '' };
+          docItem.name = substituteObj.name;
           docItem.price = (substituteObj as any).price || (substituteObj as any).pricePerPortion;
           docItem.subtotal = ((substituteObj as any).price || (substituteObj as any).pricePerPortion) * quantity;
           
