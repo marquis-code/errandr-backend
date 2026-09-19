@@ -2808,12 +2808,14 @@ export class OrdersService {
     // Auto-payout vendor since payment is confirmed (moved to completeOrder)
 
     // Disburse custom errand item cost to the assigned errander
+    // NOTE: Do NOT set itemCostDisbursementStatus to 'transferred' here.
+    // It stays 'pending' until the errander explicitly pays the vendor
+    // via the dispatch app's "Pay Vendor Now" flow (transferToVendor).
     if (order.type === OrderType.CUSTOM_ERRAND && order.errander) {
       const itemCost = (order.customDetails?.estimatedItemCost || 0) + (order.customDetails?.itemCostBuffer || 0);
       if (itemCost > 0) {
-        // Replaced with in-app vendor payout transfer
-        order.itemCostDisbursementStatus = 'transferred';
         order.itemCostTransferReference = `ITEM-${order.orderNumber}`;
+        // itemCostDisbursementStatus remains 'pending' — set during order creation
         await order.save();
       }
     }
