@@ -3925,7 +3925,7 @@ export class OrdersService {
     const transferRef = `VENDOR-${order.orderNumber}-${uuidv4().slice(0, 6).toUpperCase()}`;
 
     // Store items photo and actual item cost
-    if (itemsPhoto) {
+    if (itemsPhoto && typeof itemsPhoto === 'string') {
       order.itemsPhoto = itemsPhoto;
     }
     order.actualItemCost = transferAmount; // Automatically reconcile since the errander transferred exactly this amount
