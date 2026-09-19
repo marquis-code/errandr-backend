@@ -4010,10 +4010,16 @@ export class OrdersService {
     let itemFound = false;
     let refundedAmount = 0;
     const jsonOrder = order.toJSON();
+
+    // Helper: match by _id or ref
+    const matchItem = (item: any) => {
+      if (!item) return false;
+      return item._id?.toString() === itemId || item.menuItem?.toString() === itemId || item.product?.toString() === itemId;
+    };
     
     // Check menuItems
     if (!itemFound && jsonOrder.menuItems) {
-      const idx = jsonOrder.menuItems.findIndex((i: any) => i._id?.toString() === itemId || i.menuItem?.toString() === itemId);
+      const idx = jsonOrder.menuItems.findIndex((i: any) => matchItem(i));
       if (idx !== -1) {
         const jsonItem = jsonOrder.menuItems[idx];
         const docItem = order.menuItems[idx] as any;
@@ -4024,10 +4030,10 @@ export class OrdersService {
         await this.menuItemModel.findByIdAndUpdate(jsonItem.menuItem, { isAvailable: false }).catch(() => {});
       }
     }
-
+    
     // Check items
     if (!itemFound && jsonOrder.items) {
-      const idx = jsonOrder.items.findIndex((i: any) => i._id?.toString() === itemId || i.product?.toString() === itemId);
+      const idx = jsonOrder.items.findIndex((i: any) => matchItem(i));
       if (idx !== -1) {
         const jsonItem = jsonOrder.items[idx];
         const docItem = order.items[idx] as any;
@@ -4044,7 +4050,7 @@ export class OrdersService {
       for (let pIdx = 0; pIdx < jsonOrder.packs.length; pIdx++) {
         const pack = jsonOrder.packs[pIdx];
         if (!pack.items) continue;
-        const idx = pack.items.findIndex((i: any) => i._id?.toString() === itemId || i.product?.toString() === itemId);
+        const idx = pack.items.findIndex((i: any) => matchItem(i));
         if (idx !== -1) {
           const jsonItem = pack.items[idx];
           const docItem = (order.packs as any)[pIdx].items[idx] as any;
@@ -4057,12 +4063,51 @@ export class OrdersService {
         }
       }
     }
+    
+    if (!itemFound) throw new NotFoundException('Item not found in order');
 
-    if (!itemFound) throw new NotFoundException('Original item not found in order');
+    order.subtotal -= refundedAmount;
+    order.total -= refundedAmount;
+    
+    if (refundedAmount > 0) {
+      // 1. Debit the vendor if they've already been paid
+      if (order.paymentStatus === 'paid' && order.vendor) {
+        const fullOrder = await this.orderModel.findById(orderId).populate('vendor');
+        if (fullOrder && fullOrder.vendor) {
+          const ownerId = (fullOrder.vendor as any).owner;
+          if (ownerId) {
+            const markupPct = fullOrder.foodMarkupPercentage || 5;
+            const vendorRefundShare = Math.round(refundedAmount / (1 + (markupPct / 100)));
+            
+            // Debit the vendor's wallet
+            await this.walletsService.debitWallet(
+              ownerId.toString(),
+              vendorRefundShare,
+              `Reversal for unavailable item in Order #${order.orderNumber}`,
+              order._id.toString()
+            ).catch(e => this.logger.error(`Failed to debit vendor ${ownerId} for ${vendorRefundShare}`, e));
+            
+            // Deduct from order vendor share
+            order.vendorShare = Math.max(0, (order.vendorShare || 0) - vendorRefundShare);
+            
+            // Deduct from platform share
+            order.platformShare = Math.max(0, (order.platformShare || 0) - (refundedAmount - vendorRefundShare));
+          }
+        }
+      }
 
-
-
-    this.notificationsService.sendNotification(customer._id.toString(), {
+      // 2. Refund the student
+      const customer = await this.userModel.findById(order.customer);
+      if (customer) {
+        await this.walletsService.creditWallet(
+          customer._id.toString(),
+          refundedAmount,
+          `Refund for unavailable item in Order #${order.orderNumber}`,
+          'refund',
+          order._id.toString()
+        );
+        
+        this.notificationsService.sendNotification(customer._id.toString(), {
           title: 'Item Refunded 💸',
           body: `An item was out of stock. ₦${refundedAmount} has been instantly refunded to your Erranders Wallet!`,
           type: 'order_refund',
