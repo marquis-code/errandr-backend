@@ -4086,8 +4086,7 @@ export class OrdersService {
             await this.walletsService.debitWallet(
               ownerId.toString(),
               vendorRefundShare,
-              `Reversal for unavailable item in Order #${order.orderNumber}`,
-              order._id.toString()
+              `Reversal for unavailable item in Order #${order.orderNumber}`
             ).catch(e => this.logger.error(`Failed to debit vendor ${ownerId} for ${vendorRefundShare}`, e));
             
             // Deduct from order vendor share
@@ -4365,8 +4364,7 @@ export class OrdersService {
       await this.walletsService.debitWallet(
         order.customer.toString(),
         priceDiff,
-        `Extra charge for substitute item: ${substituteObj.name}`,
-        order._id.toString()
+        `Extra charge for substitute item: ${substituteObj.name}`
       );
     } else if (priceDiff < 0) {
       // Refund difference
@@ -4411,8 +4409,7 @@ export class OrdersService {
                 await this.walletsService.debitWallet(
                   ownerId.toString(),
                   Math.abs(vendorDiffShare),
-                  `Reversal for cheaper substitute in Order #${order.orderNumber}`,
-                  order._id.toString()
+                  `Reversal for cheaper substitute in Order #${order.orderNumber}`
                 ).catch(() => {});
               }
             }

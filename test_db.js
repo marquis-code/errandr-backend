@@ -1,26 +1,17 @@
 const mongoose = require('mongoose');
-const dotenv = require('dotenv');
-dotenv.config();
+require('dotenv').config();
 
-mongoose.connect(process.env.MONGODB_URI)
-  .then(async () => {
-    const db = mongoose.connection.db;
-    const vendor = await db.collection('vendors').findOne({ storeName: /Iyabo/i });
-    if (!vendor) {
-      console.log('Vendor not found');
-      process.exit(0);
-    }
-    console.log('Vendor ID:', vendor._id);
-    
-    const items = await db.collection('menuitems').find({ vendorId: vendor._id }).toArray();
-    console.log('Items for vendor:', items.length);
-    items.forEach(i => {
-      console.log(`- ${i.name}: pricePerPortion=${i.pricePerPortion}, price=${i.price}`);
-    });
-    
-    // Also check what markup factor is applied
-    const settings = await db.collection('settings').findOne({});
-    console.log('Settings:', settings);
-    
-    process.exit(0);
-  });
+async function run() {
+  await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/erranders');
+  const db = mongoose.connection;
+  const MenuItem = db.collection('menuitems');
+  const item = await MenuItem.findOne({ _id: new mongoose.Types.ObjectId("6a6134adc5efa13af6cb82cf") });
+  console.log("MenuItem:", item);
+
+  const Product = db.collection('products');
+  const prod = await Product.findOne({ _id: new mongoose.Types.ObjectId("6a6134adc5efa13af6cb82cf") });
+  console.log("Product:", prod);
+
+  process.exit(0);
+}
+run();
