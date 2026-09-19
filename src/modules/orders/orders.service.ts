@@ -4001,9 +4001,12 @@ export class OrdersService {
 
   
   async markItemUnavailable(orderId: string, itemId: string, userId: string) {
-    const order = await this.orderModel.findById(orderId);
+    const order = await this.orderModel.findById(orderId).populate('vendor');
     if (!order) throw new NotFoundException('Order not found');
-    if (order.errander?.toString() !== userId && order.customer?.toString() !== userId) {
+    
+    const isVendorOwner = order.vendor && (order.vendor as any).owner?.toString() === userId;
+
+    if (order.errander?.toString() !== userId && order.customer?.toString() !== userId && !isVendorOwner) {
       throw new BadRequestException('Unauthorized');
     }
 
