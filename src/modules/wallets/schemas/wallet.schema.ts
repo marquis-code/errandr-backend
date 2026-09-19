@@ -6,6 +6,7 @@ export type WalletDocument = Wallet & Document;
 
 export enum PayoutPreference {
   INSTANT = 'instant',
+  MANUAL = 'manual',
   DAILY = 'daily',
   WEEKLY = 'weekly',
   MONTHLY = 'monthly',
@@ -22,7 +23,7 @@ export class Wallet {
   @Prop({ default: 0 })
   totalEarned: number;
 
-  @Prop({ type: String, enum: PayoutPreference, default: PayoutPreference.WEEKLY })
+  @Prop({ type: String, enum: PayoutPreference, default: PayoutPreference.MANUAL })
   payoutPreference: PayoutPreference;
 
   @Prop({ type: String, required: false })
