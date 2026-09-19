@@ -234,11 +234,11 @@ async getMyVendorOrders(
   requestItemSubstitute(
     @Param('id') id: string,
     @Param('itemId') itemId: string,
-    @Body('substituteItemId') substituteItemId: string,
+    @Body() body: { substituteItemId?: string; substituteItemIds?: string[]; itemName?: string },
     @CurrentUser() user: User
   ) {
-    this.logger.log(`requestItemSubstitute() id=${id} itemId=${itemId} substitute=${substituteItemId} user=${user._id}`);
-    return this.ordersService.requestItemSubstitute(id, itemId, substituteItemId, user._id.toString());
+    this.logger.log(`requestItemSubstitute() id=${id} itemId=${itemId} substitute=${body.substituteItemId} substituteItemIds=${body.substituteItemIds?.join(',')} user=${user._id}`);
+    return this.ordersService.requestItemSubstitute(id, itemId, body.substituteItemId || '', user._id.toString(), body.itemName, body.substituteItemIds);
   }
 
   @Post(':id/substitute/resolve')
