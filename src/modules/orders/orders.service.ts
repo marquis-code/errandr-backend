@@ -4198,6 +4198,7 @@ export class OrdersService {
         const found = jsonOrder.menuItems[idx];
         originalItemName = found.name;
         (order.menuItems[idx] as any).status = 'pending_substitute';
+        (order.menuItems[idx] as any).substituteOptions = substituteOptions;
         itemFound = true;
       }
     }
@@ -4209,6 +4210,7 @@ export class OrdersService {
         const found = jsonOrder.items[idx];
         originalItemName = found.name;
         (order.items[idx] as any).status = 'pending_substitute';
+        (order.items[idx] as any).substituteOptions = substituteOptions;
         itemFound = true;
       }
     }
@@ -4223,6 +4225,7 @@ export class OrdersService {
           const found = pack.items[idx];
           originalItemName = found.name;
           ((order.packs as any)[pIdx].items as any)[idx].status = 'pending_substitute';
+          ((order.packs as any)[pIdx].items as any)[idx].substituteOptions = substituteOptions;
           itemFound = true;
           break;
         }

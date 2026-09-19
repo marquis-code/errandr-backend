@@ -136,7 +136,8 @@ export class Order extends Document {
           name: String,
           originalName: String,
           note: String
-        }
+        },
+        substituteOptions: { type: [Schema.Types.Mixed], default: undefined }
       },
     ],
     default: [],
@@ -151,6 +152,7 @@ export class Order extends Document {
     subtotal: number;
     status?: 'active' | 'unavailable' | 'substituted' | 'pending_substitute';
     substitutedWith?: { product: Types.ObjectId; name: string; originalName?: string; note?: string };
+    substituteOptions?: any[];
   }[];
 
   @Prop({
@@ -180,7 +182,8 @@ export class Order extends Document {
               name: String,
               originalName: String,
               note: String
-            }
+            },
+            substituteOptions: { type: [Schema.Types.Mixed], default: undefined }
           },
         ],
       },
@@ -199,6 +202,7 @@ export class Order extends Document {
       subtotal: number;
       status?: 'active' | 'unavailable' | 'substituted' | 'pending_substitute';
       substitutedWith?: { product: Types.ObjectId; name: string; originalName?: string; note?: string };
+      substituteOptions?: any[];
       customizations?: { name: string; selected: string; price: number }[];
     }[];
   }[];
