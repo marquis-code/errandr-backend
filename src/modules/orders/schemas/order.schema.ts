@@ -174,6 +174,13 @@ export class Order extends Document {
                 price: Number,
               },
             ],
+            status: { type: String, enum: ['active', 'unavailable', 'substituted'], default: 'active' },
+            substitutedWith: {
+              product: { type: Types.ObjectId, ref: 'Product' },
+              name: String,
+              originalName: String,
+              note: String
+            }
           },
         ],
       },
@@ -190,6 +197,8 @@ export class Order extends Document {
       image: string;
       quantity: number;
       subtotal: number;
+      status?: 'active' | 'unavailable' | 'substituted';
+      substitutedWith?: { product: Types.ObjectId; name: string; originalName?: string; note?: string };
       customizations?: { name: string; selected: string; price: number }[];
     }[];
   }[];
