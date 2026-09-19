@@ -4237,6 +4237,9 @@ export class OrdersService {
       throw new NotFoundException('Original item not found in order');
     }
 
+    order.markModified('menuItems');
+    order.markModified('items');
+    order.markModified('packs');
     await order.save();
 
     const multiOptionText = substituteOptions.length > 1 ? `or ${substituteOptions.length - 1} other options ` : '';
