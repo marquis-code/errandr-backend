@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import mongoose, { Document, Types } from 'mongoose';
 
 export enum OrderStatus {
   SCHEDULED = 'scheduled',
@@ -137,7 +137,7 @@ export class Order extends Document {
           originalName: String,
           note: String
         },
-        substituteOptions: { type: [Schema.Types.Mixed], default: undefined }
+        substituteOptions: { type: [mongoose.Schema.Types.Mixed], default: undefined }
       },
     ],
     default: [],
@@ -183,7 +183,7 @@ export class Order extends Document {
               originalName: String,
               note: String
             },
-            substituteOptions: { type: [Schema.Types.Mixed], default: undefined }
+            substituteOptions: { type: [mongoose.Schema.Types.Mixed], default: undefined }
           },
         ],
       },
