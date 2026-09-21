@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { User, UserRole } from '../users/schemas/user.schema';
@@ -210,7 +210,7 @@ export class RewardsService {
     const user = await this.userModel.findById(userId);
     if (!user) throw new NotFoundException('User not found');
     
-    if (user.points < points) throw new Error('Insufficient points');
+    if ((user.points || 0) < points) throw new BadRequestException('Insufficient points');
 
     // Mock logic for airtime conversion (1 point = 1 Naira for simplicity)
     const amount = points; 
@@ -229,8 +229,8 @@ export class RewardsService {
     if (!user) throw new NotFoundException('User not found');
     
     // Logic: 100 points = N100 discount (1:1 ratio) to encourage ecosystem spending
-    if (user.points < points) throw new Error('Insufficient points');
-    if (points < 100) throw new Error('Minimum redemption is 100 points');
+    if ((user.points || 0) < points) throw new BadRequestException('Insufficient points');
+    if (points < 100) throw new BadRequestException('Minimum redemption is 100 points');
 
     const discountValue = points; // 1:1 ratio
     const code = `REDEEM-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
@@ -254,7 +254,7 @@ export class RewardsService {
     if (!user) throw new NotFoundException('User not found');
     
     const cost = 750; // Reduced cost for students to achieve faster
-    if (user.points < cost) throw new Error(`Insufficient points. Need ${cost} points.`);
+    if ((user.points || 0) < cost) throw new BadRequestException(`Insufficient points. Need ${cost} points.`);
 
     const code = `FREE-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
@@ -276,10 +276,10 @@ export class RewardsService {
     const user = await this.userModel.findById(userId);
     if (!user) throw new NotFoundException('User not found');
     
-    if (user.isPro) throw new Error('You are already a Pro user!');
+    if (user.isPro) throw new BadRequestException('You are already a Pro user!');
 
     const cost = 5000; // Cost for Pro status
-    if (user.points < cost) throw new Error(`Insufficient points. Need ${cost} points for Pro status.`);
+    if ((user.points || 0) < cost) throw new BadRequestException(`Insufficient points. Need ${cost} points for Pro status.`);
 
     user.isPro = true;
     user.points -= cost;
@@ -293,8 +293,8 @@ export class RewardsService {
     if (!user) throw new NotFoundException('User not found');
     
     // Minimum 500 points to redeem to wallet
-    if (user.points < points) throw new Error('Insufficient points');
-    if (points < 500) throw new Error('Minimum redemption is 500 points');
+    if ((user.points || 0) < points) throw new BadRequestException('Insufficient points');
+    if (points < 500) throw new BadRequestException('Minimum redemption is 500 points');
 
     // 1:0.5 conversion rate to discourage cash out compared to ecosystem discounts
     const cashValue = Math.floor(points / 2);
