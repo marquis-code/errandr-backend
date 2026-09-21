@@ -377,4 +377,37 @@ export class SettingsController {
     await setting.save();
     return setting.value;
   }
+
+  @Get('platform-status/public')
+  @ApiOperation({ summary: 'Get global platform closed status for frontends' })
+  async getPlatformStatusPublic() {
+    let setting = await this.settingModel.findOne({ key: 'platform_status' }).exec();
+    if (!setting) {
+      setting = await this.settingModel.create({
+        key: 'platform_status',
+        value: {
+          isClosed: false,
+        },
+      });
+    }
+    return setting.value;
+  }
+
+  @Put('platform-status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update global platform closed status (admin only)' })
+  async updatePlatformStatus(@Body() body: { isClosed: boolean }) {
+    let setting = await this.settingModel.findOne({ key: 'platform_status' }).exec();
+    if (!setting) {
+      setting = new this.settingModel({ key: 'platform_status' });
+    }
+    setting.value = {
+      isClosed: body.isClosed ?? false,
+    };
+    setting.markModified('value');
+    await setting.save();
+    return setting.value;
+  }
 }
