@@ -127,6 +127,7 @@ export class AuthService {
     }
 
     const userRole = (role as UserRole) || UserRole.STUDENT;
+    let isNewUser = false;
 
     // First try finding by firebaseUid + role
     let user = await this.userModel.findOne({ firebaseUid, role: userRole });
@@ -144,6 +145,7 @@ export class AuthService {
           await user.save();
         } else {
           // Create new user with the specified role
+          isNewUser = true;
           const nameParts = (name || '').split(' ');
           user = await this.userModel.create({
             firstName: nameParts[0] || 'User',
@@ -167,6 +169,7 @@ export class AuthService {
           user.firebaseUid = firebaseUid;
           await user.save();
         } else {
+          isNewUser = true;
           const nameParts = (name || '').split(' ');
           user = await this.userModel.create({
             firstName: nameParts[0] || 'User',
@@ -190,6 +193,7 @@ export class AuthService {
       user: this.sanitizeUser(user),
       token,
       refreshToken,
+      isNewUser,
     };
   }
 

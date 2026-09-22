@@ -611,6 +611,24 @@ export class AdminService {
         }));
       }
 
+      if (Array.isArray(updateData.packs)) {
+        updateData.packs = updateData.packs.map((p: any) => {
+          const { _id, ...rest } = p;
+          return rest;
+        });
+      }
+
+      if (Array.isArray(updateData.payoutAccounts)) {
+        updateData.payoutAccounts = updateData.payoutAccounts.map((pa: any) => {
+          const { _id, ...rest } = pa;
+          return rest;
+        });
+      }
+
+      if (updateData.location && typeof updateData.location === 'object') {
+          delete updateData.location._id;
+      }
+
       // Strip empty string values for enum fields to prevent validation errors
       if (updateData.status === '') delete updateData.status;
       if (updateData.businessType === '') delete updateData.businessType;
