@@ -565,26 +565,80 @@ export class AdminService {
   }
 
   async updateVendor(id: string, payload: any) {
-    const updateData = { ...payload };
-    if (updateData.owner && typeof updateData.owner === 'object') {
-      const vendor = await this.vendorModel.findById(id);
-      if (vendor && vendor.owner) {
-        // safely extract the ObjectId
-        const ownerId = (vendor.owner as any)._id 
-          ? (vendor.owner as any)._id.toString() 
-          : vendor.owner.toString();
-        await this.userModel.findByIdAndUpdate(ownerId, { $set: updateData.owner });
-      }
-      // Delete owner so it doesn't try to update the Vendor's owner reference with an object
-      delete updateData.owner;
-    }
+    try {
+      const updateData = { ...payload };
 
-    return this.vendorModel.findByIdAndUpdate(
-      id,
-      { $set: updateData },
-      { new: true }
-    ).populate('owner');
+      // Remove fields that should never be in $set
+      delete updateData._id;
+      delete updateData.__v;
+      delete updateData.createdAt;
+      delete updateData.updatedAt;
+
+      // Handle owner update separately — owner is a ref (ObjectId), not an embedded doc
+      if (updateData.owner && typeof updateData.owner === 'object') {
+        try {
+          const vendor = await this.vendorModel.findById(id);
+          if (vendor && vendor.owner) {
+            const ownerId = (vendor.owner as any)._id
+              ? (vendor.owner as any)._id.toString()
+              : vendor.owner.toString();
+            
+            // Only update with valid owner fields
+            const ownerUpdate: any = {};
+            if (updateData.owner.firstName) ownerUpdate.firstName = updateData.owner.firstName;
+            if (updateData.owner.lastName) ownerUpdate.lastName = updateData.owner.lastName;
+            if (updateData.owner.email) ownerUpdate.email = updateData.owner.email;
+            if (updateData.owner.phone) ownerUpdate.phone = updateData.owner.phone;
+
+            if (Object.keys(ownerUpdate).length > 0) {
+              await this.userModel.findByIdAndUpdate(ownerId, { $set: ownerUpdate });
+            }
+          }
+        } catch (ownerErr) {
+          console.error('Failed to update vendor owner:', ownerErr);
+          // Continue with vendor update even if owner update fails
+        }
+        delete updateData.owner;
+      }
+
+      // Sanitize businessHours — strip _id from sub-documents to prevent CastError
+      if (Array.isArray(updateData.businessHours)) {
+        updateData.businessHours = updateData.businessHours.map((bh: any) => ({
+          day: bh.day,
+          open: bh.open || '00:00',
+          close: bh.close || '23:59',
+          isClosed: !!bh.isClosed,
+        }));
+      }
+
+      // Strip empty string values for enum fields to prevent validation errors
+      if (updateData.status === '') delete updateData.status;
+      if (updateData.businessType === '') delete updateData.businessType;
+      if (updateData.serviceLocation === '') delete updateData.serviceLocation;
+
+      // Ensure numeric fields are actually numbers
+      if (updateData.baseDeliveryFee !== undefined) updateData.baseDeliveryFee = Number(updateData.baseDeliveryFee) || 0;
+      if (updateData.packagingFee !== undefined) updateData.packagingFee = Number(updateData.packagingFee) || 0;
+      if (updateData.minimumOrder !== undefined) updateData.minimumOrder = Number(updateData.minimumOrder) || 0;
+      if (updateData.preparationTime !== undefined) updateData.preparationTime = Number(updateData.preparationTime) || 0;
+
+      const updated = await this.vendorModel.findByIdAndUpdate(
+        id,
+        { $set: updateData },
+        { new: true, runValidators: false }
+      ).populate('owner');
+
+      if (!updated) {
+        throw new NotFoundException(`Vendor with ID ${id} not found`);
+      }
+
+      return updated;
+    } catch (error) {
+      console.error('updateVendor error:', error);
+      throw error;
+    }
   }
+
 
   async toggleVendorVisibility(id: string, isVisible: boolean) {
     return this.vendorModel.findByIdAndUpdate(
@@ -599,12 +653,57 @@ export class AdminService {
   }
 
   async updateDispatcher(id: string, payload: any) {
-    return this.erranderModel.findByIdAndUpdate(
-      id,
-      { $set: payload },
-      { new: true }
-    ).populate('user');
+    try {
+      const updateData = { ...payload };
+
+      // Remove fields that should never be in $set
+      delete updateData._id;
+      delete updateData.__v;
+      delete updateData.createdAt;
+      delete updateData.updatedAt;
+
+      // Handle user update separately — user is a ref (ObjectId), not an embedded doc
+      if (updateData.user && typeof updateData.user === 'object') {
+        try {
+          const dispatcher = await this.erranderModel.findById(id);
+          if (dispatcher && dispatcher.user) {
+            const userId = (dispatcher.user as any)._id
+              ? (dispatcher.user as any)._id.toString()
+              : dispatcher.user.toString();
+
+            const userUpdate: any = {};
+            if (updateData.user.firstName) userUpdate.firstName = updateData.user.firstName;
+            if (updateData.user.lastName) userUpdate.lastName = updateData.user.lastName;
+            if (updateData.user.email) userUpdate.email = updateData.user.email;
+            if (updateData.user.phone) userUpdate.phone = updateData.user.phone;
+
+            if (Object.keys(userUpdate).length > 0) {
+              await this.userModel.findByIdAndUpdate(userId, { $set: userUpdate });
+            }
+          }
+        } catch (userErr) {
+          console.error('Failed to update dispatcher user:', userErr);
+        }
+        delete updateData.user;
+      }
+
+      const updated = await this.erranderModel.findByIdAndUpdate(
+        id,
+        { $set: updateData },
+        { new: true, runValidators: false }
+      ).populate('user');
+
+      if (!updated) {
+        throw new NotFoundException(`Dispatcher with ID ${id} not found`);
+      }
+
+      return updated;
+    } catch (error) {
+      console.error('updateDispatcher error:', error);
+      throw error;
+    }
   }
+
 
   async deleteDispatcher(id: string) {
     return this.erranderModel.findByIdAndDelete(id);
