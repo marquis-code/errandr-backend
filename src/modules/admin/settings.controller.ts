@@ -379,33 +379,57 @@ export class SettingsController {
   }
 
   @Get('platform-status/public')
-  @ApiOperation({ summary: 'Get global platform closed status for frontends' })
+  @ApiOperation({ summary: 'Get per-app platform closed status for frontends' })
   async getPlatformStatusPublic() {
     let setting = await this.settingModel.findOne({ key: 'platform_status' }).exec();
     if (!setting) {
       setting = await this.settingModel.create({
         key: 'platform_status',
         value: {
-          isClosed: false,
+          isStudentAppClosed: false,
+          isVendorAppClosed: false,
+          isDispatchAppClosed: false,
         },
       });
     }
-    return setting.value;
+    // Migrate legacy single-toggle format
+    const val = setting.value as any;
+    const isStudentAppClosed = val.isStudentAppClosed ?? val.isClosed ?? false;
+    const isVendorAppClosed = val.isVendorAppClosed ?? val.isClosed ?? false;
+    const isDispatchAppClosed = val.isDispatchAppClosed ?? val.isClosed ?? false;
+    return {
+      isStudentAppClosed,
+      isVendorAppClosed,
+      isDispatchAppClosed,
+      // Backward compat: true if ANY app is closed
+      isClosed: isStudentAppClosed || isVendorAppClosed || isDispatchAppClosed,
+    };
   }
 
   @Put('platform-status')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Update global platform closed status (admin only)' })
-  async updatePlatformStatus(@Body() body: { isClosed: boolean }) {
+  @ApiOperation({ summary: 'Update per-app platform closed status (admin only)' })
+  async updatePlatformStatus(@Body() body: { isStudentAppClosed?: boolean; isVendorAppClosed?: boolean; isDispatchAppClosed?: boolean; isClosed?: boolean }) {
     let setting = await this.settingModel.findOne({ key: 'platform_status' }).exec();
     if (!setting) {
       setting = new this.settingModel({ key: 'platform_status' });
     }
-    setting.value = {
-      isClosed: body.isClosed ?? false,
-    };
+    // Support legacy single-toggle callers: if only isClosed is sent, apply to all
+    if (body.isClosed !== undefined && body.isStudentAppClosed === undefined && body.isVendorAppClosed === undefined && body.isDispatchAppClosed === undefined) {
+      setting.value = {
+        isStudentAppClosed: body.isClosed,
+        isVendorAppClosed: body.isClosed,
+        isDispatchAppClosed: body.isClosed,
+      };
+    } else {
+      setting.value = {
+        isStudentAppClosed: body.isStudentAppClosed ?? false,
+        isVendorAppClosed: body.isVendorAppClosed ?? false,
+        isDispatchAppClosed: body.isDispatchAppClosed ?? false,
+      };
+    }
     setting.markModified('value');
     await setting.save();
     return setting.value;

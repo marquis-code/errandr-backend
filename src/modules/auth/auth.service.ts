@@ -110,7 +110,7 @@ export class AuthService {
     };
   }
 
-  async firebaseLogin(idToken: string) {
+  async firebaseLogin(idToken: string, role?: string) {
     let decodedToken;
     try {
       // Import here or at top of file
@@ -126,28 +126,60 @@ export class AuthService {
       throw new BadRequestException('Email is required from Firebase account');
     }
 
-    let user = await this.userModel.findOne({ firebaseUid });
+    const userRole = (role as UserRole) || UserRole.STUDENT;
+
+    // First try finding by firebaseUid + role
+    let user = await this.userModel.findOne({ firebaseUid, role: userRole });
 
     if (!user) {
-      user = await this.userModel.findOne({ email });
-      if (user) {
-        user.firebaseUid = firebaseUid;
-        await user.save();
+      // Try finding by firebaseUid without role (legacy records)
+      user = await this.userModel.findOne({ firebaseUid });
+      if (user && user.role === userRole) {
+        // Match found
+      } else if (!user) {
+        // Try finding by email + role
+        user = await this.userModel.findOne({ email, role: userRole });
+        if (user) {
+          user.firebaseUid = firebaseUid;
+          await user.save();
+        } else {
+          // Create new user with the specified role
+          const nameParts = (name || '').split(' ');
+          user = await this.userModel.create({
+            firstName: nameParts[0] || 'User',
+            lastName: nameParts.slice(1).join(' ') || '',
+            email,
+            firebaseUid,
+            role: userRole,
+            isVerified: true,
+          });
+          
+          // Initialize Wallet for new user
+          await this.walletsService.getOrCreateWallet((user._id as unknown) as string);
+          
+          // Generate Referral Code for new user
+          await this.rewardsService.generateReferralCode((user._id as unknown) as string);
+        }
       } else {
-        const nameParts = (name || '').split(' ');
-        user = await this.userModel.create({
-          firstName: nameParts[0] || 'User',
-          lastName: nameParts.slice(1).join(' ') || '',
-          email,
-          firebaseUid,
-          isVerified: true,
-        });
-        
-        // Initialize Wallet for new user
-        await this.walletsService.getOrCreateWallet((user._id as unknown) as string);
-        
-        // Generate Referral Code for new user
-        await this.rewardsService.generateReferralCode((user._id as unknown) as string);
+        // firebaseUid exists but for a different role — look up or create for this role
+        user = await this.userModel.findOne({ email, role: userRole });
+        if (user) {
+          user.firebaseUid = firebaseUid;
+          await user.save();
+        } else {
+          const nameParts = (name || '').split(' ');
+          user = await this.userModel.create({
+            firstName: nameParts[0] || 'User',
+            lastName: nameParts.slice(1).join(' ') || '',
+            email,
+            firebaseUid,
+            role: userRole,
+            isVerified: true,
+          });
+          
+          await this.walletsService.getOrCreateWallet((user._id as unknown) as string);
+          await this.rewardsService.generateReferralCode((user._id as unknown) as string);
+        }
       }
     }
 
