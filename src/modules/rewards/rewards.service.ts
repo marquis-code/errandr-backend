@@ -308,7 +308,8 @@ export class RewardsService {
       userId,
       cashValue,
       `Points Redemption (${points} pts)`,
-      `RED-${Math.random().toString(36).substring(2, 8).toUpperCase()}`
+      undefined, // orderId
+      `RED-${Math.random().toString(36).substring(2, 8).toUpperCase()}` // reference
     );
 
     return { 
