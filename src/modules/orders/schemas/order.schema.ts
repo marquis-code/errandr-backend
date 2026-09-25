@@ -562,6 +562,9 @@ export class Order extends Document {
   @Prop()
   reconciliationNote: string;
 
+  @Prop()
+  reconciliationSubmittedAt: Date;
+
   @Prop({ default: 0 })
   refundAmount: number;
 

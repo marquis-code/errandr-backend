@@ -3453,6 +3453,7 @@ export class OrdersService {
     order.receiptImage = data.receiptImage || '';
     order.reconciliationNote = data.note || '';
     order.reconciliationStatus = 'submitted';
+    order.reconciliationSubmittedAt = new Date();
     order.refundAmount = difference > 0 ? difference : 0;
     order.shortfallAmount = difference < 0 ? Math.abs(difference) : 0;
 
@@ -3513,7 +3514,7 @@ export class OrdersService {
     order.reconciliationStatus = 'approved';
     await order.save();
 
-    // If customer underpaid (over-budget), charge their wallet and reimburse errander
+    // If customer underpaid (over-budget), charge their wallet and UPDATE estimated cost so vendor transfer can succeed
     if (order.shortfallAmount && order.shortfallAmount > 0) {
       try {
         await this.walletsService.forceDebitWallet(
@@ -3522,18 +3523,12 @@ export class OrdersService {
           `Deduction: Item cost reconciliation shortfall for order #${order.orderNumber}`
         );
         this.logger.log(`Debited shortfall ₦${order.shortfallAmount} from customer ${customerId} for order ${order.orderNumber}`);
-
-        // Credit Errander's wallet
-        if (order.errander) {
-          await this.walletsService.creditWallet(
-            order.errander.toString(),
-            order.shortfallAmount,
-            `Refund: Reimbursement for item cost shortfall for order #${order.orderNumber}`,
-            order._id.toString(),
-            order._id.toString() + '_shortfall'
-          );
-          this.logger.log(`Reimbursed shortfall ₦${order.shortfallAmount} to errander ${order.errander.toString()} for order ${order.orderNumber}`);
-        }
+        
+        // Update the estimated cost so the maxAllowedDisbursement increases for the vendor payment
+        if (!order.customDetails) order.customDetails = {};
+        order.customDetails.estimatedItemCost = order.actualItemCost;
+        // Do not credit errander's wallet here because the platform will pay the vendor directly.
+        await order.save();
       } catch (e) {
         this.logger.error(`Failed to process shortfall for order ${order.orderNumber}: ${e}`);
         throw new BadRequestException('Failed to process payment for the shortfall amount. Please check your wallet balance.');
