@@ -126,7 +126,7 @@ export class OrdersService {
     const skipSms = !majorStatuses.includes(status);
 
     // Notify Customer (stored + real-time)
-    if (customerId) {
+    if (customerId && note !== 'Order accepted by errander') {
       await this.notificationsService.sendNotification(customerId.toString(), {
         title, body, type: 'ORDER_STATUS_UPDATE', data: statusData, skipSms
       });
@@ -136,7 +136,7 @@ export class OrdersService {
     }
 
     // Notify Errander if assigned (stored + real-time)
-    if (erranderId) {
+    if (erranderId && note !== 'Order accepted by errander') {
       const erranderBody = `Order #${order.orderNumber} status changed to ${status.replace(/_/g, ' ').toLowerCase()}`;
       await this.notificationsService.sendNotification(erranderId.toString(), {
         title: 'Delivery Update', body: erranderBody, type: 'ORDER_STATUS_UPDATE', data: statusData, skipSms
@@ -1149,6 +1149,11 @@ export class OrdersService {
         'CANCELLED',
         note,
       );
+    }
+
+    // Payout vendor once the errander picks up the order
+    if (status === OrderStatus.PICKED_UP && populated.vendor) {
+      await this.processVendorPayout(populated as Order);
     }
 
     await order.save();

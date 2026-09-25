@@ -120,8 +120,7 @@ export class PaymentsController {
 
             const updatedOrder = await this.ordersService.updateStatus(id, OrderStatus.CONFIRMED, 'SYSTEM', `Payment confirmed via Verify (Ref: ${reference})`);
             
-            // Payout vendor now that payment is confirmed
-            await this.ordersService.processVendorPayout(updatedOrder);
+            // Vendor payout removed from here; it will happen when order is PICKED_UP
             
             // Broadcast to all erranders
             await this.ordersService.broadcastNewOrderToErranders(updatedOrder);
@@ -323,8 +322,7 @@ export class PaymentsController {
                   `Payment confirmed via Webhook (Ref: ${reference})`,
                 );
                 
-                // Payout vendor now that payment is confirmed
-                await this.ordersService.processVendorPayout(updatedOrder);
+                // Vendor payout removed from here; it will happen when order is PICKED_UP
                 
                 // Broadcast to all erranders
                 await this.ordersService.broadcastNewOrderToErranders(updatedOrder);
