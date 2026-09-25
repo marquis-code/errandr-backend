@@ -11,4 +11,8 @@ export class FirebaseLoginDto {
   @IsOptional()
   @IsString()
   role?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  isSignUp?: boolean;
 }

@@ -110,7 +110,7 @@ export class AuthService {
     };
   }
 
-  async firebaseLogin(idToken: string, role?: string) {
+  async firebaseLogin(idToken: string, role?: string, isSignUp: boolean = false) {
     let decodedToken;
     try {
       // Import here or at top of file
@@ -144,6 +144,11 @@ export class AuthService {
           user.firebaseUid = firebaseUid;
           await user.save();
         } else {
+          // If not signing up, we should not create an account for them automatically
+          if (!isSignUp) {
+            throw new NotFoundException("opps we notice you dont haev an account plase proceed to signup using google");
+          }
+
           // Create new user with the specified role
           isNewUser = true;
           const nameParts = (name || '').split(' ');

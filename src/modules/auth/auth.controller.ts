@@ -29,7 +29,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login with Firebase social auth' })
   async firebaseLogin(@Body() dto: FirebaseLoginDto) {
-    return this.authService.firebaseLogin(dto.idToken, dto.role);
+    return this.authService.firebaseLogin(dto.idToken, dto.role, dto.isSignUp);
   }
 
   @Post('guest')
