@@ -283,7 +283,7 @@ export class OrdersService {
       }
 
       const itemCost = Number(data.estimatedItemCost) || 0;
-      const itemCostBuffer = Math.round(itemCost * (safetyBufferPercent / 100));
+      const itemCostBuffer = 0; // Buffer disabled per request
 
       // Flat Buyer's Convenience Fee
       const serviceFee = 50;
