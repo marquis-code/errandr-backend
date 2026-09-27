@@ -384,4 +384,4 @@ export const VendorSchema = SchemaFactory.createForClass(Vendor);
 VendorSchema.index({ location: '2dsphere' });
 VendorSchema.index({ category: 1 });
 VendorSchema.index({ isOnline: 1, status: 1 });
-VendorSchema.index({ subdomain: 1 }, { unique: true, sparse: true });
+

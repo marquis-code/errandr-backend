@@ -51,7 +51,7 @@ export class Facilitator extends Document {
 }
 
 export const FacilitatorSchema = SchemaFactory.createForClass(Facilitator);
-FacilitatorSchema.index({ email: 1 });
-FacilitatorSchema.index({ referralCode: 1 });
+
+
 FacilitatorSchema.index({ totalReferrals: -1 });
 FacilitatorSchema.index({ isActive: 1 });

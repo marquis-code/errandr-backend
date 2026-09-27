@@ -33,4 +33,4 @@ export class Reward extends Document {
 export const RewardSchema = SchemaFactory.createForClass(Reward);
 RewardSchema.index({ user: 1, createdAt: -1 });
 RewardSchema.index({ deviceId: 1, createdAt: -1 });
-RewardSchema.index({ code: 1 });
+

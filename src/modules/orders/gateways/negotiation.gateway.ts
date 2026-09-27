@@ -39,7 +39,18 @@ export class NegotiationGateway
 
   private async setupRedisSubscriber() {
     const subClient = this.redisService.getNewClient();
-    await subClient.psubscribe('notification:broadcast:negotiation');
+    
+    subClient.on('error', (err) => {
+      console.warn('[NegotiationGateway] Redis Subscriber error (non-fatal):', err.message);
+    });
+
+    try {
+      await subClient.psubscribe('notification:broadcast:negotiation');
+    } catch (err) {
+      console.warn('[NegotiationGateway] Redis psubscribe failed, continuing without pub/sub:', err.message);
+      try { subClient.disconnect(); } catch (_) {}
+      return;
+    }
     
     subClient.on('pmessage', (pattern, channel, message) => {
       if (channel === 'notification:broadcast:negotiation') {

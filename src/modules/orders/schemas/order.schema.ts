@@ -602,5 +602,5 @@ OrderSchema.index({ customer: 1 });
 OrderSchema.index({ vendor: 1 });
 OrderSchema.index({ errander: 1 });
 OrderSchema.index({ status: 1 });
-OrderSchema.index({ orderNumber: 1 });
+
 OrderSchema.index({ deliveryLocation: '2dsphere' });
