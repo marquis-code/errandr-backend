@@ -3525,7 +3525,7 @@ export class OrdersService {
         this.logger.log(`Debited shortfall ₦${order.shortfallAmount} from customer ${customerId} for order ${order.orderNumber}`);
         
         // Update the estimated cost so the maxAllowedDisbursement increases for the vendor payment
-        if (!order.customDetails) order.customDetails = {};
+        if (!order.customDetails) order.customDetails = {} as any;
         order.customDetails.estimatedItemCost = order.actualItemCost;
         // Do not credit errander's wallet here because the platform will pay the vendor directly.
         await order.save();
