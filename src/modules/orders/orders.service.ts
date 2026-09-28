@@ -1071,6 +1071,12 @@ export class OrdersService {
     if (status === OrderStatus.DELIVERED && previousStatus !== OrderStatus.DELIVERED) {
       order.actualDeliveryTime = new Date();
       await this.processErranderPayout(order);
+      if (populated.vendor) {
+        const updater = await this.userModel.findById(userId);
+        if (updater && (updater.role === 'admin' || updater.role === 'support')) {
+          await this.processVendorPayout(populated as Order);
+        }
+      }
 
       // Trigger engagement updates
       if (order.customer) {
