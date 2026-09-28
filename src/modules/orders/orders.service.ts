@@ -1073,7 +1073,7 @@ export class OrdersService {
       await this.processErranderPayout(order);
       if (populated.vendor) {
         const updater = await this.userModel.findById(userId);
-        if (updater && (updater.role === 'admin' || updater.role === 'support')) {
+        if (updater && (updater.role === 'admin' || (updater.role as string) === 'support')) {
           await this.processVendorPayout(populated as Order);
         }
       }
