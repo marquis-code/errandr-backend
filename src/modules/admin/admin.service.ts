@@ -421,7 +421,7 @@ export class AdminService {
     const [dispatchers, total] = await Promise.all([
       this.erranderModel
         .find({ verificationStatus: 'reviewing' })
-        .populate('user', 'firstName lastName email phone')
+        .populate('user', 'firstName lastName email phone walletBalance points streakCount avatar role')
         .skip(skip)
         .limit(limit)
         .sort({ createdAt: -1 }),
@@ -500,7 +500,7 @@ export class AdminService {
         this.erranderModel
           .find()
           .select('-idCardImage -selfieImage -ninSlipImage')
-          .populate('user', 'firstName lastName email phone avatar role')
+          .populate('user', 'firstName lastName email phone avatar role walletBalance points streakCount')
           .skip(skip)
           .limit(limit)
           .lean(),
