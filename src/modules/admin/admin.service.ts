@@ -418,15 +418,30 @@ export class AdminService {
 
   async getPendingDispatchers(page = 1, limit = 20) {
     const skip = (page - 1) * limit;
-    const [dispatchers, total] = await Promise.all([
+    const [dispatchersRaw, total] = await Promise.all([
       this.erranderModel
         .find({ verificationStatus: 'reviewing' })
         .populate('user', 'firstName lastName email phone walletBalance points streakCount avatar role')
         .skip(skip)
         .limit(limit)
-        .sort({ createdAt: -1 }),
+        .sort({ createdAt: -1 })
+        .lean(),
       this.erranderModel.countDocuments({ verificationStatus: 'reviewing' }),
     ]);
+
+    const userIds = dispatchersRaw.map((e: any) => e.user?._id).filter(Boolean);
+    const WalletModel = this.userModel.db.model('Wallet');
+    const wallets: any[] = await WalletModel.find({ owner: { $in: userIds } }).lean();
+
+    const dispatchers = dispatchersRaw.map((errander: any) => {
+      const wallet = wallets.find((w: any) => w.owner.toString() === errander.user?._id?.toString());
+      if (errander.user) {
+        errander.user.walletBalance = wallet?.balance || 0;
+      }
+      errander.totalEarnings = wallet?.totalEarned || errander.totalEarnings || 0;
+      return errander;
+    });
+
     console.log("Got dispatchers!", dispatchers.length); return { dispatchers, total };
   }
 
@@ -496,7 +511,7 @@ export class AdminService {
     const skip = (page - 1) * limit;
     
     try {
-      const [dispatchers, total] = await Promise.all([
+      const [dispatchersRaw, total] = await Promise.all([
         this.erranderModel
           .find()
           .select('-idCardImage -selfieImage -ninSlipImage')
@@ -506,6 +521,20 @@ export class AdminService {
           .lean(),
         this.erranderModel.estimatedDocumentCount(),
       ]);
+
+      const userIds = dispatchersRaw.map((e: any) => e.user?._id).filter(Boolean);
+      const WalletModel = this.userModel.db.model('Wallet');
+      const wallets: any[] = await WalletModel.find({ owner: { $in: userIds } }).lean();
+
+      const dispatchers = dispatchersRaw.map((errander: any) => {
+        const wallet = wallets.find((w: any) => w.owner.toString() === errander.user?._id?.toString());
+        if (errander.user) {
+          errander.user.walletBalance = wallet?.balance || 0;
+        }
+        errander.totalEarnings = wallet?.totalEarned || errander.totalEarnings || 0;
+        return errander;
+      });
+
       return { dispatchers, total };
     } catch (e: any) {
       console.error(`getAllDispatchers ERROR:`, e.message);
@@ -515,12 +544,24 @@ export class AdminService {
 
   async getDispatcher(id: string) {
     if (!Types.ObjectId.isValid(id)) return null;
-    return this.erranderModel.findOne({
+    const errander: any = await this.erranderModel.findOne({
       $or: [
         { _id: new Types.ObjectId(id) },
         { user: new Types.ObjectId(id) }
       ]
-    }).populate('user', '-password');
+    }).populate('user', '-password').lean();
+
+    if (!errander) return null;
+
+    if (errander.user?._id) {
+      const WalletModel = this.userModel.db.model('Wallet');
+      const wallet: any = await WalletModel.findOne({ owner: errander.user._id }).lean();
+      
+      errander.user.walletBalance = wallet?.balance || 0;
+      errander.totalEarnings = wallet?.totalEarned || errander.totalEarnings || 0;
+    }
+    
+    return errander;
   }
 
   async suspendDispatcher(id: string) {
