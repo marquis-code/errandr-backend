@@ -2138,7 +2138,7 @@ export class OrdersService {
       order.hasRatedErrander = true;
 
       // Update Errander Average Rating
-      let resolvedErranderUserId = order.errander.toString();
+      let resolvedErranderUserId = order.errander ? order.errander.toString() : null;
       if (order.errander) {
         let errander = await this.erranderModel.findOne({ user: new Types.ObjectId(order.errander.toString()) });
         if (!errander) {
