@@ -2158,7 +2158,7 @@ export class OrdersService {
       }
 
       // Award points to Erranders for good rating
-      if (data.erranderRating >= 4 && order.errander) {
+      if (data.erranderRating >= 4 && resolvedErranderUserId) {
         await this.rewardsService.updateUserStats(resolvedErranderUserId, { perfectRating: data.erranderRating === 5 });
         await this.rewardsService.addPoints(resolvedErranderUserId, data.erranderRating === 5 ? 50 : 20, `${data.erranderRating}-star rating bonus (Compliance)`);
       }
