@@ -172,6 +172,20 @@ async getMyVendorOrders(
     return { isValid };
   }
 
+  @Post(':id/ping')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Ping another participant in the order (e.g. rider pings student)' })
+  async pingParticipant(
+    @Param('id') id: string,
+    @Body('target') target: 'customer' | 'vendor' | 'errander',
+    @Body('message') message: string,
+    @CurrentUser() user: User
+  ) {
+    this.logger.log(`pingParticipant() id=${id} target=${target} message=${message} user=${user._id}`);
+    return this.ordersService.pingParticipant(id, target, message, user._id.toString());
+  }
+
   @Get(':id')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

@@ -2466,6 +2466,68 @@ export class OrdersService {
     return true;
   }
 
+  // Map to store last ping timestamp per order per target to prevent spam (e.g. orderId_target => timestamp)
+  private pingRateLimits = new Map<string, number>();
+
+  async pingParticipant(orderId: string, target: 'customer' | 'vendor' | 'errander', message: string, requestorId: string) {
+    const order = await this.orderModel.findById(orderId).populate('customer vendor errander');
+    if (!order) throw new NotFoundException('Order not found');
+
+    const rateLimitKey = `${orderId}_${target}_${requestorId}`;
+    const lastPing = this.pingRateLimits.get(rateLimitKey);
+    const now = Date.now();
+    // 2 minutes cooldown
+    if (lastPing && (now - lastPing) < 2 * 60 * 1000) {
+      throw new BadRequestException('Please wait a moment before pinging again.');
+    }
+    this.pingRateLimits.set(rateLimitKey, now);
+
+    let targetUserId = null;
+    let fallbackPhone = null;
+
+    if (target === 'customer') {
+      const cust = order.customer as any;
+      if (cust) {
+        targetUserId = cust._id.toString();
+        fallbackPhone = cust.phone;
+      }
+    } else if (target === 'errander') {
+      const err = order.errander as any;
+      if (err) {
+        // order.errander stores the user ID of the errander
+        targetUserId = typeof err === 'object' ? err._id.toString() : err.toString();
+      }
+    } else if (target === 'vendor') {
+      const ven = order.vendor as any;
+      if (ven && ven.owner) {
+        targetUserId = typeof ven.owner === 'object' ? ven.owner._id.toString() : ven.owner.toString();
+      }
+    }
+
+    if (!targetUserId) {
+      throw new BadRequestException(`Target ${target} not available for this order`);
+    }
+
+    let senderName = 'Someone';
+    const requestor = await this.userModel.findById(requestorId);
+    if (requestor) {
+      senderName = `${requestor.firstName || ''} ${requestor.lastName || ''}`.trim() || 'Someone';
+    }
+
+    const defaultMsg = `${senderName} is trying to reach you regarding order #${order.orderNumber}.`;
+    const finalMsg = message ? `${senderName}: ${message}` : defaultMsg;
+
+    // Send push notification directly
+    await this.notificationsService.notifyUser(targetUserId, {
+      title: `Order Update #${order.orderNumber}`,
+      body: finalMsg,
+      data: { orderId: order._id.toString(), type: 'ping' },
+      skipSms: false
+    });
+
+    return { success: true, message: `Pinged ${target} successfully` };
+  }
+
   async generateAndSendOtp(
     orderId: string,
     type: 'pickup' | 'delivery',
