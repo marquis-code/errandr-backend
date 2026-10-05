@@ -2116,7 +2116,8 @@ export class OrdersService {
 
       // Update Vendor Average Rating
       if (order.vendor) {
-        const vendor = await this.vendorModel.findById(order.vendor);
+        const vendorId = (order.vendor as any)._id ? (order.vendor as any)._id.toString() : order.vendor.toString();
+        const vendor = await this.vendorModel.findById(vendorId);
         if (vendor) {
           const currentRating = vendor.rating || 5.0; // Default to 5.0 if not set
           const totalRatings = vendor.totalRatings || 0;
@@ -2138,14 +2139,27 @@ export class OrdersService {
       order.hasRatedErrander = true;
 
       // Update Errander Average Rating
-      let resolvedErranderUserId = order.errander ? order.errander.toString() : null;
+      let resolvedErranderUserId = null;
       if (order.errander) {
-        let errander = await this.erranderModel.findOne({ user: new Types.ObjectId(order.errander.toString()) });
+        const erranderRef = (order.errander as any)._id ? (order.errander as any)._id.toString() : order.errander.toString();
+        resolvedErranderUserId = erranderRef;
+        
+        let errander = null;
+        try {
+          errander = await this.erranderModel.findOne({ user: new Types.ObjectId(erranderRef) });
+        } catch (e) {
+          // ignore cast error if erranderRef isn't a valid ObjectId
+        }
+        
         if (!errander) {
           // Fallback in case order.errander is actually the Errander ObjectId
-          errander = await this.erranderModel.findById(order.errander);
-          if (errander && errander.user) {
-            resolvedErranderUserId = errander.user.toString();
+          try {
+            errander = await this.erranderModel.findById(erranderRef);
+            if (errander && errander.user) {
+              resolvedErranderUserId = (errander.user as any)._id ? (errander.user as any)._id.toString() : errander.user.toString();
+            }
+          } catch (e) {
+            // ignore
           }
         }
         if (errander) {
@@ -2165,14 +2179,17 @@ export class OrdersService {
     }
 
     // Award Points to Customer for rating
-    const ratingDelay = (Date.now() - new Date(order.actualDeliveryTime).getTime()) / 60000; // minutes
-    let pointReward = 20;
-    if (ratingDelay <= 30) {
-      pointReward += 30; // Promptness bonus!
-      await this.rewardsService.updateUserStats(order.customer.toString(), { promptRating: true });
-      await this.rewardsService.addPoints(order.customer.toString(), pointReward, `Compliance: Prompt 5-star rating bonus (within 30 mins)`);
-    } else {
-      await this.rewardsService.addPoints(order.customer.toString(), pointReward, `Rated order #${order.orderNumber}`);
+    if (order.customer) {
+      const customerId = (order.customer as any)._id ? (order.customer as any)._id.toString() : order.customer.toString();
+      const ratingDelay = order.actualDeliveryTime ? (Date.now() - new Date(order.actualDeliveryTime).getTime()) / 60000 : Infinity; // minutes
+      let pointReward = 20;
+      if (ratingDelay <= 30) {
+        pointReward += 30; // Promptness bonus!
+        await this.rewardsService.updateUserStats(customerId, { promptRating: true });
+        await this.rewardsService.addPoints(customerId, pointReward, `Compliance: Prompt 5-star rating bonus (within 30 mins)`);
+      } else {
+        await this.rewardsService.addPoints(customerId, pointReward, `Rated order #${order.orderNumber}`);
+      }
     }
 
     await order.save();
