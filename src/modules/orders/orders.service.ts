@@ -2518,9 +2518,10 @@ export class OrdersService {
     const finalMsg = message ? `${senderName}: ${message}` : defaultMsg;
 
     // Send push notification directly
-    await this.notificationsService.notifyUser(targetUserId, {
+    await this.notificationsService.sendNotification(targetUserId, {
       title: `Order Update #${order.orderNumber}`,
       body: finalMsg,
+      type: 'PING_NOTIFICATION',
       data: { orderId: order._id.toString(), type: 'ping' },
       skipSms: false
     });
