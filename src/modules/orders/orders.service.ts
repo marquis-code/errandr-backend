@@ -2144,7 +2144,7 @@ export class OrdersService {
         const erranderRef = (order.errander as any)._id ? (order.errander as any)._id.toString() : order.errander.toString();
         resolvedErranderUserId = erranderRef;
         
-        let errander = null;
+        let errander: any = null;
         try {
           errander = await this.erranderModel.findOne({ user: new Types.ObjectId(erranderRef) });
         } catch (e) {
@@ -2536,10 +2536,10 @@ export class OrdersService {
 
     // Send push notification directly
     await this.notificationsService.sendNotification(targetUserId, {
-      title: `Order Update #${order.orderNumber}`,
+      title: `🔔 Ping! Order #${order.orderNumber}`,
       body: finalMsg,
       type: 'PING_NOTIFICATION',
-      data: { orderId: order._id.toString(), type: 'ping' },
+      data: { orderId: order._id.toString(), type: 'ping', senderName, orderNumber: order.orderNumber, target },
       skipSms: false
     });
 
