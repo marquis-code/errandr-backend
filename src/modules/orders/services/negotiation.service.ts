@@ -30,13 +30,7 @@ export class NegotiationService {
       throw new BadRequestException('Order is no longer accepting bids');
     }
 
-    if (order.type === 'custom_errand') {
-      const wallet = await this.walletsService.getWallet(riderId);
-      const requiredBalance = bidAmount * 0.20;
-      if (wallet && wallet.balance < requiredBalance) {
-        throw new BadRequestException(`Your wallet balance is too low to bid on this custom errand. You need at least ₦${requiredBalance} in your wallet to cover the platform fee.`);
-      }
-    }
+
 
     // Check if the rider already placed a bid
     let existingBid = await this.deliveryBidModel.findOne({ order: new Types.ObjectId(orderId), rider: new Types.ObjectId(riderId) });

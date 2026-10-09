@@ -3180,13 +3180,7 @@ export class OrdersService {
         throw new BadRequestException('Not your bid');
       }
 
-      if (role === 'errander' && order.type === OrderType.CUSTOM_ERRAND) {
-        const wallet = await this.walletsService.getWallet(userId);
-        const requiredBalance = amount * 0.20;
-        if (wallet && wallet.balance < requiredBalance) {
-          throw new BadRequestException(`Your wallet balance is too low to counter-offer on this custom errand. You need at least ₦${requiredBalance} in your wallet to cover the platform fee.`);
-        }
-      }
+
 
       if (!deliveryBid.originalAmount) {
         deliveryBid.originalAmount = deliveryBid.bidAmount;
@@ -3318,13 +3312,7 @@ export class OrdersService {
         throw new BadRequestException('Not authorized to accept this bid');
       }
 
-      if (isRider && order.type === OrderType.CUSTOM_ERRAND) {
-        const wallet = await this.walletsService.getWallet(userId);
-        const requiredBalance = deliveryBid.bidAmount * 0.20;
-        if (wallet && wallet.balance < requiredBalance) {
-          throw new BadRequestException(`Your wallet balance is too low to accept this custom errand. You need at least ₦${requiredBalance} in your wallet to cover the platform fee.`);
-        }
-      }
+
 
       // Found in DeliveryBid collection
       if (deliveryBid.status !== DeliveryBidStatus.PENDING && deliveryBid.status !== DeliveryBidStatus.COUNTER_OFFER) {
