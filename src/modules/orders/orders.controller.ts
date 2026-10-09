@@ -1,6 +1,7 @@
 import {
   Controller, Get, Post, Put, Body, Param, Query,
   UseGuards, Logger, DefaultValuePipe, ParseIntPipe,
+  Headers, UnauthorizedException
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { OrdersService } from './orders.service';
@@ -22,6 +23,57 @@ export class OrdersController {
   create(@CurrentUser() user: User, @Body() body: any) {
     this.logger.log(`create() called by user=${user._id}`);
     return this.ordersService.create((user._id as unknown) as string, body);
+  }
+
+  @Post('webhook/barter')
+  @ApiOperation({ summary: 'Webhook to create an errand from Barter' })
+  createFromBarterWebhook(@Body() body: any, @Headers('x-api-key') apiKey: string) {
+    this.logger.log(`createFromBarterWebhook() called`);
+    if (apiKey !== (process.env.BARTER_API_KEY || 'barter_secret_123')) {
+      throw new UnauthorizedException('Invalid API Key');
+    }
+    return this.ordersService.createFromBarter(body);
+  }
+
+  @Post('webhook/negotiation/accept')
+  @ApiOperation({ summary: 'Webhook to accept a negotiation from Barter' })
+  async acceptBarterNegotiationWebhook(@Body() body: { orderId: string, bidId: string }, @Headers('x-api-key') apiKey: string) {
+    this.logger.log(`acceptBarterNegotiationWebhook() called`);
+    if (apiKey !== (process.env.BARTER_API_KEY || 'barter_secret_123')) {
+      throw new UnauthorizedException('Invalid API Key');
+    }
+    
+    // In Barter flow, the order was created under a specific Admin/Customer ID.
+    // We fetch the order to get that ID to bypass the authorization check in acceptBid.
+    const order = await this.ordersService.findById(body.orderId);
+    if (!order) throw new UnauthorizedException('Order not found');
+
+    return this.ordersService.acceptBid(body.orderId, body.bidId, order.customer._id.toString());
+  }
+
+  @Post('webhook/negotiation/counter')
+  @ApiOperation({ summary: 'Webhook to counter a negotiation from Barter' })
+  async counterBarterNegotiationWebhook(@Body() body: { orderId: string, bidId: string, counterAmount: number }, @Headers('x-api-key') apiKey: string) {
+    this.logger.log(`counterBarterNegotiationWebhook() called with amount=${body.counterAmount}`);
+    if (apiKey !== (process.env.BARTER_API_KEY || 'barter_secret_123')) {
+      throw new UnauthorizedException('Invalid API Key');
+    }
+    
+    const order = await this.ordersService.findById(body.orderId);
+    if (!order) throw new UnauthorizedException('Order not found');
+
+    return this.ordersService.counterBid(body.orderId, body.bidId, order.customer._id.toString(), body.counterAmount, 'student');
+  }
+
+  @Post('webhook/dispute')
+  @ApiOperation({ summary: 'Webhook to set order to disputed from Barter' })
+  async disputeWebhook(@Body() body: { orderId: string }, @Headers('x-api-key') apiKey: string) {
+    this.logger.log(`disputeWebhook() called for order=${body.orderId}`);
+    if (apiKey !== (process.env.BARTER_API_KEY || 'barter_secret_123')) {
+      throw new UnauthorizedException('Invalid API Key');
+    }
+    
+    return this.ordersService.setOrderDisputed(body.orderId);
   }
 
   @Get('batch/status')

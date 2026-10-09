@@ -39,7 +39,7 @@ export class NegotiationService {
     }
 
     // Check if the rider already placed a bid
-    const existingBid = await this.deliveryBidModel.findOne({ order: new Types.ObjectId(orderId), rider: new Types.ObjectId(riderId) });
+    let existingBid = await this.deliveryBidModel.findOne({ order: new Types.ObjectId(orderId), rider: new Types.ObjectId(riderId) });
     
     if (existingBid) {
       if (!existingBid.originalAmount) existingBid.originalAmount = existingBid.bidAmount;
@@ -47,16 +47,15 @@ export class NegotiationService {
       existingBid.status = DeliveryBidStatus.COUNTER_OFFER;
       existingBid.lastNegotiatorRole = 'errander';
       await existingBid.save();
-      return existingBid;
+    } else {
+      existingBid = await this.deliveryBidModel.create({
+        order: new Types.ObjectId(orderId),
+        rider: new Types.ObjectId(riderId),
+        bidAmount,
+        status: DeliveryBidStatus.PENDING,
+        lastNegotiatorRole: 'errander',
+      });
     }
-
-    const newBid = await this.deliveryBidModel.create({
-      order: new Types.ObjectId(orderId),
-      rider: new Types.ObjectId(riderId),
-      bidAmount,
-      status: DeliveryBidStatus.PENDING,
-      lastNegotiatorRole: 'errander',
-    });
 
     await this.notificationsService.sendNotification(order.customer.toString(), {
       title: 'New Bid Received',
@@ -65,7 +64,33 @@ export class NegotiationService {
       data: { orderId: order._id.toString() },
     });
 
-    return newBid;
+    const activeBid = existingBid;
+
+    // Trigger webhook for barter transactions
+    if (order.type === 'custom_errand' && order.customDetails?.description?.includes('[Barter Tx ID:')) {
+      const match = order.customDetails.description.match(/\[Barter Tx ID: (.+)\]/);
+      if (match) {
+        const barterTxId = match[1];
+        try {
+          const res = await fetch(`${process.env.BARTER_API_URL || 'http://localhost:3100/api/v1'}/escrow/webhook/negotiation`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.BARTER_API_KEY || '' },
+            body: JSON.stringify({
+              barterTransactionId: barterTxId,
+              orderId: order._id.toString(),
+              bidId: activeBid._id.toString(),
+              proposedFee: bidAmount
+            })
+          });
+          const text = await res.text();
+          this.logger.log(`Barter Webhook Response: ${res.status} - ${text}`);
+        } catch (e) {
+          this.logger.error('Failed to notify barter about negotiation', e);
+        }
+      }
+    }
+
+    return activeBid;
   }
 
   async acceptBid(orderId: string, bidId: string) {

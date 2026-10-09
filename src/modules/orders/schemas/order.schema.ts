@@ -17,6 +17,7 @@ export enum OrderStatus {
   NEGOTIATING = 'negotiating',
   INTERCEPTION_PENDING = 'interception_pending',
   INTERCEPTION_IN_PROGRESS = 'interception_in_progress',
+  DISPUTED = 'disputed',
 }
 
 export enum LocationType {
@@ -455,7 +456,8 @@ export class Order extends Document {
     type: [{
       errander: { type: Types.ObjectId, ref: 'User' },
       amount: Number,
-      status: { type: String, enum: ['pending', 'accepted', 'rejected'], default: 'pending' },
+      status: { type: String, enum: ['pending', 'accepted', 'rejected', 'counter_offer'], default: 'pending' },
+      lastNegotiatorRole: { type: String, enum: ['student', 'errander'] },
       timestamp: { type: Date, default: Date.now }
     }],
     default: []
@@ -464,7 +466,8 @@ export class Order extends Document {
     _id?: any;
     errander: Types.ObjectId | any;
     amount: number;
-    status: 'pending' | 'accepted' | 'rejected';
+    status: 'pending' | 'accepted' | 'rejected' | 'counter_offer';
+    lastNegotiatorRole?: 'student' | 'errander';
     timestamp: Date;
   }[];
 
