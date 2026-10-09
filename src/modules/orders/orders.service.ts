@@ -268,6 +268,30 @@ export class OrdersService {
   }
 
 
+  async createFromBarter(data: any): Promise<Order> {
+    this.logger.log(`createFromBarter() payload: ${JSON.stringify(data)}`);
+    const adminUser = await this.userModel.findOne({ role: 'admin' }).exec();
+    if (!adminUser) {
+      throw new InternalServerErrorException('No admin user found to act as customer for Barter errand');
+    }
+
+    const payload = {
+      type: 'custom_errand',
+      pickupLocation: data.pickupAddress || data.pickupLocation,
+      dropoffLocation: data.dropoffAddress || data.dropoffLocation,
+      description: data.description || 'Barter Delivery',
+      runnerFee: data.fee || data.runnerFee,
+      estimatedItemCost: 0,
+      paymentMethod: 'cash', // Skip paystack check
+    };
+    
+    if (data.barterTransactionId) {
+      payload.description += `\n[Barter Tx ID: ${data.barterTransactionId}]`;
+    }
+
+    return this.create(adminUser._id.toString(), payload);
+  }
+
   async create(customerId: string, data: any): Promise<Order> {
     if (data.type === 'custom_errand') {
       const runnerFee = Number(data.runnerFee);
@@ -1915,6 +1939,12 @@ export class OrdersService {
           },
           {
             status: OrderStatus.INTERCEPTION_PENDING
+          },
+          {
+            status: OrderStatus.PENDING,
+            type: OrderType.CUSTOM_ERRAND,
+            errander: noErranderFilter,
+            deliveryOption: { $in: ['use_an_errander', null] }
           }
         ]
       })
@@ -1954,6 +1984,33 @@ export class OrdersService {
           (order.errander as any).bankDetails = wallet.bankDetails;
         }
       }
+      
+      // Fetch standalone delivery bids (new negotiation flow) and merge into order.bids
+      const deliveryBids = await this.deliveryBidModel.find({ order: new Types.ObjectId(order._id) })
+        .populate('rider', 'firstName lastName avatar phone')
+        .lean();
+        
+      if (deliveryBids && deliveryBids.length > 0) {
+        if (!order.bids) order.bids = [];
+        
+        // Map standalone bids to the legacy embedded structure expected by the frontend
+        const mappedBids = deliveryBids.map(bid => ({
+          _id: bid._id,
+          errander: bid.rider,
+          amount: bid.bidAmount,
+          status: bid.status,
+          timestamp: (bid as any).createdAt || new Date(),
+          lastNegotiatorRole: bid.lastNegotiatorRole
+        }));
+        
+        // Merge without duplicating errander bids (prefer DeliveryBid if both exist for same errander)
+        const mappedErranderIds = mappedBids.map(b => b.errander?._id?.toString());
+        const filteredLegacyBids = order.bids.filter(b => b.errander && !mappedErranderIds.includes(b.errander._id?.toString()));
+        
+        order.bids = [...filteredLegacyBids, ...mappedBids];
+      }
+
+
 
       // Attach WhatsApp Links
       const customerPhone = (order.customer as any)?.phone;
@@ -3003,8 +3060,18 @@ export class OrdersService {
     if (order.isPooledErrand) throw new BadRequestException('Bidding is disabled for pooled errands');
     if (![OrderStatus.PENDING, OrderStatus.NEGOTIATING].includes(order.status as any)) throw new BadRequestException('Order is no longer accepting bids');
 
-    // check if this errander already bid
-    const existingBidIndex = order.bids.findIndex(b => b.errander._id.toString() === erranderId.toString() && b.status === 'pending');
+    // Find all bids for this errander and get the index of the most recent one
+    let existingBidIndex = -1;
+    let latestTimestamp = 0;
+    order.bids.forEach((b, index) => {
+      if (b.errander._id.toString() === erranderId.toString()) {
+        const ts = new Date(b.timestamp).getTime();
+        if (ts > latestTimestamp) {
+          latestTimestamp = ts;
+          existingBidIndex = index;
+        }
+      }
+    });
     if (existingBidIndex >= 0) {
       // update bid
       order.bids[existingBidIndex].amount = amount;
@@ -3018,6 +3085,10 @@ export class OrdersService {
       });
     }
 
+    if (order.status === 'pending') {
+      order.status = 'negotiating' as any;
+    }
+
     await order.save();
     const populatedOrder = await this.orderModel.findById(order._id).populate('bids.errander');
 
@@ -3028,46 +3099,126 @@ export class OrdersService {
       data: { orderId: order._id.toString() },
     });
 
+    // Trigger webhook for barter transactions
+    if (order.type === 'custom_errand' && order.customDetails?.description?.includes('[Barter Tx ID:')) {
+      const match = order.customDetails.description.match(/\[Barter Tx ID: (.+)\]/);
+      if (match) {
+        const barterTxId = match[1];
+        
+        // Find the bid ID (either updated or newly added)
+        let latestTs = 0;
+        let bidObj: any = null;
+        order.bids.forEach(b => {
+          if (b.errander.toString() === erranderId.toString()) {
+            const ts = new Date(b.timestamp).getTime();
+            if (ts > latestTs) {
+              latestTs = ts;
+              bidObj = b;
+            }
+          }
+        });
+        const bidIdStr = bidObj ? bidObj._id.toString() : '';
+
+        try {
+          const res = await fetch(`${process.env.BARTER_API_URL || 'http://localhost:3100/api/v1'}/escrow/webhook/negotiation`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.BARTER_API_KEY || '' },
+            body: JSON.stringify({
+              barterTransactionId: barterTxId,
+              orderId: order._id.toString(),
+              bidId: bidIdStr,
+              proposedFee: amount
+            })
+          });
+          const text = await res.text();
+          this.logger.log(`Barter Webhook Response: ${res.status} - ${text}`);
+        } catch (e) {
+          this.logger.error('Failed to notify barter about negotiation', e);
+        }
+      }
+    }
+
     return populatedOrder as Order;
   }
+  async setOrderDisputed(orderId: string): Promise<Order> {
+    const order = await this.orderModel.findById(orderId);
+    if (!order) throw new NotFoundException('Order not found');
+    
+    order.status = OrderStatus.DISPUTED;
+    await order.save();
+    
+    await this.notificationsService.sendNotification(order.customer.toString(), {
+      title: 'Order Disputed',
+      body: `Your order #${order.orderNumber} is now in dispute.`,
+      type: 'ORDER_STATUS_UPDATE',
+      data: { orderId: order._id.toString() },
+    });
+
+    if (order.errander) {
+      await this.notificationsService.sendNotification(order.errander.toString(), {
+        title: 'Order Disputed',
+        body: `Order #${order.orderNumber} is now in dispute.`,
+        type: 'ORDER_STATUS_UPDATE',
+        data: { orderId: order._id.toString() },
+      });
+    }
+
+    return order;
+  }
+
   async counterBid(orderId: string, bidId: string, userId: string, amount: number, role: 'student' | 'errander'): Promise<any> {
     const order = await this.orderModel.findById(orderId);
     if (!order) throw new NotFoundException('Order not found');
     if (![OrderStatus.PENDING, OrderStatus.NEGOTIATING].includes(order.status as any)) throw new BadRequestException('Order is no longer accepting bids');
 
-    const deliveryBid = await this.deliveryBidModel.findById(bidId).populate('rider');
-    if (!deliveryBid) throw new NotFoundException('Bid not found');
-    if (deliveryBid.order.toString() !== orderId) throw new BadRequestException('Bid does not belong to this order');
+    let deliveryBid = await this.deliveryBidModel.findById(bidId).populate('rider');
+    let targetUserId: string;
+    let populatedBid: any;
 
-    if (role === 'student' && order.customer.toString() !== userId.toString()) {
-      throw new BadRequestException('Not your order');
-    }
-    if (role === 'errander' && deliveryBid.rider._id.toString() !== userId.toString()) {
-      throw new BadRequestException('Not your bid');
-    }
-
-    if (role === 'errander' && order.type === OrderType.CUSTOM_ERRAND) {
-      const wallet = await this.walletsService.getWallet(userId);
-      const requiredBalance = amount * 0.20;
-      if (wallet && wallet.balance < requiredBalance) {
-        throw new BadRequestException(`Your wallet balance is too low to counter-offer on this custom errand. You need at least ₦${requiredBalance} in your wallet to cover the platform fee.`);
+    if (deliveryBid && deliveryBid.order.toString() === orderId) {
+      if (role === 'errander' && deliveryBid.rider._id.toString() !== userId.toString()) {
+        throw new BadRequestException('Not your bid');
       }
+
+      if (role === 'errander' && order.type === OrderType.CUSTOM_ERRAND) {
+        const wallet = await this.walletsService.getWallet(userId);
+        const requiredBalance = amount * 0.20;
+        if (wallet && wallet.balance < requiredBalance) {
+          throw new BadRequestException(`Your wallet balance is too low to counter-offer on this custom errand. You need at least ₦${requiredBalance} in your wallet to cover the platform fee.`);
+        }
+      }
+
+      if (!deliveryBid.originalAmount) {
+        deliveryBid.originalAmount = deliveryBid.bidAmount;
+      }
+
+      deliveryBid.bidAmount = amount;
+      deliveryBid.status = DeliveryBidStatus.COUNTER_OFFER;
+      deliveryBid.lastNegotiatorRole = role;
+
+      await deliveryBid.save();
+      populatedBid = await this.deliveryBidModel.findById(deliveryBid._id).populate('rider', 'firstName lastName avatar phone').lean();
+      targetUserId = role === 'student' ? populatedBid!.rider._id || populatedBid!.rider : order.customer;
+    } else {
+      // Fallback: check embedded order.bids array
+      await order.populate('bids.errander');
+      const embeddedBid = order.bids?.find(b => b._id.toString() === bidId);
+      if (!embeddedBid) throw new NotFoundException('Bid not found');
+
+      if (role === 'errander' && embeddedBid.errander._id.toString() !== userId.toString()) {
+        throw new BadRequestException('Not your bid');
+      }
+
+      embeddedBid.amount = amount;
+      embeddedBid.status = 'counter_offer';
+      embeddedBid.lastNegotiatorRole = role;
+      
+      await order.save();
+      populatedBid = embeddedBid;
+      targetUserId = role === 'student' ? embeddedBid.errander._id || embeddedBid.errander : order.customer;
     }
-
-    if (!deliveryBid.originalAmount) {
-      deliveryBid.originalAmount = deliveryBid.bidAmount;
-    }
-
-    deliveryBid.bidAmount = amount;
-    deliveryBid.status = DeliveryBidStatus.COUNTER_OFFER;
-    deliveryBid.lastNegotiatorRole = role;
-
-    await deliveryBid.save();
-
-    const populatedBid = await this.deliveryBidModel.findById(deliveryBid._id).populate('rider', 'firstName lastName avatar phone').lean();
 
     // Notify the other party
-    const targetUserId = role === 'student' ? populatedBid!.rider._id || populatedBid!.rider : order.customer;
     await this.notificationsService.sendNotification(targetUserId.toString(), {
       title: 'Offer Countered',
       body: `The ${role} has proposed a new price of ₦${amount}.`,
@@ -3134,8 +3285,13 @@ export class OrdersService {
     // Fallback to legacy embedded bids if necessary
     const order = await this.orderModel.findById(orderId);
     if (order && order.bids && order.bids.length > 0) {
-      const embeddedBid = order.bids.find(b => b.errander.toString() === erranderId);
-      if (embeddedBid) return embeddedBid;
+      // Find all bids for this errander and return the most recent one
+      const erranderBids = order.bids.filter(b => b.errander.toString() === erranderId);
+      if (erranderBids.length > 0) {
+        // Sort by timestamp descending
+        erranderBids.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        return erranderBids[0];
+      }
     }
 
     return null;
@@ -3191,7 +3347,9 @@ export class OrdersService {
       await order.populate('bids.errander');
       const embeddedBid = order.bids?.find(b => b._id.toString() === bidId);
       if (!embeddedBid) throw new NotFoundException('Bid not found');
-      if (embeddedBid.status !== 'pending') throw new BadRequestException('Bid is not pending');
+      if (embeddedBid.status !== 'pending' && embeddedBid.status !== 'counter_offer') {
+        throw new BadRequestException('Bid is not pending or in counter-offer state');
+      }
 
       order.bids.forEach(b => {
         if (b._id.toString() === bidId) b.status = 'accepted';
@@ -3215,6 +3373,30 @@ export class OrdersService {
     order.erranderPayout = erranderShare;
     order.platformShare = (order.platformShare || 0) + commissionAmount;
     order.total = total;
+
+    // Trigger webhook for barter transactions
+    if (order.type === 'custom_errand' && order.customDetails?.description?.includes('[Barter Tx ID:')) {
+      const match = order.customDetails.description.match(/\[Barter Tx ID: (.+)\]/);
+      if (match) {
+        const barterTxId = match[1];
+        try {
+          const res = await fetch(`${process.env.BARTER_API_URL || 'http://localhost:3100/api/v1'}/escrow/webhook/negotiation/accept`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.BARTER_API_KEY || '' },
+            body: JSON.stringify({
+              barterTransactionId: barterTxId,
+              orderId: order._id.toString(),
+              bidId,
+              finalFee: newFee
+            })
+          });
+          const text = await res.text();
+          this.logger.log(`Barter Webhook (Accept) Response: ${res.status} - ${text}`);
+        } catch (e) {
+          this.logger.error('Failed to notify barter about accept', e);
+        }
+      }
+    }
 
     // Assign the errander
     let errander = await this.erranderModel.findOne({ user: new Types.ObjectId(riderUserId) });
