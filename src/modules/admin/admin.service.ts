@@ -301,6 +301,8 @@ export class AdminService {
         query.isGroupOrder = true;
       } else if (type === 'pooled') {
         query.isPooledErrand = true;
+      } else if (type === 'auto_pilot') {
+        query.isAutopilot = true;
       } else {
         query.type = type;
       }

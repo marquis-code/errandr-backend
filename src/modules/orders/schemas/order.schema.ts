@@ -515,6 +515,9 @@ export class Order extends Document {
   isMysteryBox: boolean;
 
   @Prop({ default: false })
+  isAutopilot: boolean;
+
+  @Prop({ default: false })
   isDormDelivery: boolean;
 
   // Custom Errand Pooling

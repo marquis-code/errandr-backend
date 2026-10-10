@@ -94,7 +94,8 @@ export class RecurringOrderProcessor {
         vendorNote: recurringOrder.vendorNote,
         deliveryNotes: recurringOrder.deliveryNotes,
         paymentMethod: 'wallet', 
-        paymentStatus: 'paid'
+        paymentStatus: 'paid',
+        isAutopilot: true
       };
 
       const newOrder = await this.ordersService.create(customerId, orderData);
