@@ -297,7 +297,13 @@ export class AdminService {
     }
     
     if (type && type !== 'all') {
-      query.type = type;
+      if (type === 'group') {
+        query.isGroupOrder = true;
+      } else if (type === 'pooled') {
+        query.isPooledErrand = true;
+      } else {
+        query.type = type;
+      }
     }
     
     if (customerId) {

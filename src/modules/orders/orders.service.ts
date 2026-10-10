@@ -1938,6 +1938,11 @@ export class OrdersService {
             deliveryOption: { $exists: false }
           },
           {
+            isGroupOrder: true,
+            status: { $in: [OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP, OrderStatus.NEGOTIATING] },
+            errander: noErranderFilter
+          },
+          {
             status: OrderStatus.INTERCEPTION_PENDING
           },
           {
