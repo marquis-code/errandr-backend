@@ -254,6 +254,22 @@ export class PaymentsController {
             } catch (err: any) {
                this.logger.error(`Failed to verify appointment payment ${appointmentId} from webhook: ${err.message}`);
             }
+          } else if (data.metadata?.isGroupCheckout) {
+            const reference = data.reference;
+            const activeCode = data.metadata.activeCode;
+            this.logger.log(`Charge success for group checkout: ${activeCode} (Ref: ${reference})`);
+            try {
+              // Extract the user ID from customer email if guestId is not available
+              const customerEmail = data.customer?.email;
+              let userId = 'SYSTEM';
+              if (customerEmail) {
+                const user = await this.userModel.findOne({ email: customerEmail });
+                if (user) userId = user._id.toString();
+              }
+              await this.groupOrdersService.checkout(userId, activeCode, reference);
+            } catch (err: any) {
+              this.logger.error(`Failed to process group checkout ${activeCode} from webhook: ${err.message}`);
+            }
           } else {
             const orderId = data.metadata?.orderId;
             const orderIds = data.metadata?.orderIds; // New: support for multi-vendor checkout
