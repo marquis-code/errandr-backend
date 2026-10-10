@@ -332,8 +332,9 @@ export class AdminService {
 
     if (search) {
       query.$or = [
-        ...query.$or || [],
-        { orderNumber: { $regex: search, $options: 'i' } }
+        ...(query.$or || []),
+        { orderNumber: { $regex: search, $options: 'i' } },
+        { paymentReference: { $regex: search, $options: 'i' } }
       ];
     }
 
