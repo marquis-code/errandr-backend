@@ -10,6 +10,7 @@ export interface MealBreakdownItem {
   category: string;
   portion: string;
   calories: number;
+  price?: number;
 }
 
 export interface MealNutrition {
@@ -83,7 +84,9 @@ export interface RawMaterialsPlan {
 }
 
 export interface IterationParams {
-  budget: number;
+  budget?: number;
+  dailyBudget?: number;
+  bufferAmount?: number;
   mealsPerDay?: number;
   vendors?: string[];
   dislikes?: string[];
@@ -111,70 +114,84 @@ export class MealPlannerService {
     return 'carbs';
   }
 
-  private generateMealBreakdown(mealName: string, vendorName: string, price: number, mealType: string, conditions: string[] = []): MealBreakdown {
-    const lower = mealName.toLowerCase();
+  private generateMealBreakdown(
+    comboOptions: MealOption[], 
+    vendorName: string, 
+    mealType: string, 
+    conditions: string[] = [],
+    packagingFee: number = 150
+  ): MealBreakdown {
     const items: MealBreakdownItem[] = [];
 
-    // Identify main base
-    let baseName = mealName;
-    let baseKcal = 350;
-    if (/jollof/i.test(lower)) { baseName = 'Smoky Jollof Rice'; baseKcal = 380; }
-    else if (/fried rice/i.test(lower)) { baseName = 'Stir-fried Rice with Diced Veggies'; baseKcal = 410; }
-    else if (/ofada/i.test(lower)) { baseName = 'Local Ofada Rice with Steamed Leaves'; baseKcal = 360; }
-    else if (/spag|pasta/i.test(lower)) { baseName = 'Stir-fry Spaghetti'; baseKcal = 390; }
-    else if (/amala/i.test(lower)) { baseName = 'Fluffy Amala Swallow'; baseKcal = 320; }
-    else if (/pounded yam/i.test(lower)) { baseName = 'Pounded Yam Morsel'; baseKcal = 420; }
-    else if (/plantain/i.test(lower)) { baseName = 'Golden Fried Dodo'; baseKcal = 280; }
-    else if (/smoothie/i.test(lower)) { baseName = 'Fresh Fruit & Nutrient Blend'; baseKcal = 220; }
+    for (const opt of comboOptions) {
+      const pName = opt.product?.name || 'Meal Portion';
+      const cat = this.categorizeItem(pName, opt.category || '');
+      
+      let categoryLabel = 'Main Base';
+      if (cat === 'protein') categoryLabel = 'Protein & Sauce';
+      else if (cat === 'side') categoryLabel = 'Side / Veggies';
+      else if (cat === 'drink') categoryLabel = 'Drink / Beverage';
 
-    items.push({
-      name: baseName,
-      category: 'Main Portion',
-      portion: '1 full serving',
-      calories: baseKcal
-    });
+      const portionLabel = opt.portionUnit ? `1 ${opt.portionUnit}` : (cat === 'base' ? '1 plate' : cat === 'protein' ? '1 portion' : '1 serving');
 
-    // Identify protein / sauce
-    let proteinName = 'Seasoned Grilled Protein';
-    let proteinKcal = 220;
-    if (/chicken/i.test(lower)) { proteinName = 'Spiced Grilled Chicken Quarter'; proteinKcal = 250; }
-    else if (/beef|meat/i.test(lower)) { proteinName = 'Tender Stewed Beef Cut'; proteinKcal = 230; }
-    else if (/fish/i.test(lower)) { proteinName = 'Pan-seared Mackerel Fish'; proteinKcal = 190; }
-    else if (/egg/i.test(lower)) { proteinName = 'Boiled Farm Egg'; proteinKcal = 78; }
-    else if (/ayamase/i.test(lower)) { proteinName = 'Designer Ayamase Sauce & Assorted Cuts'; proteinKcal = 290; }
-    else if (/egusi|gbegiri/i.test(lower)) { proteinName = 'Rich Melon Seed Egusi Soup & Beef'; proteinKcal = 280; }
-    else if (/turkey/i.test(lower)) { proteinName = 'Crispy Seasoned Turkey Cut'; proteinKcal = 260; }
+      const lower = pName.toLowerCase();
+      let calories = 320;
+      if (cat === 'base') {
+        if (/rice/i.test(lower)) calories = /fried/i.test(lower) ? 410 : 380;
+        else if (/beans/i.test(lower)) calories = 330;
+        else if (/spag|pasta/i.test(lower)) calories = 360;
+        else if (/yam/i.test(lower)) calories = 390;
+        else if (/amala|semo|swallow|fufu/i.test(lower)) calories = 340;
+        else calories = 350;
+      } else if (cat === 'protein') {
+        if (/egg/i.test(lower)) calories = 78;
+        else if (/fish/i.test(lower)) calories = 180;
+        else if (/chicken/i.test(lower)) calories = 240;
+        else if (/beef|meat/i.test(lower)) calories = 220;
+        else if (/turkey/i.test(lower)) calories = 250;
+        else calories = 200;
+      } else if (cat === 'side') {
+        if (/plantain|dodo/i.test(lower)) calories = 180;
+        else if (/slaw|salad/i.test(lower)) calories = 60;
+        else if (/moimoi/i.test(lower)) calories = 170;
+        else calories = 120;
+      } else if (cat === 'drink') {
+        calories = /water/i.test(lower) ? 0 : 130;
+      }
 
-    items.push({
-      name: proteinName,
-      category: 'Protein & Sauce',
-      portion: '1 portion',
-      calories: proteinKcal
-    });
+      items.push({
+        name: pName,
+        category: categoryLabel,
+        portion: portionLabel,
+        calories,
+        price: opt.price
+      });
+    }
 
-    // Side / Vegetable garnish
-    items.push({
-      name: 'Steamed Greens / Mixed Slaw',
-      category: 'Vitamins & Fiber',
-      portion: '1 side cup',
-      calories: 60
-    });
+    if (packagingFee > 0) {
+      items.push({
+        name: 'Eco-grade Takeaway Pack',
+        category: 'Packaging',
+        portion: '1 container',
+        calories: 0,
+        price: packagingFee
+      });
+    }
 
-    // Calculate macros
     const totalKcal = items.reduce((sum, it) => sum + it.calories, 0);
-    const proteinGrams = Math.round(proteinKcal / 10 + (mealType === 'lunch' ? 8 : 4));
-    const carbsGrams = Math.round(baseKcal / 5.5);
+    const proteinItems = items.filter(it => it.category === 'Protein & Sauce');
+    const proteinGrams = Math.round((proteinItems.length > 0 ? 26 : 14) + (mealType === 'lunch' ? 6 : 2));
+    const carbsGrams = Math.round(totalKcal * 0.52 / 4);
     const fatsGrams = Math.round((totalKcal * 0.22) / 9);
     const fiberGrams = Math.max(3, Math.round(carbsGrams * 0.08));
 
-    // Dynamic benefit tailored to health conditions
-    let benefit = "Provides balanced glucose release and lean protein to power stamina throughout campus lectures and study sessions.";
+    let benefit = "Balanced campus combo delivering steady glucose release, lean amino acids, and vital electrolytes.";
     if (conditions.some(c => c.toLowerCase().includes('ulcer'))) {
-      benefit = "Cooked with gentle herbs and low chili content to prevent gastric irritation while supplying soothing energy.";
+      benefit = "Prepared with gentle seasoning and soothing carbohydrates to protect against gastric acidity.";
     } else if (conditions.some(c => c.toLowerCase().includes('diabetes'))) {
-      benefit = "High in dietary fiber with complex carbohydrates for a gradual glycemic response and sustained alertness.";
+      benefit = "Rich in complex fiber for sustained glycemic control and post-meal focus during study sessions.";
     } else if (conditions.some(c => c.toLowerCase().includes('protein'))) {
-      benefit = "Protein-dense profile delivering over 30g of essential amino acids for muscular repair and deep satiety.";
+      benefit = "High biological value proteins supporting muscle synthesis and long-lasting lecture satiety.";
     }
 
     return {
@@ -219,6 +236,8 @@ export class MealPlannerService {
     try {
       const { 
         budget, 
+        dailyBudget,
+        bufferAmount = 0,
         mealsPerDay = 3, 
         vendors = [], 
         dislikes = [], 
@@ -227,6 +246,22 @@ export class MealPlannerService {
         includeDrinks = false,
         count = 3 
       } = params;
+
+      let effectiveWeeklyBudget = Number(budget) || 0;
+      let effectiveDailyBudget = Number(dailyBudget) || 0;
+
+      if (effectiveDailyBudget > 0 && effectiveWeeklyBudget <= 0) {
+        effectiveWeeklyBudget = effectiveDailyBudget * 7;
+      } else if (effectiveWeeklyBudget > 0 && effectiveDailyBudget <= 0) {
+        effectiveDailyBudget = Math.floor(effectiveWeeklyBudget / 7);
+      } else if (effectiveWeeklyBudget <= 0 && effectiveDailyBudget <= 0) {
+        effectiveWeeklyBudget = 10000;
+        effectiveDailyBudget = Math.floor(10000 / 7);
+      }
+
+      const buffer = Number(bufferAmount) || 0;
+      const maxAllowedWeeklyBudget = effectiveWeeklyBudget + buffer;
+      const maxAllowedDailyBudget = Math.floor(maxAllowedWeeklyBudget / 7);
 
       // 1. Get vendor IDs safely
       let vendorFilter: any = { status: 'approved' };
@@ -409,7 +444,13 @@ export class MealPlannerService {
       }
 
       const cookedOptions = filteredOptions.filter((m) => !['groceries', 'raw_materials'].includes(m.category));
-      const targetPerMeal = Math.max(1200, Math.floor(budget / (mealsPerDay * 7)));
+      
+      const PACKAGING_FEE_PER_MEAL = 150;
+      const DAILY_NINJA_DELIVERY_FEE = 350;
+      const DAILY_SERVICE_FEE = 50;
+      const dailyNonFoodFees = DAILY_NINJA_DELIVERY_FEE + DAILY_SERVICE_FEE + (mealsPerDay * PACKAGING_FEE_PER_MEAL);
+      const targetDailyFood = Math.max(mealsPerDay * 300, maxAllowedDailyBudget - dailyNonFoodFees);
+      const targetPerMeal = Math.max(300, Math.floor(targetDailyFood / mealsPerDay));
 
       const iterations: any[] = [];
       const iterationCount = Math.max(1, count || 3);
@@ -417,7 +458,7 @@ export class MealPlannerService {
       for (let i = 0; i < iterationCount; i++) {
         const cookedMealPlan = this.buildCookedPlan(
           cookedOptions.length > 0 ? cookedOptions : finalOptions, 
-          budget, 
+          effectiveWeeklyBudget, 
           mealsPerDay, 
           targetPerMeal, 
           i, 
@@ -445,6 +486,9 @@ export class MealPlannerService {
           ? notes.join(' • ') + '.'
           : 'Balanced iteration providing essential macros for student life.';
 
+        const bufferUsed = Math.max(0, totalCost - effectiveWeeklyBudget);
+        const budgetDeficit = Math.max(0, totalCost - maxAllowedWeeklyBudget);
+
         iterations.push({
           days: cookedMealPlan,
           totalCost,
@@ -452,8 +496,12 @@ export class MealPlannerService {
           packagingTotal,
           deliveryTotal,
           serviceTotal,
+          budget: effectiveWeeklyBudget,
+          dailyBudget: effectiveDailyBudget,
+          bufferAmount: buffer,
+          bufferUsed,
+          budgetDeficit,
           healthNote,
-          budgetDeficit: Math.max(0, totalCost - budget)
         });
       }
 
@@ -495,8 +543,8 @@ export class MealPlannerService {
     const vendorNames = Array.from(optionsByVendor.keys());
 
     // Collect global drinks and sides as fallbacks if vendor doesn't sell them
-    const allDrinks = options.filter(o => this.categorizeItem(o.product.name, o.category) === 'drink');
-    const allProteins = options.filter(o => this.categorizeItem(o.product.name, o.category) === 'protein');
+    const allDrinks = options.filter(o => this.categorizeItem(o.product.name, o.category) === 'drink').sort((a, b) => a.price - b.price);
+    const allProteins = options.filter(o => this.categorizeItem(o.product.name, o.category) === 'protein').sort((a, b) => a.price - b.price);
 
     // Standard platform fees
     const PACKAGING_FEE_PER_MEAL = 150; // Takeaway pack
@@ -517,11 +565,11 @@ export class MealPlannerService {
         const assignedVendor = vendorNames[vIdx] || 'Campus Vendor';
         const vendorMeals = optionsByVendor.get(assignedVendor) || options;
 
-        // Partition this vendor's dishes into meal components
-        const vBases = vendorMeals.filter(m => this.categorizeItem(m.product.name, m.category) === 'base');
-        const vProteins = vendorMeals.filter(m => this.categorizeItem(m.product.name, m.category) === 'protein');
-        const vSides = vendorMeals.filter(m => this.categorizeItem(m.product.name, m.category) === 'side');
-        const vDrinks = vendorMeals.filter(m => this.categorizeItem(m.product.name, m.category) === 'drink');
+        // Partition this vendor's dishes into meal components and sort by price
+        const vBases = vendorMeals.filter(m => this.categorizeItem(m.product.name, m.category) === 'base').sort((a, b) => a.price - b.price);
+        const vProteins = vendorMeals.filter(m => this.categorizeItem(m.product.name, m.category) === 'protein').sort((a, b) => a.price - b.price);
+        const vSides = vendorMeals.filter(m => this.categorizeItem(m.product.name, m.category) === 'side').sort((a, b) => a.price - b.price);
+        const vDrinks = vendorMeals.filter(m => this.categorizeItem(m.product.name, m.category) === 'drink').sort((a, b) => a.price - b.price);
 
         const comboOptions: MealOption[] = [];
         let comboName = '';
@@ -538,26 +586,33 @@ export class MealPlannerService {
           comboName = chosenBase.product.name;
         }
 
-        // 2. Pick Protein (Beef, Fish, Egg, Chicken, etc.)
+        // 2. Pick Protein ONLY if base doesn't already contain protein!
+        const baseNameLower = (chosenBase?.product?.name || '').toLowerCase();
+        const alreadyHasProtein = /egg|chicken|beef|meat|fish|turkey|goat|pomo|assorted|suya|kilishi|sausage/i.test(baseNameLower);
+
         let chosenProtein: MealOption | null = null;
-        if (vProteins.length > 0) {
-          chosenProtein = vProteins[(day * 2 + mIdx * 3 + offset * 5) % vProteins.length];
-        } else if (allProteins.length > 0) {
-          chosenProtein = allProteins[(day + mIdx) % allProteins.length];
+        if (!alreadyHasProtein) {
+          if (vProteins.length > 0) {
+            chosenProtein = vProteins[(day * 2 + mIdx * 3 + offset * 5) % vProteins.length];
+          } else if (allProteins.length > 0) {
+            chosenProtein = allProteins[(day + mIdx) % allProteins.length];
+          }
+
+          if (chosenProtein && chosenProtein.product.name !== chosenBase?.product.name) {
+            comboOptions.push(chosenProtein);
+            comboFoodPrice += chosenProtein.price;
+            comboName += ` with ${chosenProtein.product.name}`;
+          }
         }
 
-        if (chosenProtein && chosenProtein.product.name !== chosenBase?.product.name) {
-          comboOptions.push(chosenProtein);
-          comboFoodPrice += chosenProtein.price;
-          comboName += ` with ${chosenProtein.product.name}`;
-        }
-
-        // 3. Pick Side (Plantain / Coleslaw / Moimoi)
-        if (vSides.length > 0 && mIdx >= 1) { // Add side for lunch or dinner
-          const chosenSide = vSides[(day + mIdx) % vSides.length];
-          comboOptions.push(chosenSide);
-          comboFoodPrice += chosenSide.price;
-          comboName += ` & ${chosenSide.product.name}`;
+        // 3. Pick Side (Plantain / Coleslaw / Moimoi) if budget allows
+        if (vSides.length > 0 && mIdx >= 1) {
+          const candidateSide = vSides[(day + mIdx) % vSides.length];
+          if (comboFoodPrice + candidateSide.price <= targetPerMeal * 1.35) {
+            comboOptions.push(candidateSide);
+            comboFoodPrice += candidateSide.price;
+            comboName += ` & ${candidateSide.product.name}`;
+          }
         }
 
         // 4. Pick Drink (if user requested drink on meals)
@@ -576,21 +631,14 @@ export class MealPlannerService {
         }
 
         if (comboOptions.length > 0) {
+          // Generate accurate breakdown with exact vendor item names, portions, prices, plus takeaway pack
           const breakdown = this.generateMealBreakdown(
-            comboName,
+            comboOptions,
             chosenBase?.vendor?.storeName || assignedVendor,
-            comboFoodPrice,
             mealType,
-            medicalConditions
+            medicalConditions,
+            PACKAGING_FEE_PER_MEAL
           );
-
-          // Add takeaway pack to breakdown
-          breakdown.items.push({
-            name: 'Eco-grade Takeaway Pack',
-            category: 'Packaging',
-            portion: '1 container',
-            calories: 0
-          });
 
           const totalMealCost = comboFoodPrice + PACKAGING_FEE_PER_MEAL;
 
@@ -611,31 +659,26 @@ export class MealPlannerService {
         } else if (allowCustomErrands) {
           const customMealName = mIdx === 0 ? 'Local Akara & Pap Request with Milk' : mIdx === 1 ? 'Mama-put Rice & Stew Special with Beef' : 'Local Spaghetti & Fried Egg Combo';
           const customCost = 1500;
+          const customOpt: MealOption = {
+            product: { _id: 'custom', name: customMealName },
+            vendor: { storeName: 'Custom Request' },
+            price: customCost,
+            category: 'custom',
+            nutritionalCategory: 'mixed'
+          };
           const breakdown = this.generateMealBreakdown(
-            customMealName,
+            [customOpt],
             'Custom Request',
-            customCost,
             mealType,
-            medicalConditions
+            medicalConditions,
+            PACKAGING_FEE_PER_MEAL
           );
-          breakdown.items.push({
-            name: 'Eco-grade Takeaway Pack',
-            category: 'Packaging',
-            portion: '1 container',
-            calories: 0
-          });
 
           const totalMealCost = customCost + PACKAGING_FEE_PER_MEAL;
 
           meals.push({
             type: mealType,
-            options: [{
-              product: { _id: 'custom', name: customMealName },
-              vendor: { storeName: 'Custom Request' },
-              price: customCost,
-              category: 'custom',
-              nutritionalCategory: 'mixed'
-            }],
+            options: [customOpt],
             estimatedCost: totalMealCost,
             name: customMealName,
             isCustom: true,

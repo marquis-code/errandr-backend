@@ -38,7 +38,9 @@ export class MealPlannerController {
   @ApiOperation({ summary: 'Generate multiple meal plan iterations' })
   generateIterations(
     @Body() body: { 
-      budget: number; 
+      budget?: number; 
+      dailyBudget?: number;
+      bufferAmount?: number;
       mealsPerDay?: number; 
       vendors?: string[];
       dislikes?: string[];
