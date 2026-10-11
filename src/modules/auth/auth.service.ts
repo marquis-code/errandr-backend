@@ -146,7 +146,7 @@ export class AuthService {
         } else {
           // If not signing up, we should not create an account for them automatically
           if (!isSignUp) {
-            throw new NotFoundException("opps we notice you dont haev an account plase proceed to signup using google");
+            throw new NotFoundException("Oops! We noticed you don't have an account yet. Please proceed to sign up with Google.");
           }
 
           // Create new user with the specified role
