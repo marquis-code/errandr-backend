@@ -15,6 +15,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { EmailService } from '../email/email.service';
 import { MarketPoolService } from '../market-pool/market-pool.service';
+import { GroupOrdersService } from '../group-orders/group-orders.service';
 
 @ApiTags('Payments')
 @Controller('payments')
@@ -29,6 +30,7 @@ export class PaymentsController {
     @Inject(forwardRef(() => AppointmentsService)) private readonly appointmentsService: AppointmentsService,
     private readonly emailService: EmailService,
     @Inject(forwardRef(() => MarketPoolService)) private readonly marketPoolService: MarketPoolService,
+    @Inject(forwardRef(() => GroupOrdersService)) private readonly groupOrdersService: GroupOrdersService,
     @InjectModel(User.name) private readonly userModel: Model<User>,
   ) {}
 

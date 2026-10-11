@@ -2187,7 +2187,15 @@ export class OrdersService {
 
           vendor.rating = ((currentRating * totalRatings) + data.vendorRating) / newTotalRatings;
           vendor.totalRatings = newTotalRatings;
-          await vendor.save();
+          try {
+            await this.vendorModel.updateOne(
+              { _id: vendor._id },
+              { $set: { rating: vendor.rating, totalRatings: vendor.totalRatings } }
+            );
+          } catch (error: any) {
+            this.logger.error(`Error saving vendor in rateOrder: ${error.message}`, error.stack);
+            throw new BadRequestException(`Vendor Validation error: ${error.message}`);
+          }
         }
       }
     }
@@ -2229,7 +2237,15 @@ export class OrdersService {
           const currentRating = errander.rating || 0;
           const deliveries = errander.totalDeliveries || 1;
           errander.rating = ((currentRating * (deliveries - 1)) + data.erranderRating) / deliveries;
-          await errander.save();
+          try {
+            await this.erranderModel.updateOne(
+              { _id: errander._id },
+              { $set: { rating: errander.rating } }
+            );
+          } catch (error: any) {
+            this.logger.error(`Error saving errander in rateOrder: ${error.message}`, error.stack);
+            throw new BadRequestException(`Errander Validation error: ${error.message}`);
+          }
         }
       }
 
@@ -2254,7 +2270,24 @@ export class OrdersService {
       }
     }
 
-    await order.save();
+    try {
+      await this.orderModel.updateOne(
+        { _id: order._id },
+        {
+          $set: {
+            vendorRating: order.vendorRating,
+            vendorReview: order.vendorReview,
+            hasRatedVendor: order.hasRatedVendor,
+            erranderRating: order.erranderRating,
+            erranderReview: order.erranderReview,
+            hasRatedErrander: order.hasRatedErrander,
+          },
+        }
+      );
+    } catch (error: any) {
+      this.logger.error(`Error saving order in rateOrder: ${error.message}`, error.stack);
+      throw new BadRequestException(`Validation error: ${error.message}`);
+    }
     return order;
   }
 

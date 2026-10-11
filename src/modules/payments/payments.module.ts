@@ -7,6 +7,7 @@ import { EmailModule } from '../email/email.module';
 import { AppointmentsModule } from '../appointments/appointments.module';
 import { UsersModule } from '../users/users.module';
 import { MarketPoolModule } from '../market-pool/market-pool.module';
+import { GroupOrdersModule } from '../group-orders/group-orders.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { MarketPoolModule } from '../market-pool/market-pool.module';
     forwardRef(() => WalletsModule),
     forwardRef(() => AppointmentsModule),
     forwardRef(() => MarketPoolModule),
+    forwardRef(() => GroupOrdersModule),
     EmailModule,
     UsersModule,
   ],

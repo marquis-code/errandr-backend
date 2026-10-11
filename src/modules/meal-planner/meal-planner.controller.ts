@@ -10,9 +10,6 @@ export class MealPlannerController {
 
   @Get()
   @ApiOperation({ summary: 'Generate a meal plan based on budget (GET)' })
-  @ApiQuery({ name: 'budget', required: true, type: Number })
-  @ApiQuery({ name: 'mealsPerDay', required: false, type: Number })
-  @ApiQuery({ name: 'preferences', required: false, isArray: true, type: String })
   generatePlanGet(
     @Query('budget') budget: string,
     @Query('mealsPerDay') mealsPerDay?: string,
@@ -26,22 +23,39 @@ export class MealPlannerController {
   }
 
   @Post('generate')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'Generate a meal plan based on budget (POST)' })
   generatePlan(
-    @Body()
-    body: {
-      budget: number;
-      mealsPerDay?: number;
-      preferences?: string[];
-    },
-  ): Promise<import('./meal-planner.service').MealPlan> {
+    @Body() body: { budget: number; mealsPerDay?: number; preferences?: string[]; }
+  ) {
     return this.mealPlannerService.generateMealPlan(
       body.budget,
       body.mealsPerDay || 3,
       body.preferences,
     );
+  }
+
+  @Post('iterations')
+  @ApiOperation({ summary: 'Generate multiple meal plan iterations' })
+  generateIterations(
+    @Body() body: { 
+      budget: number; 
+      mealsPerDay?: number; 
+      vendors?: string[];
+      dislikes?: string[];
+      medicalConditions?: string[];
+      allowCustomErrands?: boolean;
+      includeDrinks?: boolean;
+      count?: number;
+    }
+  ) {
+    return this.mealPlannerService.generateIterations(body);
+  }
+
+  @Get('items')
+  @ApiOperation({ summary: 'Get available meal options from vendors' })
+  getAvailableMealOptions(@Query('vendors') vendors?: string | string[]) {
+    const list = Array.isArray(vendors) ? vendors : (vendors ? [vendors] : undefined);
+    return this.mealPlannerService.getAvailableMealOptions(list);
   }
 
   @Get('suggest')
