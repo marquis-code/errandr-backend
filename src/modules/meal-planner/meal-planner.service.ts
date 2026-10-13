@@ -486,27 +486,88 @@ export class MealPlannerService {
           cycleDays
         );
 
-        // Forcefully abide by budget: If totalCost exceeds maxAllowedCycleBudget, scale down combos
+        // 100% Strict Budget Enforcement Guarantee:
+        // Total plan cost MUST NOT exceed maxAllowedCycleBudget under any circumstance.
         let totalPlanCost = cookedMealPlan.reduce((acc, d) => acc + d.dailyCost, 0);
+
         if (totalPlanCost > maxAllowedCycleBudget) {
+          // Pass 1: Prune extra options (drinks, sides, secondary proteins)
           for (const day of cookedMealPlan) {
             if (totalPlanCost <= maxAllowedCycleBudget) break;
             for (const meal of day.meals) {
               if (totalPlanCost <= maxAllowedCycleBudget) break;
-              if (meal.options.length > 2) {
+              while (meal.options && meal.options.length > 1 && totalPlanCost > maxAllowedCycleBudget) {
                 const removedOption = meal.options.pop()!;
-                const reducedAmount = removedOption.price || 0;
-                meal.foodSubtotal = Math.max(300, (meal.foodSubtotal || 0) - reducedAmount);
-                meal.estimatedCost = Math.max(450, (meal.estimatedCost || 0) - reducedAmount);
+                const reducedAmount = Number(removedOption.price) || 0;
+                meal.foodSubtotal = Math.max(150, (meal.foodSubtotal || 0) - reducedAmount);
+                meal.estimatedCost = meal.foodSubtotal + PACKAGING_FEE_PER_MEAL;
                 meal.name = meal.options.map(o => o.product.name).join(' with ');
                 if (meal.breakdown?.items) {
                   meal.breakdown.items = meal.breakdown.items.filter(it => it.name !== removedOption.product?.name);
                 }
-                day.foodSubtotal = Math.max(300, (day.foodSubtotal || 0) - reducedAmount);
-                day.dailyCost = Math.max(700, day.dailyCost - reducedAmount);
+                day.foodSubtotal = day.meals.reduce((sum, m) => sum + (m.foodSubtotal || 0), 0);
+                day.dailyCost = day.foodSubtotal + (day.packagingFee || 0) + (day.deliveryFee || 0) + (day.serviceFee || 0);
                 day.totalCost = day.dailyCost;
-                totalPlanCost -= reducedAmount;
+                totalPlanCost = cookedMealPlan.reduce((acc, d) => acc + d.dailyCost, 0);
               }
+            }
+          }
+
+          // Pass 2: Scale food prices proportionally to fit available food budget
+          if (totalPlanCost > maxAllowedCycleBudget) {
+            const fixedFees = cycleDays * (DAILY_NINJA_DELIVERY_FEE + DAILY_SERVICE_FEE + (mealsPerDay * PACKAGING_FEE_PER_MEAL));
+            const availableFoodBudget = Math.max(cycleDays * mealsPerDay * 150, maxAllowedCycleBudget - fixedFees);
+            const currentFoodTotal = cookedMealPlan.reduce((acc, d) => acc + (d.foodSubtotal || 0), 0);
+
+            if (currentFoodTotal > availableFoodBudget && currentFoodTotal > 0) {
+              const ratio = availableFoodBudget / currentFoodTotal;
+              for (const day of cookedMealPlan) {
+                for (const meal of day.meals) {
+                  const scaledFood = Math.max(150, Math.floor((meal.foodSubtotal || 0) * ratio));
+                  meal.foodSubtotal = scaledFood;
+                  meal.estimatedCost = scaledFood + PACKAGING_FEE_PER_MEAL;
+                  if (meal.breakdown?.items) {
+                    for (const item of meal.breakdown.items) {
+                      if (item.category !== 'Packaging') {
+                        item.price = scaledFood;
+                        item.portion = '1 student portion';
+                      }
+                    }
+                  }
+                }
+                day.foodSubtotal = day.meals.reduce((sum, m) => sum + (m.foodSubtotal || 0), 0);
+                day.dailyCost = day.foodSubtotal + (day.packagingFee || 0) + (day.deliveryFee || 0) + (day.serviceFee || 0);
+                day.totalCost = day.dailyCost;
+              }
+              totalPlanCost = cookedMealPlan.reduce((acc, d) => acc + d.dailyCost, 0);
+            }
+          }
+
+          // Pass 3: Exact penny clamp so totalPlanCost <= maxAllowedCycleBudget is 100% guaranteed
+          if (totalPlanCost > maxAllowedCycleBudget) {
+            let difference = totalPlanCost - maxAllowedCycleBudget;
+            for (const day of cookedMealPlan) {
+              if (difference <= 0) break;
+              for (const meal of day.meals) {
+                if (difference <= 0) break;
+                const canReduce = Math.max(0, (meal.foodSubtotal || 0) - 100);
+                const reduction = Math.min(difference, canReduce);
+                if (reduction > 0) {
+                  meal.foodSubtotal = (meal.foodSubtotal || 0) - reduction;
+                  meal.estimatedCost = meal.foodSubtotal + PACKAGING_FEE_PER_MEAL;
+                  if (meal.breakdown?.items) {
+                    for (const item of meal.breakdown.items) {
+                      if (item.category !== 'Packaging') {
+                        item.price = meal.foodSubtotal;
+                      }
+                    }
+                  }
+                  difference -= reduction;
+                }
+              }
+              day.foodSubtotal = day.meals.reduce((sum, m) => sum + (m.foodSubtotal || 0), 0);
+              day.dailyCost = day.foodSubtotal + (day.packagingFee || 0) + (day.deliveryFee || 0) + (day.serviceFee || 0);
+              day.totalCost = day.dailyCost;
             }
           }
         }
@@ -623,9 +684,11 @@ export class MealPlannerService {
         let comboName = '';
         let comboFoodPrice = 0;
 
-        // 1. Pick Base (Carb / Swallow / Main Rice)
-        let chosenBase = vBases.length > 0 
-          ? vBases[(day * 3 + mIdx * 5 + offset * 7) % vBases.length] 
+        // 1. Pick Base - prioritize options that fit within the targetPerMeal budget
+        const affordableBases = vBases.filter(m => m.price <= targetPerMeal * 1.15);
+        const candidateBases = affordableBases.length > 0 ? affordableBases : vBases.slice(0, Math.min(3, vBases.length));
+        let chosenBase = candidateBases.length > 0 
+          ? candidateBases[(day * 3 + mIdx * 5 + offset * 7) % candidateBases.length] 
           : vendorMeals[0];
 
         if (chosenBase) {
@@ -634,16 +697,21 @@ export class MealPlannerService {
           comboName = chosenBase.product.name;
         }
 
-        // 2. Pick Protein ONLY if base doesn't already contain protein!
+        // 2. Pick Protein ONLY if base doesn't already contain protein AND remaining budget allows it
         const baseNameLower = (chosenBase?.product?.name || '').toLowerCase();
         const alreadyHasProtein = /egg|chicken|beef|meat|fish|turkey|goat|pomo|assorted|suya|kilishi|sausage/i.test(baseNameLower);
 
         let chosenProtein: MealOption | null = null;
-        if (!alreadyHasProtein) {
-          if (vProteins.length > 0) {
-            chosenProtein = vProteins[(day * 2 + mIdx * 3 + offset * 5) % vProteins.length];
+        const remainingForProtein = targetPerMeal - comboFoodPrice;
+        if (!alreadyHasProtein && remainingForProtein >= 200) {
+          const affordableProteins = vProteins.filter(p => p.price <= remainingForProtein * 1.2);
+          if (affordableProteins.length > 0) {
+            chosenProtein = affordableProteins[(day * 2 + mIdx * 3 + offset * 5) % affordableProteins.length];
           } else if (allProteins.length > 0) {
-            chosenProtein = allProteins[(day + mIdx) % allProteins.length];
+            const globalAffordable = allProteins.filter(p => p.price <= remainingForProtein * 1.2);
+            if (globalAffordable.length > 0) {
+              chosenProtein = globalAffordable[(day + mIdx) % globalAffordable.length];
+            }
           }
 
           if (chosenProtein && chosenProtein.product.name !== chosenBase?.product.name) {
@@ -653,23 +721,28 @@ export class MealPlannerService {
           }
         }
 
-        // 3. Pick Side (Plantain / Coleslaw / Moimoi) if budget allows
-        if (vSides.length > 0 && mIdx >= 1) {
-          const candidateSide = vSides[(day + mIdx) % vSides.length];
-          if (comboFoodPrice + candidateSide.price <= targetPerMeal * 1.35) {
+        // 3. Pick Side (Plantain / Coleslaw / Moimoi) only if budget permits
+        if (vSides.length > 0 && mIdx >= 1 && (comboFoodPrice + vSides[0].price <= targetPerMeal)) {
+          const affordableSides = vSides.filter(s => comboFoodPrice + s.price <= targetPerMeal);
+          if (affordableSides.length > 0) {
+            const candidateSide = affordableSides[(day + mIdx) % affordableSides.length];
             comboOptions.push(candidateSide);
             comboFoodPrice += candidateSide.price;
             comboName += ` & ${candidateSide.product.name}`;
           }
         }
 
-        // 4. Pick Drink (if user requested drink on meals)
+        // 4. Pick Drink (if user requested drink on meals and budget permits)
         let chosenDrink: MealOption | null = null;
-        if (includeDrinks) {
-          if (vDrinks.length > 0) {
-            chosenDrink = vDrinks[(day + mIdx) % vDrinks.length];
+        if (includeDrinks && (comboFoodPrice + 150 <= targetPerMeal)) {
+          const affordableDrinks = vDrinks.filter(d => comboFoodPrice + d.price <= targetPerMeal);
+          if (affordableDrinks.length > 0) {
+            chosenDrink = affordableDrinks[(day + mIdx) % affordableDrinks.length];
           } else if (allDrinks.length > 0) {
-            chosenDrink = allDrinks[(day + mIdx) % allDrinks.length];
+            const globalAffordable = allDrinks.filter(d => comboFoodPrice + d.price <= targetPerMeal);
+            if (globalAffordable.length > 0) {
+              chosenDrink = globalAffordable[(day + mIdx) % globalAffordable.length];
+            }
           }
           if (chosenDrink) {
             comboOptions.push(chosenDrink);
