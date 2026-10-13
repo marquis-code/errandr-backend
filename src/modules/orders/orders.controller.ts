@@ -566,10 +566,25 @@ async getMyVendorOrders(
   completeOrderContactless(
     @Param('id') id: string,
     @CurrentUser() user: User,
-    @Body() body: { imageUrl: string },
+    @Body() body: { imageUrl?: string; proofImageUrl?: string },
   ) {
     this.logger.log(`completeOrderContactless() id=${id} user=${user._id}`);
-    return this.ordersService.bypassDeliveryPinWithPhoto(id, (user._id as unknown) as string, body.imageUrl);
+    const img = body.imageUrl || body.proofImageUrl || '';
+    return this.ordersService.bypassDeliveryPinWithPhoto(id, (user._id as unknown) as string, img);
+  }
+
+  @Post(':id/contactless-dropoff')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Complete order via Contactless Drop-off (alias)' })
+  contactlessDropoffAlias(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+    @Body() body: { imageUrl?: string; proofImageUrl?: string },
+  ) {
+    this.logger.log(`contactlessDropoffAlias() id=${id} user=${user._id}`);
+    const img = body.imageUrl || body.proofImageUrl || '';
+    return this.ordersService.bypassDeliveryPinWithPhoto(id, (user._id as unknown) as string, img);
   }
 
   @Get('track/guest')

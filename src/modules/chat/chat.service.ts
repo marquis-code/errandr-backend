@@ -7,6 +7,20 @@ import { Appointment } from '../appointments/schemas/appointment.schema';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ModuleRef } from '@nestjs/core';
 import { ExamModeService } from '../exam-mode/exam-mode.service';
+/**
+ * Tolerant ObjectId cast.
+ *
+ * Clients build `replyTo`/`service` optimistically, so these values can be
+ * client-side temp ids instead of 24-hex ObjectIds. `new Types.ObjectId(x)` on
+ * such a value THROWS inside save(), which loses the entire message even though
+ * it was already emitted to the room. Anything unusable is simply dropped.
+ */
+const toObjectIdOrUndefined = (value?: string | null): Types.ObjectId | undefined => {
+  if (!value) return undefined;
+  const raw = String(value);
+  return /^[0-9a-fA-F]{24}$/.test(raw) ? new Types.ObjectId(raw) : undefined;
+};
+
 @Injectable()
 export class ChatService {
   constructor(
@@ -64,8 +78,8 @@ export class ChatService {
       messageType: data.messageType || 'text',
       roomType: data.roomType || (data.orderId ? 'order' : (data.appointmentId ? 'direct' : 'support')),
       attachment: data.attachment,
-      replyTo: data.replyTo ? new Types.ObjectId(data.replyTo) : undefined,
-      service: data.service ? new Types.ObjectId(data.service) : undefined,
+      replyTo: toObjectIdOrUndefined(data.replyTo),
+      service: toObjectIdOrUndefined(data.service),
     });
 
     // Fire-and-forget: send push notifications in background WITHOUT blocking the return.
@@ -181,7 +195,7 @@ export class ChatService {
             title: `New message from ${senderName}`,
             body: data.messageType === 'image' ? '📸 Sent an image' : (data.messageType === 'voice' ? '🎤 Sent a voice message' : (data.message.length > 50 ? data.message.substring(0, 50) + '...' : data.message)),
             type: 'NEW_CHAT_MESSAGE',
-            data: { orderId: data.orderId, orderNumber: order.orderNumber, messageId: msg._id }
+            data: { orderId: data.orderId, orderNumber: order.orderNumber, messageId: msg._id, senderId: senderStr, type: 'NEW_CHAT_MESSAGE' }
           }).catch(err => console.error(`Failed to send chat notification to ${r}`, err));
         }
       }
@@ -209,7 +223,7 @@ export class ChatService {
             title: `New message from ${senderName}`,
             body: data.messageType === 'image' ? '📸 Sent an image' : (data.messageType === 'voice' ? '🎤 Sent a voice message' : (data.message.length > 50 ? data.message.substring(0, 50) + '...' : data.message)),
             type: 'NEW_CHAT_MESSAGE',
-            data: { appointmentId: data.appointmentId, messageId: msg._id }
+            data: { appointmentId: data.appointmentId, messageId: msg._id, senderId: senderStr, type: 'NEW_CHAT_MESSAGE' }
           }).catch(err => console.error(`Failed to send chat notification to ${r}`, err));
         }
       }

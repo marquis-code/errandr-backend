@@ -274,9 +274,10 @@ export class NotificationsService {
   // ─── Urgent Support Notifications ────────────────
   async notifySupportTeam(message: string) {
     const supportContacts = [
-      '+2348052854256', // Goodness
-      '+2348139908262', // Ruth
-      '+2348147626503'  // Marquis
+      '+2348106600919', // Ruth
+      '+2348179495795', // Ife
+      '+2348052854256', // Kim
+      '+2348139908262', // Brandy
     ];
 
     this.logger.log(`Notifying support team: ${message}`);

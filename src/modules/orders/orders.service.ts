@@ -1570,8 +1570,8 @@ export class OrdersService {
     if (!order) throw new NotFoundException('Order not found');
 
     // Status guard: prevent completing already-delivered or cancelled orders
-    const completableStatuses = ['in_transit', 'picked_up', 'confirmed', 'preparing', 'ready_for_pickup', 'interception_in_progress',
-      OrderStatus.IN_TRANSIT, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP, OrderStatus.INTERCEPTION_IN_PROGRESS];
+    const completableStatuses = ['in_transit', 'picked_up', 'confirmed', 'preparing', 'ready_for_pickup', 'interception_in_progress', 'pending',
+      OrderStatus.IN_TRANSIT, OrderStatus.PICKED_UP, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP, OrderStatus.INTERCEPTION_IN_PROGRESS, OrderStatus.PENDING];
     if (!completableStatuses.includes(order.status)) {
       throw new BadRequestException(`Order cannot be completed — current status is "${order.status}"`);
     }
@@ -1706,18 +1706,22 @@ export class OrdersService {
     if (!order) throw new NotFoundException('Order not found');
 
     // Status guard: prevent completing already-delivered or cancelled orders
-    const completableStatuses = ['in_transit', 'picked_up', 'confirmed', 'preparing', 'ready_for_pickup',
-      OrderStatus.IN_TRANSIT, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP];
+    const completableStatuses = ['in_transit', 'picked_up', 'confirmed', 'preparing', 'ready_for_pickup', 'interception_in_progress', 'pending',
+      OrderStatus.IN_TRANSIT, OrderStatus.PICKED_UP, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP, OrderStatus.INTERCEPTION_IN_PROGRESS, OrderStatus.PENDING];
     if (!completableStatuses.includes(order.status)) {
       throw new BadRequestException(`Order cannot be completed — current status is "${order.status}"`);
     }
 
-    // Security check: only assigned errander can complete
+    // Security check: only assigned errander (or second errander) can complete
     const errander = await this.erranderModel.findOne({ user: erranderId });
     if (!errander) throw new BadRequestException('Errander profile not found');
 
     const orderErranderId = (order.errander as any)?._id?.toString() || order.errander?.toString();
-    if (orderErranderId !== errander._id.toString() && orderErranderId !== erranderId.toString()) {
+    const secondErranderId = order.interception?.secondErrander?.toString();
+    const isSecondErrander = secondErranderId && (secondErranderId === erranderId.toString() || secondErranderId === errander._id.toString());
+    const isPrimaryErrander = orderErranderId === errander._id.toString() || orderErranderId === erranderId.toString();
+
+    if (!isPrimaryErrander && !isSecondErrander) {
       throw new BadRequestException('You are not assigned to this order');
     }
 
