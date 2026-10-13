@@ -42,6 +42,8 @@ export class MealPlannerController {
       dailyBudget?: number;
       bufferAmount?: number;
       mealsPerDay?: number; 
+      cycleDays?: number;
+      totalDays?: number;
       vendors?: string[];
       dislikes?: string[];
       medicalConditions?: string[];

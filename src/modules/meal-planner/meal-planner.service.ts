@@ -9,6 +9,9 @@ export interface MealBreakdownItem {
   name: string;
   category: string;
   portion: string;
+  portions?: number;
+  basePrice?: number;
+  baseCalories?: number;
   calories: number;
   price?: number;
 }
@@ -61,8 +64,11 @@ export interface DailyPlan {
     foodSubtotal?: number;
     drink?: any;
     breakdown?: MealBreakdown;
+    portions?: number;
+    preferredTime?: string;
   }[];
   dailyCost: number;
+  totalCost?: number;
   foodSubtotal?: number;
   packagingFee?: number;
   deliveryFee?: number;
@@ -88,6 +94,8 @@ export interface IterationParams {
   dailyBudget?: number;
   bufferAmount?: number;
   mealsPerDay?: number;
+  cycleDays?: number;
+  totalDays?: number;
   vendors?: string[];
   dislikes?: string[];
   medicalConditions?: string[];
@@ -163,6 +171,9 @@ export class MealPlannerService {
         name: pName,
         category: categoryLabel,
         portion: portionLabel,
+        portions: 1,
+        basePrice: opt.price,
+        baseCalories: calories,
         calories,
         price: opt.price
       });
@@ -173,6 +184,9 @@ export class MealPlannerService {
         name: 'Eco-grade Takeaway Pack',
         category: 'Packaging',
         portion: '1 container',
+        portions: 1,
+        basePrice: packagingFee,
+        baseCalories: 0,
         calories: 0,
         price: packagingFee
       });
@@ -239,6 +253,8 @@ export class MealPlannerService {
         dailyBudget,
         bufferAmount = 0,
         mealsPerDay = 3, 
+        cycleDays: rawCycleDays,
+        totalDays: rawTotalDays,
         vendors = [], 
         dislikes = [], 
         medicalConditions = [], 
@@ -247,21 +263,23 @@ export class MealPlannerService {
         count = 3 
       } = params;
 
-      let effectiveWeeklyBudget = Number(budget) || 0;
+      const cycleDays = Math.max(1, Math.min(30, Number(rawCycleDays || rawTotalDays || 7)));
+
+      let effectiveCycleBudget = Number(budget) || 0;
       let effectiveDailyBudget = Number(dailyBudget) || 0;
 
-      if (effectiveDailyBudget > 0 && effectiveWeeklyBudget <= 0) {
-        effectiveWeeklyBudget = effectiveDailyBudget * 7;
-      } else if (effectiveWeeklyBudget > 0 && effectiveDailyBudget <= 0) {
-        effectiveDailyBudget = Math.floor(effectiveWeeklyBudget / 7);
-      } else if (effectiveWeeklyBudget <= 0 && effectiveDailyBudget <= 0) {
-        effectiveWeeklyBudget = 10000;
-        effectiveDailyBudget = Math.floor(10000 / 7);
+      if (effectiveDailyBudget > 0 && effectiveCycleBudget <= 0) {
+        effectiveCycleBudget = effectiveDailyBudget * cycleDays;
+      } else if (effectiveCycleBudget > 0 && effectiveDailyBudget <= 0) {
+        effectiveDailyBudget = Math.floor(effectiveCycleBudget / cycleDays);
+      } else if (effectiveCycleBudget <= 0 && effectiveDailyBudget <= 0) {
+        effectiveCycleBudget = 1500 * cycleDays;
+        effectiveDailyBudget = 1500;
       }
 
       const buffer = Number(bufferAmount) || 0;
-      const maxAllowedWeeklyBudget = effectiveWeeklyBudget + buffer;
-      const maxAllowedDailyBudget = Math.floor(maxAllowedWeeklyBudget / 7);
+      const maxAllowedCycleBudget = effectiveCycleBudget + buffer;
+      const maxAllowedDailyBudget = Math.floor(maxAllowedCycleBudget / cycleDays);
 
       // 1. Get vendor IDs safely
       let vendorFilter: any = { status: 'approved' };
@@ -458,14 +476,41 @@ export class MealPlannerService {
       for (let i = 0; i < iterationCount; i++) {
         const cookedMealPlan = this.buildCookedPlan(
           cookedOptions.length > 0 ? cookedOptions : finalOptions, 
-          effectiveWeeklyBudget, 
+          effectiveCycleBudget, 
           mealsPerDay, 
           targetPerMeal, 
           i, 
           allowCustomErrands,
           medicalConditions,
-          includeDrinks
+          includeDrinks,
+          cycleDays
         );
+
+        // Forcefully abide by budget: If totalCost exceeds maxAllowedCycleBudget, scale down combos
+        let totalPlanCost = cookedMealPlan.reduce((acc, d) => acc + d.dailyCost, 0);
+        if (totalPlanCost > maxAllowedCycleBudget) {
+          for (const day of cookedMealPlan) {
+            if (totalPlanCost <= maxAllowedCycleBudget) break;
+            for (const meal of day.meals) {
+              if (totalPlanCost <= maxAllowedCycleBudget) break;
+              if (meal.options.length > 2) {
+                const removedOption = meal.options.pop()!;
+                const reducedAmount = removedOption.price || 0;
+                meal.foodSubtotal = Math.max(300, (meal.foodSubtotal || 0) - reducedAmount);
+                meal.estimatedCost = Math.max(450, (meal.estimatedCost || 0) - reducedAmount);
+                meal.name = meal.options.map(o => o.product.name).join(' with ');
+                if (meal.breakdown?.items) {
+                  meal.breakdown.items = meal.breakdown.items.filter(it => it.name !== removedOption.product?.name);
+                }
+                day.foodSubtotal = Math.max(300, (day.foodSubtotal || 0) - reducedAmount);
+                day.dailyCost = Math.max(700, day.dailyCost - reducedAmount);
+                day.totalCost = day.dailyCost;
+                totalPlanCost -= reducedAmount;
+              }
+            }
+          }
+        }
+
         const totalCost = cookedMealPlan.reduce((acc, d) => acc + d.dailyCost, 0);
         const foodSubtotal = cookedMealPlan.reduce((acc, d) => acc + (d.foodSubtotal || 0), 0);
         const packagingTotal = cookedMealPlan.reduce((acc, d) => acc + (d.packagingFee || 0), 0);
@@ -486,8 +531,8 @@ export class MealPlannerService {
           ? notes.join(' • ') + '.'
           : 'Balanced iteration providing essential macros for student life.';
 
-        const bufferUsed = Math.max(0, totalCost - effectiveWeeklyBudget);
-        const budgetDeficit = Math.max(0, totalCost - maxAllowedWeeklyBudget);
+        const bufferUsed = Math.max(0, totalCost - effectiveCycleBudget);
+        const budgetDeficit = Math.max(0, totalCost - maxAllowedCycleBudget);
 
         iterations.push({
           days: cookedMealPlan,
@@ -496,12 +541,14 @@ export class MealPlannerService {
           packagingTotal,
           deliveryTotal,
           serviceTotal,
-          budget: effectiveWeeklyBudget,
+          budget: effectiveCycleBudget,
           dailyBudget: effectiveDailyBudget,
           bufferAmount: buffer,
           bufferUsed,
           budgetDeficit,
           healthNote,
+          cycleDays,
+          mealsPerDay
         });
       }
 
@@ -528,7 +575,8 @@ export class MealPlannerService {
     offset: number,
     allowCustomErrands: boolean = false,
     medicalConditions: string[] = [],
-    includeDrinks: boolean = false
+    includeDrinks: boolean = false,
+    cycleDays: number = 7
   ): DailyPlan[] {
     const days: DailyPlan[] = [];
     const mealTypes = ['breakfast', 'lunch', 'dinner'].slice(0, mealsPerDay);
@@ -551,8 +599,8 @@ export class MealPlannerService {
     const DAILY_NINJA_DELIVERY_FEE = 350; // Errand Ninja delivery
     const DAILY_SERVICE_FEE = 50; // Platform charge
 
-    // Build 7-day plan
-    for (let day = 1; day <= 7; day++) {
+    // Build cycleDays plan
+    for (let day = 1; day <= cycleDays; day++) {
       const meals: DailyPlan['meals'] = [];
       let dailyFoodSubtotal = 0;
       let dailyPackaging = 0;
@@ -641,6 +689,8 @@ export class MealPlannerService {
           );
 
           const totalMealCost = comboFoodPrice + PACKAGING_FEE_PER_MEAL;
+          const defaultTimes: Record<string, string> = { breakfast: '08:30', lunch: '12:30', dinner: '18:30' };
+          const preferredTime = defaultTimes[mealType] || '12:00';
 
           meals.push({
             type: mealType,
@@ -651,7 +701,9 @@ export class MealPlannerService {
             packagingFee: PACKAGING_FEE_PER_MEAL,
             foodSubtotal: comboFoodPrice,
             drink: chosenDrink ? { name: chosenDrink.product.name, price: chosenDrink.price, image: chosenDrink.product.image } : undefined,
-            breakdown
+            breakdown,
+            portions: 1,
+            preferredTime
           });
 
           dailyFoodSubtotal += comboFoodPrice;
@@ -675,6 +727,8 @@ export class MealPlannerService {
           );
 
           const totalMealCost = customCost + PACKAGING_FEE_PER_MEAL;
+          const defaultTimes: Record<string, string> = { breakfast: '08:30', lunch: '12:30', dinner: '18:30' };
+          const preferredTime = defaultTimes[mealType] || '12:00';
 
           meals.push({
             type: mealType,
@@ -684,7 +738,9 @@ export class MealPlannerService {
             isCustom: true,
             packagingFee: PACKAGING_FEE_PER_MEAL,
             foodSubtotal: customCost,
-            breakdown
+            breakdown,
+            portions: 1,
+            preferredTime
           });
 
           dailyFoodSubtotal += customCost;
