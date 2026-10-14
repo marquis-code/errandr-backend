@@ -1,61 +1,13 @@
-const axios = require('axios');
-(async () => {
-  try {
-    const res = await axios.post('https://api.erranders.org/api/v1/auth/login', {
-      email: 'abahmarquis@gmail.com',
-      password: 'password123'
-    });
-    const token = res.data.token;
-    
-    // Attempt to create a dummy order
-    const orderPayload = {
-      "vendorId": "6aa188008a862ac97e18d2c5",
-      "packs": [
-        {
-          "packId": "pack-1",
-          "name": "Standard",
-          "packType": "standard",
-          "items": [
-            {
-              "product": "6aa188008a862ac97e18d2c7",
-              "name": "Test Item",
-              "price": 1000,
-              "image": "",
-              "quantity": 1,
-              "subtotal": 1000,
-              "customizations": []
-            }
-          ]
-        }
-      ],
-      "subtotal": 1000,
-      "deliveryFee": 150,
-      "serviceFee": 150,
-      "platformProcessingFee": 0,
-      "packagingFee": 0,
-      "selectedPack": {
-        "name": "Standard",
-        "price": 0
-      },
-      "weight": 1,
-      "isMysteryBox": false,
-      "isDormDelivery": false,
-      "total": 1300,
-      "deliveryOption": "immediate",
-      "deliveryMode": "room_delivery",
-      "recipientName": "abah marquis",
-      "recipientPhone": "08147626503",
-      "specificAddress": "Test Location",
-      "deliveryAddress": "Test Location",
-      "isWithinLuth": true,
-      "locationType": "inside_campus"
-    };
-
-    const orderRes = await axios.post('https://api.erranders.org/api/v1/orders', orderPayload, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    console.log("Order created:", orderRes.data);
-  } catch (err) {
-    console.error("Error creating order:", err.response ? err.response.data : err.message);
+const mongoose = require('mongoose');
+mongoose.connect('mongodb+srv://errandr:errandr@errandr.eknah3x.mongodb.net/?appName=errandr').then(async () => {
+  const User = mongoose.model('User', new mongoose.Schema({}, { strict: false }));
+  const Order = mongoose.model('Order', new mongoose.Schema({}, { strict: false }));
+  const user = await User.findOne({ email: 'danielomolaja83@gmail.com' });
+  if (!user) {
+    console.log('User not found');
+    process.exit(0);
   }
-})();
+  const orders = await Order.find({ customer: user._id }); // just get all orders for simplicity
+  console.log(JSON.stringify(orders, null, 2));
+  process.exit(0);
+});

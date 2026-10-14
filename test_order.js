@@ -1,13 +1,9 @@
 const mongoose = require('mongoose');
-require('dotenv').config();
-
-async function run() {
-  await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/erranders');
-  const db = mongoose.connection;
-  const Order = db.collection('orders');
-  const order = await Order.findOne({ _id: new mongoose.Types.ObjectId("6aada1d8442ea7f13d9a2c1d") });
-  console.log("paymentStatus:", order.paymentStatus);
-  console.log("vendor:", order.vendor);
+mongoose.connect('mongodb+srv://errandr:errandr@errandr.eknah3x.mongodb.net/erranders?retryWrites=true&w=majority&appName=errandr');
+const db = mongoose.connection;
+db.once('open', async function() {
+  const collection = db.collection('orders');
+  const order = await collection.findOne({ orderNumber: 'ERR-1791664789883-221' });
+  console.log(JSON.stringify(order, null, 2));
   process.exit(0);
-}
-run();
+});
