@@ -4,6 +4,7 @@ import { Model, Types } from 'mongoose';
 import { Product } from '../products/schemas/product.schema';
 import { Vendor } from '../vendors/schemas/vendor.schema';
 import { MenuItem } from '../menu/schemas/menu-item.schema';
+import { SystemSetting } from '../admin/schemas/system-setting.schema';
 
 export interface MealBreakdownItem {
   name: string;
@@ -110,6 +111,7 @@ export class MealPlannerService {
     @InjectModel(Product.name) private productModel: Model<Product>,
     @InjectModel(Vendor.name) private vendorModel: Model<Vendor>,
     @InjectModel(MenuItem.name) private menuItemModel: Model<MenuItem>,
+    @InjectModel(SystemSetting.name) private settingModel: Model<SystemSetting>,
   ) {}
 
   private classifyNutrition(category: string, name: string): string {
@@ -463,9 +465,10 @@ export class MealPlannerService {
 
       const cookedOptions = filteredOptions.filter((m) => !['groceries', 'raw_materials'].includes(m.category));
       
+      const feeSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
       const PACKAGING_FEE_PER_MEAL = 150;
-      const DAILY_NINJA_DELIVERY_FEE = 350;
-      const DAILY_SERVICE_FEE = 50;
+      const DAILY_NINJA_DELIVERY_FEE = Number(feeSetting?.value?.roomDeliveryFee ?? feeSetting?.value?.baseFee ?? 350);
+      const DAILY_SERVICE_FEE = Number(feeSetting?.value?.platformFee ?? feeSetting?.value?.convenienceFee ?? 100);
       const dailyNonFoodFees = DAILY_NINJA_DELIVERY_FEE + DAILY_SERVICE_FEE + (mealsPerDay * PACKAGING_FEE_PER_MEAL);
       const targetDailyFood = Math.max(mealsPerDay * 300, maxAllowedDailyBudget - dailyNonFoodFees);
       const targetPerMeal = Math.max(300, Math.floor(targetDailyFood / mealsPerDay));
@@ -483,7 +486,9 @@ export class MealPlannerService {
           allowCustomErrands,
           medicalConditions,
           includeDrinks,
-          cycleDays
+          cycleDays,
+          DAILY_NINJA_DELIVERY_FEE,
+          DAILY_SERVICE_FEE
         );
 
         // 100% Strict Budget Enforcement Guarantee:
@@ -637,7 +642,9 @@ export class MealPlannerService {
     allowCustomErrands: boolean = false,
     medicalConditions: string[] = [],
     includeDrinks: boolean = false,
-    cycleDays: number = 7
+    cycleDays: number = 7,
+    dailyDeliveryFee: number = 350,
+    dailyServiceFee: number = 100
   ): DailyPlan[] {
     const days: DailyPlan[] = [];
     const mealTypes = ['breakfast', 'lunch', 'dinner'].slice(0, mealsPerDay);
@@ -655,10 +662,10 @@ export class MealPlannerService {
     const allDrinks = options.filter(o => this.categorizeItem(o.product.name, o.category) === 'drink').sort((a, b) => a.price - b.price);
     const allProteins = options.filter(o => this.categorizeItem(o.product.name, o.category) === 'protein').sort((a, b) => a.price - b.price);
 
-    // Standard platform fees
+    // Dynamic platform fees from admin settings
     const PACKAGING_FEE_PER_MEAL = 150; // Takeaway pack
-    const DAILY_NINJA_DELIVERY_FEE = 350; // Errand Ninja delivery
-    const DAILY_SERVICE_FEE = 50; // Platform charge
+    const DAILY_NINJA_DELIVERY_FEE = dailyDeliveryFee;
+    const DAILY_SERVICE_FEE = dailyServiceFee;
 
     // Build cycleDays plan
     for (let day = 1; day <= cycleDays; day++) {

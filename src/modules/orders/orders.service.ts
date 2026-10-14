@@ -309,8 +309,8 @@ export class OrdersService {
       const itemCost = Number(data.estimatedItemCost) || 0;
       const itemCostBuffer = 0; // Buffer disabled per request
 
-      // Flat Buyer's Convenience Fee
-      const serviceFee = 50;
+      // Flat Buyer's Convenience Fee (dynamically configured platform fee)
+      const serviceFee = Number(errandSetting?.value?.convenienceFee ?? errandSetting?.value?.platformFee ?? 100);
 
       const enableTransferFee = errandSetting?.value?.enableTransferFee === true;
       // Paystack transfer fee: ₦10 for ≤₦5,000, ₦25 for >₦5,000 (charged to customer) ONLY if enabled
@@ -528,7 +528,8 @@ export class OrdersService {
       }
     }
 
-    const serviceFee = typeof data.serviceFee === 'number' ? data.serviceFee : Math.round(subtotal * 0.05); // Use frontend passed fee or default to 5%
+    const defaultServiceFee = Number(deliveryFeesConfig?.value?.convenienceFee ?? deliveryFeesConfig?.value?.platformFee ?? 100);
+    const serviceFee = data.serviceFee === 0 ? 0 : defaultServiceFee;
     const platformProcessingFee = data.platformProcessingFee || 0;
 
     // Batch Delivery logic for delivery fee or grouping
@@ -579,17 +580,17 @@ export class OrdersService {
 
     // Fetch custom errand settings to get commission percentage for delivery fee
     const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
-    const commissionFlatFee = deliveryFeesConfig?.value?.platformFee ?? 50;
+    const commissionFlatFee = Number(deliveryFeesConfig?.value?.platformFee ?? deliveryFeesConfig?.value?.commissionFlatFee ?? deliveryFeesConfig?.value?.convenienceFee ?? 100);
     const deliveryCommission = commissionFlatFee;
 
     // Save errander payout (delivery fee minus platform commission)
     const erranderPayout = deliveryFee - deliveryCommission;
 
-    // Calculate platform share (service fee + delivery commission + food markup)
+    // Calculate platform share (service fee + platform processing fee + delivery commission + food markup)
     const markupPct = errandSetting?.value?.foodMarkupPercentage ?? 5;
     const MARKUP_FACTOR = 1 + (markupPct / 100);
     const foodMarkup = subtotal - Math.round(subtotal / MARKUP_FACTOR);
-    let platformShare = serviceFee + deliveryCommission + foodMarkup;
+    let platformShare = serviceFee + platformProcessingFee + deliveryCommission + foodMarkup;
 
     // Calculate vendor share (vendor subtotal + packaging fee)
     const vendorSubtotal = Math.round(subtotal / MARKUP_FACTOR);
@@ -3074,9 +3075,9 @@ export class OrdersService {
       throw new BadRequestException('New fee must be higher than current fee');
     }
 
-    const serviceFee = 50;
-    const total = (order.total || 0) - (order.deliveryFee || 0) + newFee;
     const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
+    const serviceFee = Number(errandSetting?.value?.convenienceFee ?? errandSetting?.value?.platformFee ?? 100);
+    const total = (order.total || 0) - (order.deliveryFee || 0) + newFee;
     const commissionPercent = errandSetting?.value?.customErrandCommissionPercentage ?? 20;
     const commissionAmount = Math.round(newFee * (commissionPercent / 100));
     const erranderShare = newFee - commissionAmount;

@@ -23,10 +23,37 @@ export class SettingsController {
       // Seed default settings if not exists
       setting = await this.settingModel.create({
         key: 'custom_errand',
-        value: { baseFee: 450, expressFee: 850, convenienceFee: 50, commissionFlatFee: 50, customErrandCommissionPercentage: 20, customErrandSafetyBufferPercentage: 20, platformProcessingFee: 500, platformServiceFeePercentage: 5, foodMarkupPercentage: 5, minOutsideCampusFee: 450, minCampusEnvironsFee: 350, minCustomErrandFee: 400, enableTransferFee: false },
+        value: {
+          baseFee: 450,
+          expressFee: 850,
+          roomDeliveryFee: 350,
+          dropoffServiceFee: 300,
+          platformFee: 100,
+          convenienceFee: 100,
+          commissionFlatFee: 100,
+          customErrandCommissionPercentage: 20,
+          customErrandSafetyBufferPercentage: 20,
+          platformProcessingFee: 100,
+          platformServiceFeePercentage: 5,
+          foodMarkupPercentage: 5,
+          minOutsideCampusFee: 450,
+          minCampusEnvironsFee: 350,
+          minCustomErrandFee: 400,
+          enableTransferFee: false,
+        },
       });
     }
-    return setting.value;
+
+    const val = { ...(setting.value || {}) };
+    const resolvedPlatformFee = Number(val.platformFee ?? val.convenienceFee ?? val.platformProcessingFee ?? 100);
+    val.platformFee = resolvedPlatformFee;
+    if (val.convenienceFee === undefined || val.convenienceFee === 0) {
+      val.convenienceFee = resolvedPlatformFee;
+    }
+    if (val.commissionFlatFee === undefined || val.commissionFlatFee === 0) {
+      val.commissionFlatFee = resolvedPlatformFee;
+    }
+    return val;
   }
 
   @Put('errands/custom')
@@ -34,18 +61,26 @@ export class SettingsController {
   @Roles(UserRole.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update custom errand pricing settings (admin only)' })
-  async updateCustomErrandSettings(@Body() body: { baseFee: number; expressFee: number; convenienceFee?: number; commissionFlatFee?: number; customErrandCommissionPercentage?: number; customErrandSafetyBufferPercentage?: number; platformProcessingFee?: number; platformServiceFeePercentage?: number; foodMarkupPercentage?: number; minOutsideCampusFee?: number; minCampusEnvironsFee?: number; minCustomErrandFee?: number; enableTransferFee?: boolean }) {
+  async updateCustomErrandSettings(@Body() body: { baseFee: number; expressFee: number; roomDeliveryFee?: number; dropoffServiceFee?: number; platformFee?: number; convenienceFee?: number; commissionFlatFee?: number; customErrandCommissionPercentage?: number; customErrandSafetyBufferPercentage?: number; platformProcessingFee?: number; platformServiceFeePercentage?: number; foodMarkupPercentage?: number; minOutsideCampusFee?: number; minCampusEnvironsFee?: number; minCustomErrandFee?: number; enableTransferFee?: boolean }) {
     let setting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
     if (!setting) {
       setting = new this.settingModel({ key: 'custom_errand' });
     }
+
+    const resolvedPlatformFee = Number(body.platformFee ?? body.convenienceFee ?? body.platformProcessingFee ?? 100);
+    const resolvedConvenienceFee = Number(body.convenienceFee ?? body.platformFee ?? resolvedPlatformFee);
+    const resolvedCommissionFlatFee = Number(body.commissionFlatFee ?? body.platformFee ?? resolvedPlatformFee);
+
     setting.value = {
       baseFee: Number(body.baseFee || 450),
       expressFee: Number(body.expressFee || 850),
-      convenienceFee: Number(body.convenienceFee ?? 50),
-      commissionFlatFee: Number(body.commissionFlatFee ?? 50),
+      roomDeliveryFee: Number(body.roomDeliveryFee || 350),
+      dropoffServiceFee: Number(body.dropoffServiceFee || 300),
+      platformFee: resolvedPlatformFee,
+      convenienceFee: resolvedConvenienceFee,
+      commissionFlatFee: resolvedCommissionFlatFee,
       customErrandCommissionPercentage: Number(body.customErrandCommissionPercentage ?? 20),
-      platformProcessingFee: Number(body.platformProcessingFee ?? 500),
+      platformProcessingFee: Number(body.platformProcessingFee ?? resolvedPlatformFee),
       platformServiceFeePercentage: Number(body.platformServiceFeePercentage ?? 5),
       foodMarkupPercentage: Number(body.foodMarkupPercentage ?? 5),
       minOutsideCampusFee: Number(body.minOutsideCampusFee ?? 450),
