@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Put, Post, Param, Body, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -186,6 +186,69 @@ export class SettingsController {
   @Get('advert/public')
   @ApiOperation({ summary: 'Get global advert settings for frontend' })
   async getAdvertSettingsPublic() {
+    const DEFAULT_CUSTOM_ADS = [
+      {
+        id: 'ad-waris-kitchen',
+        title: 'Waris Kitchen Weekend Special',
+        description: 'Smoky Jollof rice, peppered turkey & chilled Chapman delivered directly to your hostel block.',
+        badgeText: '🔥 20% Student Discount',
+        imageUrl: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80',
+        ctaText: 'Order from Waris',
+        ctaLink: '/vendors',
+        advertiserName: 'Waris Kitchen',
+        isActive: true,
+        placement: 'both',
+        impressions: 142,
+        clicks: 28,
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'ad-erranders-barter',
+        title: 'Trade Unused Items on Barter',
+        description: 'Swap textbooks, gadgets, calculators, and room appliances safely with students on campus.',
+        badgeText: '🔄 Erranders Barter',
+        imageUrl: 'https://images.unsplash.com/photo-1512499617640-c74ae3a79d37?auto=format&fit=crop&w=800&q=80',
+        ctaText: 'Start Trading on Barter',
+        ctaLink: 'https://barter.erranders.org',
+        advertiserName: 'Erranders Barter',
+        isActive: true,
+        placement: 'both',
+        impressions: 310,
+        clicks: 54,
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'ad-errand-ninja-custom',
+        title: 'Need an Off-Campus Errand Handled?',
+        description: 'Market runs, pharmacy pickups, or parcel drops at the campus gate. Request an Errand Ninja in seconds.',
+        badgeText: '⚡ Lightning Fast',
+        imageUrl: 'https://images.unsplash.com/photo-1586880244406-556ebe35f282?auto=format&fit=crop&w=800&q=80',
+        ctaText: 'Book Custom Errand',
+        ctaLink: '/errands/custom',
+        advertiserName: 'Erranders Logistics',
+        isActive: true,
+        placement: 'both',
+        impressions: 285,
+        clicks: 63,
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'ad-campus-tech-care',
+        title: 'Screen Broken? Instant Tech Fix',
+        description: 'Certified campus technicians for iPhone, Samsung, and laptops. Screen repairs with 30-day student warranty.',
+        badgeText: '🛠️ 15% Student Discount',
+        imageUrl: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80',
+        ctaText: 'Request Tech Errand',
+        ctaLink: '/errands/custom',
+        advertiserName: 'Campus Tech Care',
+        isActive: true,
+        placement: 'both',
+        impressions: 198,
+        clicks: 37,
+        createdAt: new Date().toISOString(),
+      },
+    ];
+
     let setting = await this.settingModel.findOne({ key: 'advert' }).exec();
     if (!setting) {
       setting = await this.settingModel.create({
@@ -194,16 +257,26 @@ export class SettingsController {
           enabled: true,
           intervalMinutes: 15,
           autoCloseSeconds: 0,
-          contentType: 'dynamic',
-          customAd: {
-            title: '',
-            description: '',
-            imageUrl: '',
-            ctaText: '',
-            ctaLink: '',
-          }
+          contentType: 'custom',
+          customAds: DEFAULT_CUSTOM_ADS,
+          customAd: DEFAULT_CUSTOM_ADS[0],
         },
       });
+    } else {
+      let modified = false;
+      if (!setting.value) {
+        setting.value = {};
+        modified = true;
+      }
+      if (!setting.value.customAds || !Array.isArray(setting.value.customAds) || setting.value.customAds.length === 0) {
+        setting.value.customAds = DEFAULT_CUSTOM_ADS;
+        setting.value.customAd = DEFAULT_CUSTOM_ADS[0];
+        modified = true;
+      }
+      if (modified) {
+        setting.markModified('value');
+        await setting.save();
+      }
     }
     return setting.value;
   }
@@ -226,22 +299,58 @@ export class SettingsController {
     if (!setting) {
       setting = new this.settingModel({ key: 'advert' });
     }
+    const customAds = Array.isArray(body.customAds) ? body.customAds : (setting.value?.customAds || []);
+    const firstActive = customAds.find((a: any) => a.isActive !== false) || customAds[0] || body.customAd || {
+      title: '',
+      description: '',
+      imageUrl: '',
+      ctaText: '',
+      ctaLink: '',
+    };
+
     setting.value = {
       enabled: body.enabled ?? true,
       intervalMinutes: Number(body.intervalMinutes ?? 15),
       autoCloseSeconds: Number(body.autoCloseSeconds ?? 0),
-      contentType: body.contentType || 'dynamic',
-      customAd: body.customAd || {
-        title: '',
-        description: '',
-        imageUrl: '',
-        ctaText: '',
-        ctaLink: '',
-      }
+      contentType: body.contentType || 'custom',
+      customAds: customAds,
+      customAd: firstActive,
     };
     setting.markModified('value');
     await setting.save();
     return setting.value;
+  }
+
+  @Post('advert/:id/impression')
+  @ApiOperation({ summary: 'Record an advert impression (public)' })
+  async trackAdvertImpression(@Param('id') id: string) {
+    const setting = await this.settingModel.findOne({ key: 'advert' }).exec();
+    if (setting && setting.value?.customAds && Array.isArray(setting.value.customAds)) {
+      const ad = setting.value.customAds.find((a: any) => a.id === id);
+      if (ad) {
+        ad.impressions = (ad.impressions || 0) + 1;
+        setting.markModified('value');
+        await setting.save();
+        return { success: true, impressions: ad.impressions };
+      }
+    }
+    return { success: false };
+  }
+
+  @Post('advert/:id/click')
+  @ApiOperation({ summary: 'Record an advert CTA click (public)' })
+  async trackAdvertClick(@Param('id') id: string) {
+    const setting = await this.settingModel.findOne({ key: 'advert' }).exec();
+    if (setting && setting.value?.customAds && Array.isArray(setting.value.customAds)) {
+      const ad = setting.value.customAds.find((a: any) => a.id === id);
+      if (ad) {
+        ad.clicks = (ad.clicks || 0) + 1;
+        setting.markModified('value');
+        await setting.save();
+        return { success: true, clicks: ad.clicks };
+      }
+    }
+    return { success: false };
   }
 
   @Get('exam-brethren/public')
