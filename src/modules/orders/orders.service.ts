@@ -1212,9 +1212,10 @@ export class OrdersService {
     });
 
     return order.populate([
-      { path: 'customer', select: 'firstName lastName phone avatar' },
-      { path: 'vendor', select: 'storeName logo phone' },
-      { path: 'errander', select: 'firstName lastName phone avatar' },
+      { path: 'customer', select: 'firstName lastName phone avatar deliveryAddress location' },
+      { path: 'vendor', select: 'storeName logo phone address' },
+      { path: 'errander', select: 'firstName lastName phone avatar user' },
+      { path: 'interception.secondErrander', select: 'firstName lastName phone avatar' },
     ]);
   }
 
