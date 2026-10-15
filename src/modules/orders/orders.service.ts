@@ -580,11 +580,15 @@ export class OrdersService {
 
     // Fetch custom errand settings to get commission percentage for delivery fee
     const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
-    const commissionFlatFee = Number(deliveryFeesConfig?.value?.platformFee ?? deliveryFeesConfig?.value?.commissionFlatFee ?? deliveryFeesConfig?.value?.convenienceFee ?? 100);
+    const commissionFlatFee = Number(deliveryFeesConfig?.value?.commissionFlatFee ?? errandSetting?.value?.commissionFlatFee ?? 50);
     const deliveryCommission = commissionFlatFee;
 
     // Save errander payout (delivery fee minus platform commission)
-    const erranderPayout = deliveryFee - deliveryCommission;
+    // If campus prime made deliveryFee 0, errander still receives standard payout (roomDeliveryFee - deliveryCommission)
+    const effectiveDeliveryFee = (deliveryFee === 0 && userForPrime?.campusPrimeActive)
+      ? (deliveryMode === 'dropoff_service' ? dropoffServiceFee : roomDeliveryFee)
+      : deliveryFee;
+    const erranderPayout = Math.max(0, effectiveDeliveryFee - deliveryCommission);
 
     // Calculate platform share (service fee + platform processing fee + delivery commission + food markup)
     const markupPct = errandSetting?.value?.foodMarkupPercentage ?? 5;

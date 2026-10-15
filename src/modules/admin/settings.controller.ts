@@ -28,7 +28,7 @@ export class SettingsController {
           dropoffServiceFee: 300,
           platformFee: 100,
           convenienceFee: 100,
-          commissionFlatFee: 100,
+          commissionFlatFee: 50,
           customErrandCommissionPercentage: 20,
           customErrandSafetyBufferPercentage: 20,
           platformProcessingFee: 100,
@@ -48,8 +48,8 @@ export class SettingsController {
     if (val.convenienceFee === undefined || val.convenienceFee === 0) {
       val.convenienceFee = resolvedPlatformFee;
     }
-    if (val.commissionFlatFee === undefined || val.commissionFlatFee === 0) {
-      val.commissionFlatFee = resolvedPlatformFee;
+    if (val.commissionFlatFee === undefined || val.commissionFlatFee === null) {
+      val.commissionFlatFee = 50;
     }
     return val;
   }
@@ -67,7 +67,7 @@ export class SettingsController {
 
     const resolvedPlatformFee = Number(body.platformFee ?? body.convenienceFee ?? body.platformProcessingFee ?? 100);
     const resolvedConvenienceFee = Number(body.convenienceFee ?? body.platformFee ?? resolvedPlatformFee);
-    const resolvedCommissionFlatFee = Number(body.commissionFlatFee ?? body.platformFee ?? resolvedPlatformFee);
+    const resolvedCommissionFlatFee = Number(body.commissionFlatFee !== undefined && body.commissionFlatFee !== null ? body.commissionFlatFee : (setting.value?.commissionFlatFee ?? 50));
 
     setting.value = {
       baseFee: Number(body.baseFee || 450),
