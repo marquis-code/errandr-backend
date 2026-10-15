@@ -298,7 +298,7 @@ export class OrdersService {
 
       // Fetch minimum runner fee from admin settings
       const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
-      const minCustomErrandFee = errandSetting?.value?.minCustomErrandFee ?? 400;
+      const minCustomErrandFee = Number(errandSetting?.value?.minCustomErrandFee ?? 300);
       const commissionPercent = errandSetting?.value?.customErrandCommissionPercentage ?? 20;
       const safetyBufferPercent = errandSetting?.value?.customErrandSafetyBufferPercentage ?? 20;
 
@@ -1281,7 +1281,7 @@ export class OrdersService {
     const isCustomErrandPending = isCustomErrand && targetOrder.status === OrderStatus.PENDING;
 
     const newStatus = targetOrder.status === OrderStatus.PENDING ? OrderStatus.CONFIRMED :
-      (isNegotiating ? OrderStatus.AWAITING_PAYMENT : targetOrder.status);
+      (isNegotiating ? (targetOrder.paymentStatus === PaymentStatus.PAID ? OrderStatus.CONFIRMED : OrderStatus.AWAITING_PAYMENT) : targetOrder.status);
 
     const updateSet: any = {
       errander: new Types.ObjectId(erranderId),
@@ -2958,17 +2958,29 @@ export class OrdersService {
   async payForCustomErrand(orderId: string, customerId: string, paymentReference: string): Promise<Order> {
     const order = await this.orderModel.findById(orderId).populate('errander');
     if (!order) throw new NotFoundException('Order not found');
-    if (order.customer.toString() !== customerId.toString()) throw new BadRequestException('Not your order');
-    if (order.status !== OrderStatus.AWAITING_PAYMENT) {
+    const orderCustomerId = ((order.customer as any)?._id || order.customer || '').toString();
+    if (customerId !== 'SYSTEM' && orderCustomerId !== customerId.toString()) {
+      throw new BadRequestException('Not your order');
+    }
+
+    // Idempotent: If order is already confirmed and paid, return safely
+    if (order.status === OrderStatus.CONFIRMED && order.paymentStatus === PaymentStatus.PAID) {
+      return order;
+    }
+
+    if (order.status !== OrderStatus.AWAITING_PAYMENT && order.status !== OrderStatus.NEGOTIATING) {
       throw new BadRequestException('Order is not awaiting payment');
     }
 
-    const verification = await this.paystackService.verifyTransaction(paymentReference);
-    if (verification?.status !== 'success') {
-      throw new BadRequestException('Payment verification failed');
-    }
-    if (verification.amount < order.total - 5) {
-      throw new BadRequestException('Payment amount mismatch');
+    const isAlreadyVerified = order.paymentStatus === PaymentStatus.PAID && order.paymentReference === paymentReference;
+    if (!isAlreadyVerified) {
+      const verification = await this.paystackService.verifyTransaction(paymentReference);
+      if (verification?.status !== 'success') {
+        throw new BadRequestException('Payment verification failed');
+      }
+      if (verification.amount < order.total - 5) {
+        throw new BadRequestException('Payment amount mismatch');
+      }
     }
 
     order.paymentReference = paymentReference;
@@ -3027,12 +3039,18 @@ export class OrdersService {
       this.logger.error('Failed to auto-create initial chat message for custom errand:', err);
     }
 
-    await this.notificationsService.sendNotification(order.errander.toString(), {
-      title: 'Payment Confirmed!',
-      body: `Customer has paid for Order #${order.orderNumber}. You can now start the errand!`,
-      type: 'ORDER_CONFIRMED',
-      data: { orderId: order._id.toString() },
-    });
+    const erranderId = ((order.errander as any)?._id || order.errander)?.toString();
+    if (erranderId) {
+      await this.notificationsService.sendNotification(erranderId, {
+        title: 'Payment Confirmed!',
+        body: `Customer has paid for Order #${order.orderNumber}. You can now start the errand!`,
+        type: 'ORDER_CONFIRMED',
+        data: { orderId: order._id.toString() },
+      });
+    }
+
+    // Broadcast status update in realtime to Redis & Sockets so Admin & Dispatch apps update immediately
+    await this.notifyOrderStatusUpdate(order, OrderStatus.CONFIRMED, 'Payment verified, order confirmed');
 
     // Populate customer to get email
     const populatedOrder = await order.populate('customer');

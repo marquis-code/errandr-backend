@@ -14,8 +14,6 @@ export class SettingsController {
   ) {}
 
   @Get('errands/custom')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'Get custom errand pricing settings' })
   async getCustomErrandSettings() {
     let setting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
@@ -38,7 +36,7 @@ export class SettingsController {
           foodMarkupPercentage: 5,
           minOutsideCampusFee: 450,
           minCampusEnvironsFee: 350,
-          minCustomErrandFee: 400,
+          minCustomErrandFee: 300,
           enableTransferFee: false,
         },
       });
@@ -85,7 +83,7 @@ export class SettingsController {
       foodMarkupPercentage: Number(body.foodMarkupPercentage ?? 5),
       minOutsideCampusFee: Number(body.minOutsideCampusFee ?? 450),
       minCampusEnvironsFee: Number(body.minCampusEnvironsFee ?? 350),
-      minCustomErrandFee: Number(body.minCustomErrandFee ?? 400),
+      minCustomErrandFee: Number(body.minCustomErrandFee ?? 300),
       customErrandSafetyBufferPercentage: Number(body.customErrandSafetyBufferPercentage ?? 20),
       enableTransferFee: body.enableTransferFee ?? false,
     };

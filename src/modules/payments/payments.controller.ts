@@ -103,7 +103,8 @@ export class PaymentsController {
             // If the order was awaiting_payment (bid accepted), confirm it via payForCustomErrand logic
             if (order.status === OrderStatus.AWAITING_PAYMENT) {
               try {
-                await this.ordersService.payForCustomErrand(id, order.customer.toString(), reference);
+                const customerId = ((order.customer as any)?._id || order.customer || '').toString();
+                await this.ordersService.payForCustomErrand(id, customerId, reference);
                 this.logger.log(`Custom errand ${id}: awaiting_payment → confirmed via verify`);
               } catch (e: any) {
                 this.logger.warn(`Custom errand ${id} payForCustomErrand failed (may already be processed): ${e.message}`);
@@ -310,7 +311,8 @@ export class PaymentsController {
                   }
                   if (order.status === OrderStatus.AWAITING_PAYMENT) {
                     try {
-                      await this.ordersService.payForCustomErrand(id, order.customer.toString(), reference);
+                      const customerId = ((order.customer as any)?._id || order.customer || '').toString();
+                      await this.ordersService.payForCustomErrand(id, customerId, reference);
                       this.logger.log(`Webhook: Custom errand ${id}: awaiting_payment → confirmed`);
                     } catch (e: any) {
                       this.logger.warn(`Webhook: Custom errand ${id} payForCustomErrand skipped: ${e.message}`);
