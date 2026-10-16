@@ -34,6 +34,7 @@ import * as bcrypt from 'bcryptjs';
 import { ModuleRef } from '@nestjs/core';
 import { ExamModeService } from '../exam-mode/exam-mode.service';
 import { NegotiationGateway } from './gateways/negotiation.gateway';
+import { InstitutionResolver } from '../institutions/institution-resolver.service';
 
 @Injectable()
 export class OrdersService {
@@ -65,7 +66,49 @@ export class OrdersService {
     private moduleRef: ModuleRef,
     @Inject(forwardRef(() => ErrandersService))
     private errandersService: ErrandersService,
+    private institutionResolver: InstitutionResolver,
   ) { }
+
+  /**
+   * Campus tenancy. Returns the institution every result of a request must be
+   * restricted to, or `null` when the request must not be scoped (guests and
+   * legacy clients) — in which case the caller leaves its query untouched.
+   */
+  private async resolveInstitution(req?: any): Promise<Types.ObjectId | null> {
+    if (!req) return null;
+    return this.institutionResolver.resolve(req);
+  }
+
+  /**
+   * Write-time stamping for a new order, per the design contract:
+   *   1. the ordering student's institution,
+   *   2. otherwise the vendor's institution (authoritative for that order),
+   *   3. otherwise unset — never invent one.
+   *
+   * `customer` may be passed when the caller already loaded the user document.
+   */
+  private async resolveOrderInstitution(customerId: string, vendor?: any, customer?: any): Promise<Types.ObjectId | undefined> {
+    const customerDoc = customer ?? (Types.ObjectId.isValid(customerId)
+      ? await this.userModel.findById(customerId).select('institution').lean()
+      : null);
+
+    const customerInstitution = this.toObjectId(customerDoc?.institution);
+    if (customerInstitution) return customerInstitution;
+
+    const vendorInstitution = this.toObjectId(vendor?.institution);
+    if (vendorInstitution) return vendorInstitution;
+
+    return undefined;
+  }
+
+  /** Accepts an ObjectId or a populated document, returns an ObjectId or undefined. */
+  private toObjectId(value: any): Types.ObjectId | undefined {
+    if (!value) return undefined;
+    const id = typeof value === 'object' && value._id ? value._id : value;
+    if (id instanceof Types.ObjectId) return id;
+    if (typeof id === 'string' && Types.ObjectId.isValid(id)) return new Types.ObjectId(id);
+    return undefined;
+  }
 
   private get examModeService(): ExamModeService {
     return this.moduleRef.get(ExamModeService, { strict: false });
@@ -211,8 +254,8 @@ export class OrdersService {
       subtotal: populated.subtotal,
       deliveryFee: populated.deliveryFee,
       total: populated.total,
-      erranderPayout: populated.erranderPayout,
-      erranderShare: populated.erranderShare || populated.deliveryFee || 0,
+      erranderPayout: (populated.deliveryFee >= 350 && (!populated.erranderPayout || populated.erranderPayout < 300)) ? 300 : populated.erranderPayout,
+      erranderShare: populated.erranderShare || (populated.deliveryFee >= 350 ? 300 : populated.deliveryFee) || 0,
       status: populated.status,
       type: populated.type,
       locationType: (populated as any).locationType,
@@ -332,11 +375,16 @@ export class OrdersService {
         }
       }
 
+      // Campus tenancy: a custom errand has no vendor, so it inherits the
+      // ordering student's institution (or stays unset).
+      const institution = await this.resolveOrderInstitution(customerId);
+
       const order = await this.orderModel.create({
         orderNumber: `EXT-${uuidv4().slice(0, 8).toUpperCase()}`,
         uniqueCode: Math.floor(100000 + Math.random() * 900000).toString(),
         deliveryPin: Math.floor(1000 + Math.random() * 9000).toString(),
         customer: new Types.ObjectId(customerId),
+        institution,
         type: OrderType.CUSTOM_ERRAND,
         customDetails: {
           pickupLocation: data.pickupLocation,
@@ -578,9 +626,14 @@ export class OrdersService {
       }
     }
 
-    // Fetch custom errand settings to get commission percentage for delivery fee
+    // Fetch custom errand settings to get commission flat fee for delivery
     const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
-    const commissionFlatFee = Number(deliveryFeesConfig?.value?.commissionFlatFee ?? errandSetting?.value?.commissionFlatFee ?? 50);
+    // Standard marketplace delivery takes a ₦50 flat commission so the errander keeps ₦300 out of ₦350.
+    // Cap commission at ₦50 to permanently guarantee rider earnings are never cut to ₦250.
+    const rawCommissionFlatFee = deliveryFeesConfig?.value?.commissionFlatFee ?? errandSetting?.value?.commissionFlatFee;
+    const commissionFlatFee = (rawCommissionFlatFee !== undefined && rawCommissionFlatFee !== null && Number(rawCommissionFlatFee) > 0)
+      ? Math.min(Number(rawCommissionFlatFee), 50)
+      : 50;
     const deliveryCommission = commissionFlatFee;
 
     // Save errander payout (delivery fee minus platform commission)
@@ -588,13 +641,20 @@ export class OrdersService {
     const effectiveDeliveryFee = (deliveryFee === 0 && userForPrime?.campusPrimeActive)
       ? (deliveryMode === 'dropoff_service' ? dropoffServiceFee : roomDeliveryFee)
       : deliveryFee;
-    const erranderPayout = Math.max(0, effectiveDeliveryFee - deliveryCommission);
+    let erranderPayout = Math.max(0, effectiveDeliveryFee - deliveryCommission);
+
+    // Hard floor guarantee: standard room delivery (₦350 delivery fee) ALWAYS yields at least ₦300 errander payout
+    if (effectiveDeliveryFee >= 350 && erranderPayout < 300) {
+      erranderPayout = 300;
+    }
+
+    const actualDeliveryCommission = effectiveDeliveryFee - erranderPayout;
 
     // Calculate platform share (service fee + platform processing fee + delivery commission + food markup)
     const markupPct = errandSetting?.value?.foodMarkupPercentage ?? 5;
     const MARKUP_FACTOR = 1 + (markupPct / 100);
     const foodMarkup = subtotal - Math.round(subtotal / MARKUP_FACTOR);
-    let platformShare = serviceFee + platformProcessingFee + deliveryCommission + foodMarkup;
+    let platformShare = serviceFee + platformProcessingFee + actualDeliveryCommission + foodMarkup;
 
     // Calculate vendor share (vendor subtotal + packaging fee)
     const vendorSubtotal = Math.round(subtotal / MARKUP_FACTOR);
@@ -808,12 +868,18 @@ export class OrdersService {
       }];
     }
 
+    // Campus tenancy: prefer the ordering student's institution; if they have
+    // none, derive it from the vendor being ordered from (the vendor's
+    // institution is authoritative for that order). Never invented.
+    const institution = await this.resolveOrderInstitution(customerId, vendor, user);
+
     const order = await this.orderModel.create({
       orderNumber: `ERR-${uuidv4().slice(0, 8).toUpperCase()}`,
       uniqueCode: Math.floor(100000 + Math.random() * 900000).toString(),
       deliveryPin: Math.floor(1000 + Math.random() * 9000).toString(),
       customer: new Types.ObjectId(customerId),
       vendor: new Types.ObjectId(data.vendorId),
+      institution,
       items: flatItems,
       packs: data.packs || [],
       selectedPack: selectedPackData,
@@ -1612,8 +1678,11 @@ export class OrdersService {
       note: 'Order completed via Delivery PIN',
     });
 
-    // ERRANDER PAYOUT
-    const erranderEarnings = order.erranderPayout || order.deliveryFee;
+    // ERRANDER PAYOUT (guaranteed floor: standard ₦350 delivery fee yields at least ₦300 errander earnings)
+    let erranderEarnings = order.erranderPayout || order.deliveryFee;
+    if (order.deliveryFee >= 350 && erranderEarnings < 300) {
+      erranderEarnings = 300;
+    }
     const hasInterception = order.interception && (order.interception.status === 'accepted' || order.interception.status === 'completed');
     if (hasInterception && order.interception!.secondErrander) {
       const firstShare = erranderEarnings * 0.6;
@@ -1745,8 +1814,11 @@ export class OrdersService {
       note: 'Order completed via Contactless Drop-off (Photo Proof)',
     });
 
-    // ERRANDER PAYOUT
-    const erranderEarnings = order.erranderPayout || order.deliveryFee;
+    // ERRANDER PAYOUT (guaranteed floor: standard ₦350 delivery fee yields at least ₦300 errander earnings)
+    let erranderEarnings = order.erranderPayout || order.deliveryFee;
+    if (order.deliveryFee >= 350 && erranderEarnings < 300) {
+      erranderEarnings = 300;
+    }
     const hasInterception = order.interception && (order.interception.status === 'accepted' || order.interception.status === 'completed');
     if (hasInterception && order.interception!.secondErrander) {
       const firstShare = erranderEarnings * 0.6;
@@ -1801,20 +1873,25 @@ export class OrdersService {
     return this.findById(orderId);
   }
 
-  async getCustomerOrders(customerId: string, page: any = 1, limit: any = 20) {
+  async getCustomerOrders(customerId: string, page: any = 1, limit: any = 20, req?: any) {
     const p = Math.max(1, parseInt(page) || 1);
     const l = Math.max(1, parseInt(limit) || 20);
     const skip = (p - 1) * l;
 
+    const filter: any = { customer: new Types.ObjectId(customerId) };
+    // Campus tenancy: a student only ever sees their own campus's orders.
+    const institution = await this.resolveInstitution(req);
+    if (institution) filter.institution = institution;
+
     const [orders, total] = await Promise.all([
       this.orderModel
-        .find({ customer: new Types.ObjectId(customerId) })
+        .find(filter)
         .populate('vendor', 'storeName logo banner isOnline businessHours openingTime closingTime isOpen')
         .populate('errander', 'firstName lastName phone avatar')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(l),
-      this.orderModel.countDocuments({ customer: new Types.ObjectId(customerId) }),
+      this.orderModel.countDocuments(filter),
     ]);
 
     const augmentedOrders = orders.map((o: any) => {
@@ -1828,7 +1905,7 @@ export class OrdersService {
     return { orders: augmentedOrders, total };
   }
 
-  async getVendorOrders(vendorId: string, status?: OrderStatus, page: any = 1, limit: any = 50) {
+  async getVendorOrders(vendorId: string, status?: OrderStatus, page: any = 1, limit: any = 50, req?: any) {
     if (!Types.ObjectId.isValid(vendorId)) {
       return { orders: [], total: 0 };
     }
@@ -1838,6 +1915,10 @@ export class OrdersService {
     } else {
       filter.status = { $nin: [OrderStatus.PENDING, OrderStatus.NEGOTIATING, OrderStatus.AWAITING_PAYMENT] };
     }
+
+    // Campus tenancy: this vendor's order list is restricted to the caller's campus.
+    const institution = await this.resolveInstitution(req);
+    if (institution) filter.institution = institution;
 
     const p = Math.max(1, parseInt(page) || 1);
     const l = Math.max(1, parseInt(limit) || 20);
@@ -1856,12 +1937,12 @@ export class OrdersService {
     return { orders, total };
   }
 
-  async findByVendorOwner(ownerId: string, status?: OrderStatus, page = 1, limit = 10, vendorId?: string): Promise<{ orders: Order[]; total: number }> {
+  async findByVendorOwner(ownerId: string, status?: OrderStatus, page = 1, limit = 10, vendorId?: string, req?: any): Promise<{ orders: Order[]; total: number }> {
     this.logger.log(`findByVendorOwner() ownerId=${ownerId} status=${status} vendorId=${vendorId} page=${page} limit=${limit}`);
 
     if (vendorId) {
       this.logger.log(`findByVendorOwner() Direct vendor lookup for vendorId=${vendorId}`);
-      return this.getVendorOrders(vendorId, status, page, limit);
+      return this.getVendorOrders(vendorId, status, page, limit, req);
     }
 
     try {
@@ -1883,6 +1964,12 @@ export class OrdersService {
       } else {
         filter.status = { $nin: [OrderStatus.PENDING, OrderStatus.NEGOTIATING, OrderStatus.AWAITING_PAYMENT] };
       }
+
+      // Campus tenancy: the vendor's own order list may only ever contain
+      // orders stamped with the caller's institution.
+      const institution = await this.resolveInstitution(req);
+      if (institution) filter.institution = institution;
+
       const p = Math.max(1, Number(page) || 1);
       const l = Math.max(1, Number(limit) || 50);
       const skip = (p - 1) * l;
@@ -1919,54 +2006,84 @@ export class OrdersService {
     return { success: true, message: 'Feedback submitted successfully' };
   }
 
-  async getErranderOrders(erranderId: string) {
-    return this.orderModel
-      .find({
-        $or: [
-          { errander: new Types.ObjectId(erranderId) },
-          { 'interception.secondErrander': new Types.ObjectId(erranderId) }
-        ]
-      })
+  async getErranderOrders(erranderId: string, req?: any) {
+    const filter: any = {
+      $or: [
+        { errander: new Types.ObjectId(erranderId) },
+        { 'interception.secondErrander': new Types.ObjectId(erranderId) }
+      ]
+    };
+
+    // Campus tenancy: a rider only ever sees work from their own campus.
+    const institution = await this.resolveInstitution(req);
+    if (institution) filter.institution = institution;
+
+    const orders = await this.orderModel
+      .find(filter)
       .populate('vendor', 'storeName logo address location')
       .populate('customer', 'firstName lastName phone avatar deliveryAddress location gender')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return orders.map((order: any) => {
+      if (order.deliveryFee >= 350 && (!order.erranderPayout || order.erranderPayout < 300)) {
+        order.erranderPayout = 300;
+        order.erranderShare = 300;
+      }
+      return order;
+    });
   }
 
-  async getAvailableOrders() {
+  async getAvailableOrders(req?: any) {
     const noErranderFilter = { $in: [null, undefined] };
-    return this.orderModel
-      .find({
-        $or: [
-          {
-            status: { $in: [OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP, OrderStatus.NEGOTIATING] },
-            errander: noErranderFilter,
-            deliveryOption: { $in: ['use_an_errander', null] }
-          },
-          {
-            status: { $in: [OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP, OrderStatus.NEGOTIATING] },
-            errander: noErranderFilter,
-            deliveryOption: { $exists: false }
-          },
-          {
-            isGroupOrder: true,
-            status: { $in: [OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP, OrderStatus.NEGOTIATING] },
-            errander: noErranderFilter
-          },
-          {
-            status: OrderStatus.INTERCEPTION_PENDING
-          },
-          {
-            status: OrderStatus.PENDING,
-            type: OrderType.CUSTOM_ERRAND,
-            errander: noErranderFilter,
-            deliveryOption: { $in: ['use_an_errander', null] }
-          }
-        ]
-      })
+    const filter: any = {
+      $or: [
+        {
+          status: { $in: [OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP, OrderStatus.NEGOTIATING] },
+          errander: noErranderFilter,
+          deliveryOption: { $in: ['use_an_errander', null] }
+        },
+        {
+          status: { $in: [OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP, OrderStatus.NEGOTIATING] },
+          errander: noErranderFilter,
+          deliveryOption: { $exists: false }
+        },
+        {
+          isGroupOrder: true,
+          status: { $in: [OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP, OrderStatus.NEGOTIATING] },
+          errander: noErranderFilter
+        },
+        {
+          status: OrderStatus.INTERCEPTION_PENDING
+        },
+        {
+          status: OrderStatus.PENDING,
+          type: OrderType.CUSTOM_ERRAND,
+          errander: noErranderFilter,
+          deliveryOption: { $in: ['use_an_errander', null] }
+        }
+      ]
+    };
+
+    // Campus tenancy: the errand board must never show another campus's errands.
+    const institution = await this.resolveInstitution(req);
+    if (institution) filter.institution = institution;
+
+    const orders = await this.orderModel
+      .find(filter)
       .populate('vendor', 'storeName logo address location')
       .populate('customer', 'firstName lastName deliveryAddress location gender')
       .populate('errander', 'firstName lastName phone avatar')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return orders.map((order: any) => {
+      if (order.deliveryFee >= 350 && (!order.erranderPayout || order.erranderPayout < 300)) {
+        order.erranderPayout = 300;
+        order.erranderShare = 300;
+      }
+      return order;
+    });
   }
 
   async findById(id: string): Promise<any> {
@@ -2039,6 +2156,11 @@ export class OrdersService {
         vendor: formatWa(vendorPhone),
         errander: formatWa(erranderPhone),
       };
+
+      if (order.deliveryFee >= 350 && (!order.erranderPayout || order.erranderPayout < 300)) {
+        order.erranderPayout = 300;
+        order.erranderShare = 300;
+      }
 
       return order;
     }, 'findById');
@@ -2134,7 +2256,11 @@ export class OrdersService {
     const fullOrder = await this.orderModel.findById(order._id);
     if (!fullOrder || !fullOrder.errander) return;
 
-    const erranderEarnings = (fullOrder.erranderPayout || fullOrder.deliveryFee) + ((fullOrder as any).tips || 0);
+    let baseEarnings = fullOrder.erranderPayout || fullOrder.deliveryFee;
+    if (fullOrder.deliveryFee >= 350 && baseEarnings < 300) {
+      baseEarnings = 300;
+    }
+    const erranderEarnings = baseEarnings + ((fullOrder as any).tips || 0);
 
     const erranderUserId = fullOrder.errander.toString();
 
@@ -2301,11 +2427,17 @@ export class OrdersService {
     return order;
   }
 
-  async getStats() {
+  async getStats(req?: any) {
+    const filter: any = {};
+    // Campus tenancy: an aggregate list is scoped like any other list.
+    const institution = await this.resolveInstitution(req);
+    if (institution) filter.institution = institution;
+
     const [totalOrders, activeOrders, completedOrders, totalRevenue] =
       await Promise.all([
-        this.orderModel.countDocuments(),
+        this.orderModel.countDocuments(filter),
         this.orderModel.countDocuments({
+          ...filter,
           status: {
             $in: [
               OrderStatus.PENDING,
@@ -2317,9 +2449,9 @@ export class OrdersService {
             ],
           },
         }),
-        this.orderModel.countDocuments({ status: OrderStatus.DELIVERED }),
+        this.orderModel.countDocuments({ ...filter, status: OrderStatus.DELIVERED }),
         this.orderModel.aggregate([
-          { $match: { status: OrderStatus.DELIVERED } },
+          { $match: { ...filter, status: OrderStatus.DELIVERED } },
           { $group: { _id: null, total: { $sum: '$total' } } },
         ]),
       ]);
@@ -4064,12 +4196,38 @@ export class OrdersService {
     return pool;
   }
 
-  async getOpenPools(): Promise<any[]> {
-    return this.errandPoolModel.find({ status: 'open' })
+  async getOpenPools(req?: any): Promise<any[]> {
+    const filter: any = { status: 'open' };
+
+    // Campus tenancy: an errand pool inherits its campus from the orders it
+    // groups. Pre-filter on the (indexed) order institution, then drop any
+    // cross-campus orders that slipped into a pool.
+    const institution = await this.resolveInstitution(req);
+    if (institution) {
+      const poolIds = await this.orderModel.distinct('errandPoolId', {
+        institution,
+        errandPoolId: { $ne: null },
+      });
+      filter._id = { $in: poolIds };
+    }
+
+    const pools = await this.errandPoolModel.find(filter)
       .populate('creator', 'firstName lastName avatar')
       .populate('orders')
       .sort({ createdAt: -1 })
       .lean();
+
+    if (!institution) return pools;
+
+    // Final guard: never hand a rider an order from another campus.
+    return pools
+      .map((pool: any) => ({
+        ...pool,
+        orders: (pool.orders || []).filter(
+          (order: any) => String(order?.institution) === String(institution),
+        ),
+      }))
+      .filter((pool: any) => pool.orders.length > 0);
   }
 
   async joinPool(poolId: string, orderId: string, customerId: string): Promise<any> {

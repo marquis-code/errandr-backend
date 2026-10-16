@@ -12,6 +12,7 @@ import { WalletsModule } from '../wallets/wallets.module';
 import { EmailModule } from '../email/email.module';
 import { UsersModule } from '../users/users.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { InstitutionsModule } from '../institutions/institutions.module';
 
 @Module({
   imports: [
@@ -27,6 +28,8 @@ import { NotificationsModule } from '../notifications/notifications.module';
     EmailModule,
     UsersModule,
     NotificationsModule,
+    // Exports InstitutionResolver so lists can be scoped to a campus.
+    InstitutionsModule,
   ],
   controllers: [MarketPoolController],
   providers: [MarketPoolService],

@@ -1,7 +1,7 @@
 import {
   Controller, Get, Post, Put, Body, Param, Query,
   UseGuards, Logger, DefaultValuePipe, ParseIntPipe,
-  Headers, UnauthorizedException
+  Headers, Req, UnauthorizedException
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { OrdersService } from './orders.service';
@@ -82,7 +82,6 @@ export class OrdersController {
     this.logger.log(`getBatchStatus() called`);
     return this.ordersService.getBatchStatus();
   }
-
   @Get('calculate-fee')
   @ApiOperation({ summary: 'Calculate delivery fee dynamically using Mapbox' })
   async calculateFee(
@@ -104,9 +103,10 @@ export class OrdersController {
     @CurrentUser() user: User,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number = 20,
+    @Req() req?: any,
   ) {
     this.logger.log(`getMyOrders() called by user=${user._id} page=${page} limit=${limit}`);
-    return this.ordersService.getCustomerOrders((user._id as unknown) as string, page, limit);
+    return this.ordersService.getCustomerOrders((user._id as unknown) as string, page, limit, req);
   }
 
   // @Get('vendor/mine')
@@ -137,9 +137,10 @@ async getMyVendorOrders(
   @Query('status') status?: OrderStatus,
   @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
   @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number = 10,
+  @Req() req?: any,
 ) {
   this.logger.log(`getMyVendorOrders() user=${user._id}`);
-  return this.ordersService.findByVendorOwner(user._id.toString(), status, page, limit);
+  return this.ordersService.findByVendorOwner(user._id.toString(), status, page, limit, undefined, req);
 }
 
   @Get('vendor/:vendorId')
@@ -151,27 +152,28 @@ async getMyVendorOrders(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number = 20,
     @Query('status') status?: OrderStatus,
+    @Req() req?: any,
   ) {
     this.logger.log(`getVendorOrders() vendorId=${vendorId} status=${status} page=${page} limit=${limit}`);
-    return this.ordersService.getVendorOrders(vendorId, status, page, limit);
+    return this.ordersService.getVendorOrders(vendorId, status, page, limit, req);
   }
 
   @Get('available')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get available orders for erranders' })
-  getAvailableOrders() {
+  getAvailableOrders(@Req() req?: any) {
     this.logger.log(`getAvailableOrders() called`);
-    return this.ordersService.getAvailableOrders();
+    return this.ordersService.getAvailableOrders(req);
   }
 
   @Get('errander')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get errander delivery history' })
-  getErranderOrders(@CurrentUser() user: User) {
+  getErranderOrders(@CurrentUser() user: User, @Req() req?: any) {
     this.logger.log(`getErranderOrders() called by user=${user._id}`);
-    return this.ordersService.getErranderOrders((user._id as unknown) as string);
+    return this.ordersService.getErranderOrders((user._id as unknown) as string, req);
   }
 
   @Get('stats')
@@ -179,9 +181,9 @@ async getMyVendorOrders(
   @Roles(UserRole.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get order statistics (admin)' })
-  getStats() {
+  getStats(@Req() req?: any) {
     this.logger.log(`getStats() called`);
-    return this.ordersService.getStats();
+    return this.ordersService.getStats(req);
   }
 
   @Post(':id/otp/:type')
@@ -652,8 +654,8 @@ async getMyVendorOrders(
 
   @Get('pool/open')
   @ApiOperation({ summary: 'Get all open pooled errands' })
-  getOpenPools() {
-    return this.ordersService.getOpenPools();
+  getOpenPools(@Req() req?: any) {
+    return this.ordersService.getOpenPools(req);
   }
 
   @Post(':id/view')

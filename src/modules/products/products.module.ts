@@ -8,6 +8,8 @@ import { Pack, PackSchema } from './schemas/pack.schema';
 import { VendorsModule } from '../vendors/vendors.module';
 import { GlobalProductsModule } from '../global-products/global-products.module';
 import { SystemSetting, SystemSettingSchema } from '../admin/schemas/system-setting.schema';
+import { Vendor, VendorSchema } from '../vendors/schemas/vendor.schema';
+import { InstitutionsModule } from '../institutions/institutions.module';
 
 @Module({
   imports: [
@@ -16,9 +18,13 @@ import { SystemSetting, SystemSettingSchema } from '../admin/schemas/system-sett
       { name: ProductCategory.name, schema: ProductCategorySchema },
       { name: Pack.name, schema: PackSchema },
       { name: SystemSetting.name, schema: SystemSettingSchema },
+      // Needed to resolve the campus's vendor ids for institution scoping.
+      { name: Vendor.name, schema: VendorSchema },
     ]),
     VendorsModule,
     GlobalProductsModule,
+    // Exports InstitutionResolver so list queries can be scoped to a campus.
+    InstitutionsModule,
   ],
   controllers: [ProductsController],
   providers: [ProductsService],

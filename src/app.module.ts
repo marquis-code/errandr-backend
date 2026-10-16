@@ -42,6 +42,7 @@ import { PushCampaignsModule } from './modules/push-campaigns/push-campaigns.mod
 import { ExamModeModule } from './modules/exam-mode/exam-mode.module';
 import { MarketPoolModule } from './modules/market-pool/market-pool.module';
 import { DepartmentsModule } from './modules/departments/departments.module';
+import { InstitutionsModule } from './modules/institutions/institutions.module';
 
 @Module({
   imports: [
@@ -97,6 +98,7 @@ import { DepartmentsModule } from './modules/departments/departments.module';
     UploadModule,
     AdminModule,
     DepartmentsModule,
+    InstitutionsModule,
     NotificationsModule,
     FavoritesModule,
     ReportsModule,

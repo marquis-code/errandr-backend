@@ -6,6 +6,7 @@ import { Product } from '../products/schemas/product.schema';
 import { Service } from '../services/schemas/service.schema';
 import { MenuItem } from '../menu/schemas/menu-item.schema';
 import { augmentVendor } from '../../utils/vendor-helpers';
+import { InstitutionResolver } from '../institutions/institution-resolver.service';
 
 @Injectable()
 export class SearchService {
@@ -16,9 +17,13 @@ export class SearchService {
     @InjectModel(Product.name) private productModel: Model<Product>,
     @InjectModel(Service.name) private serviceModel: Model<Service>,
     @InjectModel(MenuItem.name) private menuItemModel: Model<MenuItem>,
+    private institutionResolver: InstitutionResolver,
   ) {}
 
-  async globalSearch(q: string, location?: string, time?: string) {
+  async globalSearch(q: string, location?: string, time?: string, req?: any) {
+    // Campus tenancy: `null` means "do not scope" (guests / legacy clients).
+    const institution = req ? await this.institutionResolver.resolve(req) : null;
+
     let vendorIds: any[] | null = null;
 
     // 1. Filter vendors if location or time is provided
@@ -62,6 +67,19 @@ export class SearchService {
       vendorIds = filteredVendors.map(v => v._id);
     }
 
+    // 1b. Campus tenancy: intersect with (or start from) the campus's vendors.
+    //     A campus's vendor list is small, so one indexed `distinct` keeps the
+    //     three downstream collections and the vendor query itself consistent.
+    if (institution) {
+      const campusVendorIds: any[] = await this.vendorModel.distinct('_id', { institution }).exec();
+      if (vendorIds === null) {
+        vendorIds = campusVendorIds;
+      } else {
+        const campus = new Set(campusVendorIds.map((id: any) => String(id)));
+        vendorIds = vendorIds.filter((id: any) => campus.has(String(id)));
+      }
+    }
+
     // 2. Perform search on Products, Services, and MenuItems
     const productQuery: any = { isAvailable: true };
     const serviceQuery: any = { isAvailable: true };
@@ -87,7 +105,16 @@ export class SearchService {
     if (vendorIds !== null) {
       productQuery.vendor = { $in: vendorIds };
       serviceQuery.vendor = { $in: vendorIds };
-      menuItemQuery.vendor = { $in: vendorIds };
+      if (!institution) {
+        // Legacy behaviour, preserved verbatim for unscoped requests.
+        menuItemQuery.vendor = { $in: vendorIds };
+      }
+    }
+
+    if (institution) {
+      // MenuItem stores its owning vendor as `vendorId`, so scope it on the
+      // real path (the legacy `vendor` line above is not a path on that schema).
+      menuItemQuery.vendorId = { $in: vendorIds ?? [] };
     }
 
     const [products, services, menuItems] = await Promise.all([

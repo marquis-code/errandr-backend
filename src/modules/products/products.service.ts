@@ -8,6 +8,8 @@ import { Pack } from './schemas/pack.schema';
 import { VendorsService } from '../vendors/vendors.service';
 import { GlobalProductsService } from '../global-products/global-products.service';
 import { SystemSetting } from '../admin/schemas/system-setting.schema';
+import { Vendor } from '../vendors/schemas/vendor.schema';
+import { InstitutionResolver } from '../institutions/institution-resolver.service';
 
 @Injectable()
 export class ProductsService {
@@ -16,9 +18,32 @@ export class ProductsService {
     @InjectModel(ProductCategory.name) private categoryModel: Model<ProductCategory>,
     @InjectModel(Pack.name) private packModel: Model<Pack>,
     @InjectModel(SystemSetting.name) private settingModel: Model<SystemSetting>,
+    @InjectModel(Vendor.name) private vendorModel: Model<Vendor>,
     private vendorsService: VendorsService,
     private globalProductsService: GlobalProductsService,
+    private institutionResolver: InstitutionResolver,
   ) {}
+
+  /**
+   * Campus tenancy. Returns the institution every result of a request must be
+   * restricted to, or `null` when the request must not be scoped (guests and
+   * legacy clients) — in which case the caller leaves its query untouched.
+   */
+  private async resolveInstitution(req?: any): Promise<Types.ObjectId | null> {
+    if (!req) return null;
+    return this.institutionResolver.resolve(req);
+  }
+
+  /**
+   * Products/packs inherit their institution from the owning vendor (they do
+   * not carry the field themselves), so a campus-scoped list needs the campus's
+   * vendor ids. This is one indexed `institution` query that returns only that
+   * campus's vendors — never the whole platform — and it keeps `find()`
+   * semantics (populated vendor shape, `$meta: textScore` sorting) intact.
+   */
+  private async campusVendorIds(institution: Types.ObjectId): Promise<Types.ObjectId[]> {
+    return this.vendorModel.distinct('_id', { institution }).exec();
+  }
 
   // ── Products ──
 
@@ -99,8 +124,13 @@ export class ProductsService {
     }));
   }
 
-  async findByVendor(vendorId: string): Promise<Product[]> {
+  async findByVendor(vendorId: string, req?: any): Promise<Product[]> {
     if (!Types.ObjectId.isValid(vendorId)) {
+      return [];
+    }
+    // Campus tenancy: never list another campus's products.
+    const institution = await this.resolveInstitution(req);
+    if (institution && !(await this.vendorsService.isInInstitution(vendorId, institution))) {
       return [];
     }
     const products = await this.productModel
@@ -109,20 +139,30 @@ export class ProductsService {
     return this.applyMarkupToProducts(products);
   }
 
-  async getPromos(): Promise<Product[]> {
+  async getPromos(req?: any): Promise<Product[]> {
+    const filter: any = { isPrepaidByPlatform: true };
+    const institution = await this.resolveInstitution(req);
+    if (institution) filter.vendor = { $in: await this.campusVendorIds(institution) };
+
     const products = await this.productModel
-      .find({ isPrepaidByPlatform: true })
+      .find(filter)
       .populate('vendor', 'storeName logo brandColor isOnline isVisible')
       .sort({ createdAt: -1 });
     return this.applyMarkupToProducts(products);
   }
 
-  async getAllPromos(): Promise<any[]> {
+  async getAllPromos(req?: any): Promise<any[]> {
     try {
+      const institution = await this.resolveInstitution(req);
+      const institutionFilter = institution ? { institution } : {};
+      const campusVendorIdList = institution ? await this.campusVendorIds(institution) : null;
+      const vendorIdFilter = campusVendorIdList ? { vendorId: { $in: campusVendorIdList } } : {};
+      const productVendorFilter = campusVendorIdList ? { vendor: { $in: campusVendorIdList } } : {};
+
       const factor = await this.getMarkupFactor().catch(() => 1.05);
 
       const products = await this.productModel
-        .find({ isPrepaidByPlatform: true, isAvailable: true })
+        .find({ isPrepaidByPlatform: true, isAvailable: true, ...productVendorFilter })
         .populate('vendor', 'storeName logo brandColor isOnline isVisible prepaidPromo businessHours')
         .sort({ createdAt: -1 })
         .lean()
@@ -130,7 +170,7 @@ export class ProductsService {
         .catch(() => []);
         
       const packs = await this.packModel
-        .find({ isPrepaidByPlatform: true, isActive: true })
+        .find({ isPrepaidByPlatform: true, isActive: true, ...vendorIdFilter })
         .populate('vendorId', 'storeName logo brandColor isOnline isVisible prepaidPromo businessHours')
         .populate('items.itemId')
         .sort({ createdAt: -1 })
@@ -141,7 +181,7 @@ export class ProductsService {
       let menuPacks: any[] = [];
       try {
         menuPacks = await this.productModel.db.collection('menupacks')
-          .find({ isPrepaidByPlatform: true, isAvailable: true })
+          .find({ isPrepaidByPlatform: true, isAvailable: true, ...vendorIdFilter })
           .sort({ createdAt: -1 })
           .toArray();
       } catch (err) {
@@ -151,7 +191,7 @@ export class ProductsService {
       let menuItems: any[] = [];
       try {
         menuItems = await this.productModel.db.collection('menuitems')
-          .find({ isPrepaidByPlatform: true, isAvailable: true })
+          .find({ isPrepaidByPlatform: true, isAvailable: true, ...vendorIdFilter })
           .sort({ createdAt: -1 })
           .toArray();
       } catch (err) {
@@ -171,7 +211,8 @@ export class ProductsService {
       let vendors: any[] = [];
       try {
         vendors = await this.productModel.db.collection('vendors').find({
-          _id: { $in: Array.from(vendorIds).map((id: string) => new Types.ObjectId(id)) }
+          _id: { $in: Array.from(vendorIds).map((id: string) => new Types.ObjectId(id)) },
+          ...institutionFilter,
         }).toArray();
       } catch (err) {
         console.error('Error fetching vendors for menu packs/items:', err);
@@ -222,7 +263,8 @@ export class ProductsService {
       try {
         promoVendors = await this.productModel.db.collection('vendors').find({
           'prepaidPromo.enabled': true,
-          isVisible: true
+          isVisible: true,
+          ...institutionFilter,
         }).toArray();
       } catch (err) {
         console.error('Error fetching promoVendors:', err);
@@ -284,8 +326,13 @@ export class ProductsService {
     }
   }
 
-  async getPacks(vendorId: string): Promise<Pack[]> {
+  async getPacks(vendorId: string, req?: any): Promise<Pack[]> {
     if (!Types.ObjectId.isValid(vendorId)) return [];
+    // Campus tenancy: never list another campus's packs.
+    const institution = await this.resolveInstitution(req);
+    if (institution && !(await this.vendorsService.isInInstitution(vendorId, institution))) {
+      return [];
+    }
     const packs = await this.packModel
       .find({ vendorId: new Types.ObjectId(vendorId), isActive: true })
       .populate('items.itemId')
@@ -293,11 +340,18 @@ export class ProductsService {
     return this.applyMarkupToPacks(packs);
   }
 
-  async getPackPromos(): Promise<any[]> {
+  async getPackPromos(req?: any): Promise<any[]> {
+    const institution = await this.resolveInstitution(req);
+    const campusVendorIdList = institution ? await this.campusVendorIds(institution) : null;
+
     // Aggressive fix: since data is currently stored in 'menupacks' and 'packs' is empty,
     // we query 'menupacks' directly to ensure this legacy endpoint also returns the correct data structure.
     const packs = await this.packModel
-      .find({ isPrepaidByPlatform: true, isActive: true })
+      .find({
+        isPrepaidByPlatform: true,
+        isActive: true,
+        ...(campusVendorIdList ? { vendorId: { $in: campusVendorIdList } } : {}),
+      })
       .populate('vendorId', 'storeName logo brandColor isOnline isVisible isOpen statusMessage')
       .populate('items.itemId')
       .sort({ createdAt: -1 })
@@ -306,7 +360,11 @@ export class ProductsService {
     if (packs.length === 0) {
       // Fallback to menupacks
       const menuPacks = await this.productModel.db.collection('menupacks')
-        .find({ isPrepaidByPlatform: true, isAvailable: true })
+        .find({
+          isPrepaidByPlatform: true,
+          isAvailable: true,
+          ...(campusVendorIdList ? { vendorId: { $in: campusVendorIdList } } : {}),
+        })
         .sort({ createdAt: -1 })
         .limit(20)
         .toArray();
@@ -385,12 +443,22 @@ export class ProductsService {
     return createdProducts;
   }
 
-  async findById(id: string): Promise<Product> {
+  async findById(id: string, req?: any): Promise<Product> {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException('Product not found');
     }
     const product = await this.productModel.findById(id).populate('vendor');
     if (!product) throw new NotFoundException('Product not found');
+
+    // A campus-scoped caller must not open another campus's product by id.
+    const institution = await this.resolveInstitution(req);
+    if (institution) {
+      const vendor: any = product.vendor;
+      if (!vendor || String(vendor.institution) !== String(institution)) {
+        throw new NotFoundException('Product not found');
+      }
+    }
+
     const factor = await this.getMarkupFactor();
     return this.applyMarkupToProduct(product, factor);
   }
@@ -417,11 +485,17 @@ export class ProductsService {
     return product;
   }
 
-  async search(query: string, page = 1, limit = 20): Promise<{ products: Product[]; total: number }> {
-    const filter = {
+  async search(query: string, page = 1, limit = 20, req?: any): Promise<{ products: Product[]; total: number }> {
+    const filter: any = {
       $text: { $search: query },
       isAvailable: true,
     };
+    // Campus tenancy: products inherit their institution from the owning vendor.
+    // A `$lookup` cannot sort by `$meta: textScore`, so restrict by the campus's
+    // vendor ids instead and keep the original `find()` shape and ordering.
+    const institution = await this.resolveInstitution(req);
+    if (institution) filter.vendor = { $in: await this.campusVendorIds(institution) };
+
     const skip = (page - 1) * limit;
     const [products, total] = await Promise.all([
       this.productModel
@@ -436,26 +510,40 @@ export class ProductsService {
     return { products: markedProducts, total };
   }
 
-  async getByCategory(category: string): Promise<Product[]> {
+  async getByCategory(category: string, req?: any): Promise<Product[]> {
+    const filter: any = { category, isAvailable: true };
+    const institution = await this.resolveInstitution(req);
+    if (institution) filter.vendor = { $in: await this.campusVendorIds(institution) };
+
     const products = await this.productModel
-      .find({ category, isAvailable: true })
+      .find(filter)
       .populate('vendor', 'storeName logo isOnline')
       .sort({ rating: -1 });
     return this.applyMarkupToProducts(products);
   }
 
-  async getPopular(limit = 10): Promise<Product[]> {
+  async getPopular(limit = 10, req?: any): Promise<Product[]> {
+    const filter: any = { isAvailable: true };
+    const institution = await this.resolveInstitution(req);
+    if (institution) filter.vendor = { $in: await this.campusVendorIds(institution) };
+
     const products = await this.productModel
-      .find({ isAvailable: true })
+      .find(filter)
       .populate('vendor', 'storeName logo isOnline')
       .sort({ totalOrders: -1, orderCount: -1 })
       .limit(limit);
     return this.applyMarkupToProducts(products);
   }
 
-  async getTopPicks(vendorId: string): Promise<Product[]> {
+  async getTopPicks(vendorId: string, req?: any): Promise<Product[]> {
     if (!Types.ObjectId.isValid(vendorId)) return [];
-    
+
+    // Campus tenancy: never return another campus's top picks.
+    const institution = await this.resolveInstitution(req);
+    if (institution && !(await this.vendorsService.isInInstitution(vendorId, institution))) {
+      return [];
+    }
+
     const vendor = await this.vendorsService.findById(vendorId);
     if (!vendor) throw new NotFoundException('Vendor not found');
     
@@ -492,8 +580,13 @@ export class ProductsService {
     });
   }
 
-  async getCategoriesByVendor(vendorId: string): Promise<ProductCategory[]> {
+  async getCategoriesByVendor(vendorId: string, req?: any): Promise<ProductCategory[]> {
     if (!Types.ObjectId.isValid(vendorId)) return [];
+    // Campus tenancy: never list another campus's categories.
+    const institution = await this.resolveInstitution(req);
+    if (institution && !(await this.vendorsService.isInInstitution(vendorId, institution))) {
+      return [];
+    }
     return this.categoryModel
       .find({ vendor: new Types.ObjectId(vendorId), isActive: true })
       .sort({ sortOrder: 1, name: 1 });

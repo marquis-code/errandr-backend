@@ -13,6 +13,7 @@
     "test:watch": "jest --watch",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "kill:3005": "lsof -ti :3005 | xargs kill -9",
+    "seed:institutions": "ts-node src/modules/institutions/seed-institutions.ts",
     "dev": "npm run kill:3005 && npm run start:dev"
   },
   "dependencies": {

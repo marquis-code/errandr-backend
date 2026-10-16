@@ -11,6 +11,7 @@ import { SystemSetting } from '../admin/schemas/system-setting.schema';
 import { EmailService } from '../email/email.service';
 import { User } from '../users/schemas/user.schema';
 import { NotificationsService } from '../notifications/notifications.service';
+import { InstitutionResolver } from '../institutions/institution-resolver.service';
 
 @Injectable()
 export class MarketPoolService {
@@ -27,7 +28,33 @@ export class MarketPoolService {
     @Inject(forwardRef(() => WalletsService)) private walletsService: WalletsService,
     private emailService: EmailService,
     private notificationsService: NotificationsService,
+    private institutionResolver: InstitutionResolver,
   ) {}
+
+  /**
+   * Campus tenancy. Returns the institution every result of a request must be
+   * restricted to, or `null` when the request must not be scoped (guests and
+   * legacy clients) — in which case the caller leaves its query untouched.
+   */
+  private async resolveInstitution(req?: any): Promise<Types.ObjectId | null> {
+    if (!req) return null;
+    return this.institutionResolver.resolve(req);
+  }
+
+  /**
+   * Campaign tenancy filter. Campaigns created without a campus (every campaign
+   * that exists today) stay global, so nothing disappears for legacy clients.
+   */
+  private campaignInstitutionFilter(institution: Types.ObjectId | null): any {
+    if (!institution) return {};
+    return {
+      $or: [
+        { institution },
+        { institution: { $exists: false } },
+        { institution: null },
+      ],
+    };
+  }
 
   async getCategories(): Promise<MarketPoolCategory[]> {
     let categories = await this.categoryModel.find().sort({ name: 1 });
@@ -82,8 +109,16 @@ export class MarketPoolService {
     await this.categoryModel.findByIdAndDelete(id);
   }
 
-  async createCampaign(title: string, startDate: Date, endDate: Date): Promise<MarketPoolCampaign> {
-    return this.campaignModel.create({ title, startDate, endDate });
+  async createCampaign(title: string, startDate: Date, endDate: Date, req?: any): Promise<MarketPoolCampaign> {
+    // Stamp the creating admin's campus when there is one; otherwise the
+    // campaign stays global (legacy behaviour).
+    const institution = await this.resolveInstitution(req);
+    return this.campaignModel.create({
+      title,
+      startDate,
+      endDate,
+      ...(institution ? { institution } : {}),
+    });
   }
 
   async closeCampaign(id: string): Promise<MarketPoolCampaign> {
@@ -95,16 +130,25 @@ export class MarketPoolService {
     return campaign.save();
   }
 
-  async getActiveCampaign(): Promise<MarketPoolCampaign | null> {
-    return this.campaignModel.findOne({ status: MarketPoolCampaignStatus.OPEN }).sort({ createdAt: -1 });
+  async getActiveCampaign(req?: any): Promise<MarketPoolCampaign | null> {
+    const institution = await this.resolveInstitution(req);
+    return this.campaignModel
+      .findOne({ status: MarketPoolCampaignStatus.OPEN, ...this.campaignInstitutionFilter(institution) })
+      .sort({ createdAt: -1 });
   }
 
-  async getActiveCampaigns(): Promise<MarketPoolCampaign[]> {
-    return this.campaignModel.find({ status: MarketPoolCampaignStatus.OPEN }).sort({ createdAt: -1 });
+  async getActiveCampaigns(req?: any): Promise<MarketPoolCampaign[]> {
+    const institution = await this.resolveInstitution(req);
+    return this.campaignModel
+      .find({ status: MarketPoolCampaignStatus.OPEN, ...this.campaignInstitutionFilter(institution) })
+      .sort({ createdAt: -1 });
   }
 
-  async getAllCampaigns(): Promise<MarketPoolCampaign[]> {
-    return this.campaignModel.find().sort({ createdAt: -1 });
+  async getAllCampaigns(req?: any): Promise<MarketPoolCampaign[]> {
+    const institution = await this.resolveInstitution(req);
+    return this.campaignModel
+      .find(this.campaignInstitutionFilter(institution))
+      .sort({ createdAt: -1 });
   }
 
   async addItem(campaignId: string, data: any): Promise<MarketPoolItem> {
@@ -167,9 +211,17 @@ export class MarketPoolService {
 
     // We no longer deduct from wallet here. Order goes into PENDING_PAYMENT
 
+    // Campus tenancy: stamp the ordering student's institution (unset when the
+    // student has none — never invented).
+    const orderingUser = Types.ObjectId.isValid(userId)
+      ? await this.userModel.findById(userId).select('institution').lean()
+      : null;
+    const institution = (orderingUser as any)?.institution || undefined;
+
     return this.orderModel.create({
       campaignId,
       userId,
+      institution,
       items: orderItems,
       totalItemCost,
       deliveryFee,
@@ -342,9 +394,16 @@ export class MarketPoolService {
     return this.customRequestModel.find({ campaignId }).populate('userId', 'name email phone').sort({ createdAt: -1 });
   }
 
-  async getAggregation(campaignId: string): Promise<any> {
+  async getAggregation(campaignId: string, req?: any): Promise<any> {
+    const institution = await this.resolveInstitution(req);
     return this.orderModel.aggregate([
-      { $match: { campaignId: new Types.ObjectId(campaignId), status: { $ne: 'refunded' } } },
+      {
+        $match: {
+          campaignId: new Types.ObjectId(campaignId),
+          status: { $ne: 'refunded' },
+          ...this.campaignInstitutionFilter(institution),
+        },
+      },
       { $unwind: '$items' },
       {
         $lookup: {
@@ -381,8 +440,20 @@ export class MarketPoolService {
     ]);
   }
 
-  async getUserOrders(userId: string): Promise<any[]> {
-    const orders = await this.orderModel.find({ userId }).sort({ createdAt: -1 }).lean();
+  async getUserOrders(userId: string, req?: any): Promise<any[]> {
+    const filter: any = { userId };
+    // Campus tenancy: the caller's own orders, restricted to their campus.
+    // Un-stamped legacy orders stay visible to their owner.
+    const institution = await this.resolveInstitution(req);
+    if (institution) {
+      filter.$or = [
+        { institution },
+        { institution: { $exists: false } },
+        { institution: null },
+      ];
+    }
+
+    const orders = await this.orderModel.find(filter).sort({ createdAt: -1 }).lean();
     for (const order of orders) {
       for (const item of order.items) {
         item['itemDetails'] = await this.itemModel.findById(item.itemId).lean();
@@ -391,8 +462,20 @@ export class MarketPoolService {
     return orders;
   }
 
-  async getCampaignOrders(campaignId: string): Promise<any[]> {
-    const orders = await this.orderModel.find({ campaignId })
+  async getCampaignOrders(campaignId: string, req?: any): Promise<any[]> {
+    const filter: any = { campaignId };
+    // Campus tenancy: an admin listing is scoped like any other list; campaigns
+    // created without a campus stay visible everywhere.
+    const institution = await this.resolveInstitution(req);
+    if (institution) {
+      filter.$or = [
+        { institution },
+        { institution: { $exists: false } },
+        { institution: null },
+      ];
+    }
+
+    const orders = await this.orderModel.find(filter)
       .populate('userId', 'name email phone')
       .sort({ createdAt: -1 })
       .lean();

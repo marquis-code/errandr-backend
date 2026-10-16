@@ -3,12 +3,14 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Service } from './schemas/service.schema';
 import { VendorsService } from '../vendors/vendors.service';
+import { InstitutionResolver } from '../institutions/institution-resolver.service';
 
 @Injectable()
 export class ServicesService {
   constructor(
     @InjectModel(Service.name) private readonly serviceModel: Model<Service>,
     private readonly vendorsService: VendorsService,
+    private readonly institutionResolver: InstitutionResolver,
   ) {}
 
   async create(vendorId: string, data: any) {
@@ -20,14 +22,37 @@ export class ServicesService {
     return this.serviceModel.create({ ...data, vendor: vendor._id });
   }
 
-  async findAll(query: any) {
+  async findAll(query: any, req?: any) {
     const filter: any = {};
     if (query.vendor) filter.vendor = new Types.ObjectId(query.vendor);
     if (query.category) filter.category = query.category;
     if (query.search) {
       filter.$text = { $search: query.search };
     }
-    return this.serviceModel.find(filter).sort({ createdAt: -1 });
+
+    // Campus tenancy: `null` means "do not scope" — keep the original query.
+    const institution = req ? await this.institutionResolver.resolve(req) : null;
+    if (!institution) {
+      return this.serviceModel.find(filter).sort({ createdAt: -1 });
+    }
+
+    // Services inherit their institution from the owning vendor. Rather than
+    // materialising every campus vendor id, join on the vendor with `$lookup`
+    // and keep only rows whose vendor belongs to the campus.
+    return this.serviceModel.aggregate([
+      { $match: filter },
+      {
+        $lookup: {
+          from: 'vendors',
+          localField: 'vendor',
+          foreignField: '_id',
+          as: '__campusVendor',
+        },
+      },
+      { $match: { '__campusVendor.institution': institution } },
+      { $project: { __campusVendor: 0 } },
+      { $sort: { createdAt: -1 } },
+    ]);
   }
 
   async findByOwner(ownerId: string, query: any = {}) {
@@ -35,9 +60,16 @@ export class ServicesService {
     return this.findAll({ ...query, vendor: vendor._id });
   }
 
-  async findById(id: string) {
+  async findById(id: string, req?: any) {
     const service = await this.serviceModel.findById(id);
     if (!service) throw new NotFoundException('Service not found');
+
+    // A campus-scoped caller must not open another campus's service by id.
+    const institution = req ? await this.institutionResolver.resolve(req) : null;
+    if (institution && !(await this.vendorsService.isInInstitution(String(service.vendor), institution))) {
+      throw new NotFoundException('Service not found');
+    }
+
     return service;
   }
 

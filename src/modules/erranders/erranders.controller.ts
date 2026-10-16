@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Body, UseGuards, Query, DefaultValuePipe, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, UseGuards, Query, Req, DefaultValuePipe, ParseIntPipe } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { ErrandersService } from './erranders.service';
 import { JwtAuthGuard, CurrentUser, Roles, RolesGuard } from '../../common/decorators';
@@ -116,8 +116,8 @@ export class ErrandersController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get available erranders' })
-  getAvailable() {
-    return this.errandersService.getAvailable();
+  getAvailable(@Req() req?: any) {
+    return this.errandersService.getAvailable(req);
   }
 
   @Get()
@@ -128,7 +128,8 @@ export class ErrandersController {
   getAll(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number = 10,
+    @Req() req?: any,
   ) {
-    return this.errandersService.getAll(page, limit);
+    return this.errandersService.getAll(page, limit, req);
   }
 }

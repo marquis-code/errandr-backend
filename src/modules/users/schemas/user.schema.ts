@@ -41,6 +41,11 @@ export class User extends Document {
   @Prop()
   school: string;
 
+  // Campus tenancy. `school` is kept for backwards compatibility; new code
+  // scopes on `institution`.
+  @Prop({ type: Types.ObjectId, ref: 'Institution', index: true })
+  institution: Types.ObjectId;
+
   @Prop()
   department: string;
 

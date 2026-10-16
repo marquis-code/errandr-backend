@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 
 export enum MarketPoolCampaignStatus {
   OPEN = 'open',
@@ -21,6 +21,11 @@ export class MarketPoolCampaign extends Document {
 
   @Prop({ type: String, enum: MarketPoolCampaignStatus, default: MarketPoolCampaignStatus.OPEN })
   status: MarketPoolCampaignStatus;
+
+  // Campus tenancy. Optional on purpose: campaigns created before/without an
+  // institution stay global, so no existing behaviour changes.
+  @Prop({ type: Types.ObjectId, ref: 'Institution', index: true })
+  institution: Types.ObjectId;
 }
 
 export const MarketPoolCampaignSchema = SchemaFactory.createForClass(MarketPoolCampaign);

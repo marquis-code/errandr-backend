@@ -61,6 +61,11 @@ export class Order extends Document {
   @Prop({ type: Types.ObjectId, ref: 'Vendor' })
   vendor: Types.ObjectId;
 
+  // Campus tenancy — stamped at order creation from the student's institution,
+  // falling back to the vendor's institution.
+  @Prop({ type: Types.ObjectId, ref: 'Institution', index: true })
+  institution: Types.ObjectId;
+
   @Prop({ type: String, enum: OrderType, default: OrderType.MARKETPLACE })
   type: OrderType;
 

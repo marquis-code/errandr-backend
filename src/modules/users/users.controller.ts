@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Body, Param, UseGuards, Query, DefaultValuePipe, ParseIntPipe, Post, Delete } from '@nestjs/common';
+import { Controller, Get, Put, Patch, Body, Param, UseGuards, Query, DefaultValuePipe, ParseIntPipe, Post, Delete } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { JwtAuthGuard, CurrentUser, Roles, RolesGuard } from '../../common/decorators';
@@ -68,6 +68,17 @@ export class UsersController {
     @Body() body: { vendorId: string }
   ) {
     return this.usersService.addRecentlyViewedVendor((user._id as unknown) as string, body.vendorId);
+  }
+
+  @Patch('me/institution')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Set the current user\'s institution (campus)' })
+  updateInstitution(
+    @CurrentUser() user: User,
+    @Body() body: { institutionId: string },
+  ) {
+    return this.usersService.setInstitution((user._id as unknown) as string, body?.institutionId);
   }
 
   @Get(':id')

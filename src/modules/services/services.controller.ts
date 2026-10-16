@@ -1,7 +1,7 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { ServicesService } from './services.service';
-import { JwtAuthGuard, CurrentUser } from '../../common/decorators';
+import { JwtAuthGuard, CurrentUser, OptionalJwtAuthGuard } from '../../common/decorators';
 
 @ApiTags('Services')
 @Controller('services')
@@ -16,16 +16,24 @@ export class ServicesController {
     return this.servicesService.createForOwner((user._id as unknown) as string, body);
   }
 
+  // The campus resolver reads req.user BEFORE the X-Institution-Id header, so a
+  // route that accepts a token MUST populate req.user or a pinned user could be
+  // scoped to another campus just by sending that campus's header.
+  @UseGuards(OptionalJwtAuthGuard)
   @Get()
   @ApiOperation({ summary: 'List services' })
-  findAll(@Query() query: any) {
-    return this.servicesService.findAll(query);
+  findAll(@Query() query: any, @Req() req?: any) {
+    return this.servicesService.findAll(query, req);
   }
 
+  // The campus resolver reads req.user BEFORE the X-Institution-Id header, so a
+  // route that accepts a token MUST populate req.user or a pinned user could be
+  // scoped to another campus just by sending that campus's header.
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('vendor/:vendorId')
   @ApiOperation({ summary: 'Get services for a specific vendor' })
-  findByVendor(@Param('vendorId') vendorId: string, @Query() query: any) {
-    return this.servicesService.findAll({ ...query, vendor: vendorId });
+  findByVendor(@Param('vendorId') vendorId: string, @Query() query: any, @Req() req?: any) {
+    return this.servicesService.findAll({ ...query, vendor: vendorId }, req);
   }
 
   @Get('mine')
@@ -36,10 +44,14 @@ export class ServicesController {
     return this.servicesService.findByOwner((user._id as unknown) as string, query);
   }
 
+  // The campus resolver reads req.user BEFORE the X-Institution-Id header, so a
+  // route that accepts a token MUST populate req.user or a pinned user could be
+  // scoped to another campus just by sending that campus's header.
+  @UseGuards(OptionalJwtAuthGuard)
   @Get(':id')
   @ApiOperation({ summary: 'Get service by ID' })
-  findById(@Param('id') id: string) {
-    return this.servicesService.findById(id);
+  findById(@Param('id') id: string, @Req() req?: any) {
+    return this.servicesService.findById(id, req);
   }
 
   @Put(':id')

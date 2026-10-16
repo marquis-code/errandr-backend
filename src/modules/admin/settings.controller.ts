@@ -48,7 +48,7 @@ export class SettingsController {
     if (val.convenienceFee === undefined || val.convenienceFee === 0) {
       val.convenienceFee = resolvedPlatformFee;
     }
-    if (val.commissionFlatFee === undefined || val.commissionFlatFee === null) {
+    if (val.commissionFlatFee === undefined || val.commissionFlatFee === null || Number(val.commissionFlatFee) > 50) {
       val.commissionFlatFee = 50;
     }
     return val;
@@ -67,7 +67,8 @@ export class SettingsController {
 
     const resolvedPlatformFee = Number(body.platformFee ?? body.convenienceFee ?? body.platformProcessingFee ?? 100);
     const resolvedConvenienceFee = Number(body.convenienceFee ?? body.platformFee ?? resolvedPlatformFee);
-    const resolvedCommissionFlatFee = Number(body.commissionFlatFee !== undefined && body.commissionFlatFee !== null ? body.commissionFlatFee : (setting.value?.commissionFlatFee ?? 50));
+    const rawCommission = body.commissionFlatFee !== undefined && body.commissionFlatFee !== null ? body.commissionFlatFee : (setting.value?.commissionFlatFee ?? 50);
+    const resolvedCommissionFlatFee = Math.min(Math.max(0, Number(rawCommission)), 50);
 
     setting.value = {
       baseFee: Number(body.baseFee || 450),

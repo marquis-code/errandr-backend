@@ -63,6 +63,11 @@ export class MarketPoolOrder extends Document {
 
   @Prop()
   paymentReference: string;
+
+  // Campus tenancy — stamped at checkout from the ordering student's
+  // institution. Optional so pre-existing orders stay unscoped.
+  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'Institution', index: true })
+  institution: Types.ObjectId;
 }
 
 export const MarketPoolOrderSchema = SchemaFactory.createForClass(MarketPoolOrder);

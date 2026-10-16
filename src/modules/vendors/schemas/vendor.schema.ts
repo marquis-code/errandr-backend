@@ -261,6 +261,11 @@ export class Vendor extends Document {
   @Prop()
   university: string;
 
+  // Campus tenancy — stamped at vendor onboarding, authoritative for the
+  // vendor's orders, notifications and errand board.
+  @Prop({ type: Types.ObjectId, ref: 'Institution', index: true })
+  institution: Types.ObjectId;
+
   // Pre-order support
   @Prop({ default: false })
   preOrderOnly: boolean;

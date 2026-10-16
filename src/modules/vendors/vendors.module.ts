@@ -14,6 +14,7 @@ import { EmailModule } from '../email/email.module';
 import { MenuItem, MenuItemSchema } from '../menu/schemas/menu-item.schema';
 import { Appointment, AppointmentSchema } from '../appointments/schemas/appointment.schema';
 import { Wallet, WalletSchema } from '../wallets/schemas/wallet.schema';
+import { InstitutionsModule } from '../institutions/institutions.module';
 
 @Module({
   imports: [
@@ -28,6 +29,8 @@ import { Wallet, WalletSchema } from '../wallets/schemas/wallet.schema';
       { name: Wallet.name, schema: WalletSchema },
     ]),
     EmailModule,
+    // Exports InstitutionResolver so list queries can be scoped to a campus.
+    InstitutionsModule,
   ],
   controllers: [VendorsController],
   providers: [VendorsService, BannersCron, VendorsCronService, WebPushService],

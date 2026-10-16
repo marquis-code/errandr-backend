@@ -1,10 +1,10 @@
 import {
-  Controller, Get, Post, Put, Patch, Body, Param, Query,
+  Controller, Get, Post, Put, Patch, Body, Param, Query, Req,
   UseGuards, Logger, DefaultValuePipe, ParseIntPipe, BadRequestException
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { VendorsService } from './vendors.service';
-import { JwtAuthGuard, CurrentUser, Roles, RolesGuard } from '../../common/decorators';
+import { JwtAuthGuard, CurrentUser, Roles, RolesGuard, OptionalJwtAuthGuard } from '../../common/decorators';
 import { User, UserRole } from '../users/schemas/user.schema';
 import { VendorCategory } from './schemas/vendor.schema';
 
@@ -30,6 +30,10 @@ export class VendorsController {
     return this.vendorsService.create((user._id as unknown) as string, body);
   }
 
+  // The campus resolver reads req.user BEFORE the X-Institution-Id header, so a
+  // route that accepts a token MUST populate req.user or a pinned user could be
+  // scoped to another campus just by sending that campus's header.
+  @UseGuards(OptionalJwtAuthGuard)
   @Get()
   @ApiOperation({ summary: 'List all approved vendors' })
   findAll(
@@ -41,6 +45,7 @@ export class VendorsController {
     @Query('preOrderOnly') preOrderOnly?: boolean,
     @Query('search') search?: string,
     @Query('sortBy') sortBy?: string,
+    @Req() req?: any,
   ) {
     return this.vendorsService.findAll({
       category,
@@ -51,25 +56,37 @@ export class VendorsController {
       sortBy,
       page,
       limit,
-    });
+    }, req);
   }
 
+  // The campus resolver reads req.user BEFORE the X-Institution-Id header, so a
+  // route that accepts a token MUST populate req.user or a pinned user could be
+  // scoped to another campus just by sending that campus's header.
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('student-businesses')
   @ApiOperation({ summary: 'Get all student-owned businesses' })
-  getStudentBusinesses() {
-    return this.vendorsService.getStudentBusinesses();
+  getStudentBusinesses(@Req() req?: any) {
+    return this.vendorsService.getStudentBusinesses(req);
   }
 
+  // The campus resolver reads req.user BEFORE the X-Institution-Id header, so a
+  // route that accepts a token MUST populate req.user or a pinned user could be
+  // scoped to another campus just by sending that campus's header.
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('categories')
   @ApiOperation({ summary: 'Get vendor categories' })
-  getCategories() {
-    return this.vendorsService.getCategories();
+  getCategories(@Req() req?: any) {
+    return this.vendorsService.getCategories(req);
   }
 
+  // The campus resolver reads req.user BEFORE the X-Institution-Id header, so a
+  // route that accepts a token MUST populate req.user or a pinned user could be
+  // scoped to another campus just by sending that campus's header.
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('online')
   @ApiOperation({ summary: 'Get online vendors' })
-  getOnlineVendors() {
-    return this.vendorsService.getOnlineVendors();
+  getOnlineVendors(@Req() req?: any) {
+    return this.vendorsService.getOnlineVendors(req);
   }
 
   @Get('check-subdomain/:subdomain')
@@ -78,16 +95,24 @@ export class VendorsController {
     return this.vendorsService.checkSubdomainAvailability(subdomain);
   }
 
+  // The campus resolver reads req.user BEFORE the X-Institution-Id header, so a
+  // route that accepts a token MUST populate req.user or a pinned user could be
+  // scoped to another campus just by sending that campus's header.
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('subdomain/:subdomain')
   @ApiOperation({ summary: 'Get vendor by subdomain' })
-  findBySubdomain(@Param('subdomain') subdomain: string) {
-    return this.vendorsService.findBySubdomain(subdomain);
+  findBySubdomain(@Param('subdomain') subdomain: string, @Req() req?: any) {
+    return this.vendorsService.findBySubdomain(subdomain, req);
   }
 
+  // The campus resolver reads req.user BEFORE the X-Institution-Id header, so a
+  // route that accepts a token MUST populate req.user or a pinned user could be
+  // scoped to another campus just by sending that campus's header.
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('popular')
   @ApiOperation({ summary: 'Get popular vendors' })
-  getPopularVendors() {
-    return this.vendorsService.getPopularVendors();
+  getPopularVendors(@Req() req?: any) {
+    return this.vendorsService.getPopularVendors(req);
   }
 
   @Get('nearby')
@@ -98,8 +123,9 @@ export class VendorsController {
     @Query('lng') lng: number,
     @Query('lat') lat: number,
     @Query('maxDistance') maxDistance?: number,
+    @Req() req?: any,
   ) {
-    return this.vendorsService.getNearbyVendors(lng, lat, maxDistance);
+    return this.vendorsService.getNearbyVendors(lng, lat, maxDistance, req);
   }
 
   @Get('mine')
@@ -130,25 +156,37 @@ export class VendorsController {
     }
   }
 
+  // The campus resolver reads req.user BEFORE the X-Institution-Id header, so a
+  // route that accepts a token MUST populate req.user or a pinned user could be
+  // scoped to another campus just by sending that campus's header.
+  @UseGuards(OptionalJwtAuthGuard)
   @Post('batch')
   @ApiOperation({ summary: 'Get multiple vendors by IDs' })
-  findByIds(@Body() body: { ids: string[] }) {
+  findByIds(@Body() body: { ids: string[] }, @Req() req?: any) {
     if (!body.ids || !Array.isArray(body.ids)) {
       throw new BadRequestException('ids must be an array of strings');
     }
-    return this.vendorsService.findByIds(body.ids);
+    return this.vendorsService.findByIds(body.ids, req);
   }
 
+  // The campus resolver reads req.user BEFORE the X-Institution-Id header, so a
+  // route that accepts a token MUST populate req.user or a pinned user could be
+  // scoped to another campus just by sending that campus's header.
+  @UseGuards(OptionalJwtAuthGuard)
   @Get(':id')
   @ApiOperation({ summary: 'Get vendor by ID' })
-  findById(@Param('id') id: string) {
-    return this.vendorsService.findById(id);
+  findById(@Param('id') id: string, @Req() req?: any) {
+    return this.vendorsService.findById(id, req);
   }
 
+  // The campus resolver reads req.user BEFORE the X-Institution-Id header, so a
+  // route that accepts a token MUST populate req.user or a pinned user could be
+  // scoped to another campus just by sending that campus's header.
+  @UseGuards(OptionalJwtAuthGuard)
   @Get(':id/status')
   @ApiOperation({ summary: 'Get vendor real-time status' })
-  getStatus(@Param('id') id: string) {
-    return this.vendorsService.getVendorStatus(id);
+  getStatus(@Param('id') id: string, @Req() req?: any) {
+    return this.vendorsService.getVendorStatus(id, req);
   }
 
   @Put(':id')
@@ -184,13 +222,18 @@ export class VendorsController {
     return this.vendorsService.toggleOnline(id, user);
   }
 
+  // The campus resolver reads req.user BEFORE the X-Institution-Id header, so a
+  // route that accepts a token MUST populate req.user or a pinned user could be
+  // scoped to another campus just by sending that campus's header.
+  @UseGuards(OptionalJwtAuthGuard)
   @Get(':id/reviews')
   @ApiOperation({ summary: 'Get reviews for a vendor' })
   getReviews(
     @Param('id') id: string,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
-    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+    @Req() req?: any,
   ) {
-    return this.vendorsService.getVendorReviews(id, page, limit);
+    return this.vendorsService.getVendorReviews(id, page, limit, req);
   }
 }

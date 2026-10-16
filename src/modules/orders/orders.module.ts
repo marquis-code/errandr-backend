@@ -31,6 +31,7 @@ import { ErrandPool, ErrandPoolSchema } from './schemas/errand-pool.schema';
 import { DeliveryBid, DeliveryBidSchema } from './schemas/delivery-bid.schema';
 import { ExamModeModule } from '../exam-mode/exam-mode.module';
 import { ErrandersModule } from '../erranders/erranders.module';
+import { InstitutionsModule } from '../institutions/institutions.module';
 
 import { OrderSchedulerService } from './cron/order-scheduler.service';
 
@@ -66,6 +67,8 @@ import { RecurringOrdersCronService } from './recurring-orders-cron.service';
     PromoCodesModule,
     forwardRef(() => ExamModeModule),
     forwardRef(() => ErrandersModule),
+    // Exports InstitutionResolver so order lists can be scoped to a campus.
+    InstitutionsModule,
   ],
   controllers: [OrdersController, SimulationController, RecurringOrdersController],
   providers: [OrdersService, BatchDeliveryService, OrderSchedulerService, NegotiationService, NegotiationGateway, RecurringOrdersService, RecurringOrdersCronService],

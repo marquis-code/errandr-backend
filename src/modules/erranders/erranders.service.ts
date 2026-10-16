@@ -6,6 +6,7 @@ import { User, UserRole } from '../users/schemas/user.schema';
 import { RedisService } from '../redis/redis.service';
 import { RewardsService } from '../rewards/rewards.service';
 import { EmailService } from '../email/email.service';
+import { InstitutionResolver } from '../institutions/institution-resolver.service';
 
 @Injectable()
 export class ErrandersService {
@@ -17,7 +18,27 @@ export class ErrandersService {
     private redisService: RedisService,
     private rewardsService: RewardsService,
     private emailService: EmailService,
+    private institutionResolver: InstitutionResolver,
   ) {}
+
+  /**
+   * Campus tenancy. Returns the institution every result of a request must be
+   * restricted to, or `null` when the request must not be scoped (guests and
+   * legacy clients) — in which case the caller leaves its query untouched.
+   */
+  private async resolveInstitution(req?: any): Promise<Types.ObjectId | null> {
+    if (!req) return null;
+    return this.institutionResolver.resolve(req);
+  }
+
+  /**
+   * `Errander` documents carry no institution of their own — the rider's campus
+   * lives on the owning `User`. Resolving the campus user ids once keeps the
+   * errander query index-friendly without an expensive `$lookup`.
+   */
+  private async campusUserIds(institution: Types.ObjectId): Promise<Types.ObjectId[]> {
+    return this.userModel.distinct('_id', { institution }).exec();
+  }
 
   /**
    * Retry helper for transient MongoDB errors (ECONNRESET, network timeouts)
@@ -173,17 +194,23 @@ export class ErrandersService {
     }, 'getEarnings');
   }
 
-  async getAll(page = 1, limit = 20) {
+  async getAll(page = 1, limit = 20, req?: any) {
     const skip = (page - 1) * limit;
+
+    const filter: any = {};
+    // Campus tenancy: only riders belonging to the caller's campus.
+    const institution = await this.resolveInstitution(req);
+    if (institution) filter.user = { $in: await this.campusUserIds(institution) };
+
     const [errandersRaw, total] = await Promise.all([
       this.erranderModel
-        .find()
+        .find(filter)
         .populate('user', 'firstName lastName email phone avatar')
         .skip(skip)
         .limit(limit)
         .sort({ totalDeliveries: -1 })
         .lean(),
-      this.erranderModel.countDocuments(),
+      this.erranderModel.countDocuments(filter),
     ]);
 
     // Attach wallet balances and bank details
@@ -203,9 +230,15 @@ export class ErrandersService {
     return { erranders, total };
   }
 
-  async getAvailable(): Promise<Errander[]> {
+  async getAvailable(req?: any): Promise<Errander[]> {
+    const filter: any = { status: ErranderStatus.AVAILABLE };
+    // Campus tenancy: a rider only ever sees riders (and therefore errands)
+    // from their own campus.
+    const institution = await this.resolveInstitution(req);
+    if (institution) filter.user = { $in: await this.campusUserIds(institution) };
+
     return this.erranderModel
-      .find({ status: ErranderStatus.AVAILABLE })
+      .find(filter)
       .populate('user', 'firstName lastName avatar phone');
   }
 

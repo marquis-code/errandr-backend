@@ -1,12 +1,16 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { User } from './schemas/user.schema';
+import { InstitutionsService } from '../institutions/institutions.service';
 import { augmentVendor } from '../../utils/vendor-helpers';
 
 @Injectable()
 export class UsersService {
-  constructor(@InjectModel(User.name) private userModel: Model<User>) {}
+  constructor(
+    @InjectModel(User.name) private userModel: Model<User>,
+    private readonly institutionsService: InstitutionsService,
+  ) {}
 
   async findById(id: string): Promise<any> {
     const user = await this.userModel.aggregate([
@@ -71,6 +75,32 @@ export class UsersService {
         { new: true },
       )
       .select('-password');
+  }
+
+  /**
+   * Sets the caller's campus. The institution must exist and be active, and
+   * the password is never returned.
+   */
+  async setInstitution(id: string, institutionId: string): Promise<User> {
+    if (!institutionId || !Types.ObjectId.isValid(institutionId)) {
+      throw new BadRequestException('A valid institutionId is required');
+    }
+
+    // Throws NotFoundException when the institution does not exist.
+    const institution = await this.institutionsService.findById(institutionId);
+    if (!institution.isActive) {
+      throw new BadRequestException('This institution is not active');
+    }
+
+    const user = await this.userModel
+      .findByIdAndUpdate(
+        id,
+        { institution: new Types.ObjectId(institutionId) },
+        { new: true },
+      )
+      .select('-password');
+    if (!user) throw new NotFoundException('User not found');
+    return user;
   }
 
   async findAll(page = 1, limit = 20): Promise<{ users: any[]; total: number }> {

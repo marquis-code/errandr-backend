@@ -14,6 +14,7 @@ import { MenuItem } from '../menu/schemas/menu-item.schema';
 import { Wallet } from '../wallets/schemas/wallet.schema';
 import { Appointment, AppointmentStatus } from '../appointments/schemas/appointment.schema';
 import { augmentVendor, checkIsOpen } from '../../utils/vendor-helpers';
+import { InstitutionResolver } from '../institutions/institution-resolver.service';
 
 @Injectable()
 export class VendorsService {
@@ -31,7 +32,18 @@ export class VendorsService {
     private redisService: RedisService,
     private emailService: EmailService,
     private webPushService: WebPushService,
+    private institutionResolver: InstitutionResolver,
   ) {}
+
+  /**
+   * Campus tenancy. Returns the institution every result of a request must be
+   * restricted to, or `null` when the request must not be scoped (guests and
+   * legacy clients) — in which case the caller leaves its query untouched.
+   */
+  private async resolveInstitution(req?: any): Promise<Types.ObjectId | null> {
+    if (!req) return null;
+    return this.institutionResolver.resolve(req);
+  }
 
   public augmentVendor(vendor: any) {
     return augmentVendor(vendor);
@@ -72,9 +84,13 @@ export class VendorsService {
     sortBy?: string;
     page?: number;
     limit?: number;
-  }): Promise<{ vendors: Vendor[]; total: number }> {
+  }, req?: any): Promise<{ vendors: Vendor[]; total: number }> {
     const { category, isInsideCampus, isStudentBusiness, preOrderOnly, search, sortBy, page = 1, limit = 20 } = query;
     const filter: any = { status: VendorStatus.APPROVED, isVisible: { $ne: false } };
+
+    // Campus tenancy: the vendor's own `institution` is authoritative — never inferred from `school`.
+    const institution = await this.resolveInstitution(req);
+    if (institution) filter.institution = institution;
 
     if (category) filter.category = category;
     if (isInsideCampus !== undefined) filter.isInsideCampus = isInsideCampus;
@@ -139,39 +155,74 @@ export class VendorsService {
     };
   }
 
-  async getStudentBusinesses(): Promise<Vendor[]> {
+  async getStudentBusinesses(req?: any): Promise<Vendor[]> {
+    const filter: any = { status: VendorStatus.APPROVED, isStudentBusiness: true, isVisible: { $ne: false } };
+    const institution = await this.resolveInstitution(req);
+    if (institution) filter.institution = institution;
     return this.vendorModel
-      .find({ status: VendorStatus.APPROVED, isStudentBusiness: true, isVisible: { $ne: false } })
+      .find(filter)
       .populate('owner', 'firstName lastName avatar')
       .sort({ rating: -1 });
   }
 
-  async getPopularVendors(): Promise<Vendor[]> {
+  async getPopularVendors(req?: any): Promise<Vendor[]> {
+    const filter: any = { status: VendorStatus.APPROVED, isVisible: { $ne: false } };
+    const institution = await this.resolveInstitution(req);
+    if (institution) filter.institution = institution;
     const vendors = await this.vendorModel
-      .find({ status: VendorStatus.APPROVED, isVisible: { $ne: false } })
+      .find(filter)
       .populate('owner', 'firstName lastName avatar')
       .sort({ rating: -1 })
       .limit(10);
     return vendors.map(v => this.augmentVendor(v)) as any;
   }
 
-  async findById(id: string): Promise<Vendor> {
+  async findById(id: string, req?: any): Promise<Vendor> {
     const vendor = await this.vendorModel
       .findById(id)
       .populate('owner', 'firstName lastName avatar phone');
     if (!vendor) throw new NotFoundException('Vendor not found');
+
+    // A campus-scoped caller must not be able to open another campus's vendor by id.
+    const institution = await this.resolveInstitution(req);
+    if (institution && !this.belongsToInstitution(vendor, institution)) {
+      throw new NotFoundException('Vendor not found');
+    }
+
     return this.augmentVendor(vendor) as any;
   }
 
-  async findByIds(ids: string[]): Promise<Vendor[]> {
+  async findByIds(ids: string[], req?: any): Promise<Vendor[]> {
     const validIds = ids.filter(id => Types.ObjectId.isValid(id));
     if (validIds.length === 0) return [];
-    
+
+    const filter: any = { _id: { $in: validIds.map(id => new Types.ObjectId(id)) } };
+    const institution = await this.resolveInstitution(req);
+    if (institution) filter.institution = institution;
+
     const vendors = await this.vendorModel
-      .find({ _id: { $in: validIds.map(id => new Types.ObjectId(id)) } })
+      .find(filter)
       .populate('owner', 'firstName lastName avatar phone');
-      
+
     return vendors.map(v => this.augmentVendor(v)) as any;
+  }
+
+  /** True when the vendor is stamped with the given campus. */
+  private belongsToInstitution(vendor: any, institution: Types.ObjectId): boolean {
+    const vendorInstitution = vendor?.institution;
+    if (!vendorInstitution) return false;
+    return String(vendorInstitution) === String(institution);
+  }
+
+  /**
+   * Cheap tenancy check reused by the products/services modules, which inherit
+   * their institution from the owning vendor. `null` means "do not scope".
+   */
+  async isInInstitution(vendorId: string, institution: Types.ObjectId | null): Promise<boolean> {
+    if (!institution) return true;
+    if (!Types.ObjectId.isValid(vendorId)) return false;
+    const vendor = await this.vendorModel.findById(vendorId).select('institution').lean();
+    return !!vendor && this.belongsToInstitution(vendor, institution);
   }
 
   async toggleVendorOnlineStatus(vendorId: string, isOnline: boolean) {
@@ -205,11 +256,18 @@ export class VendorsService {
     return vendor;
   }
 
-  async findBySubdomain(subdomain: string): Promise<Vendor> {
+  async findBySubdomain(subdomain: string, req?: any): Promise<Vendor> {
     const vendor = await this.vendorModel
       .findOne({ subdomain: subdomain.toLowerCase().trim() })
       .populate('owner', 'firstName lastName avatar phone');
     if (!vendor) throw new NotFoundException('Vendor not found for this subdomain');
+
+    // A campus-scoped caller must not resolve another campus's storefront.
+    const institution = await this.resolveInstitution(req);
+    if (institution && !this.belongsToInstitution(vendor, institution)) {
+      throw new NotFoundException('Vendor not found for this subdomain');
+    }
+
     return this.augmentVendor(vendor) as any;
   }
 
@@ -348,9 +406,12 @@ export class VendorsService {
     };
   }
 
-  async getOnlineVendors(): Promise<Vendor[]> {
+  async getOnlineVendors(req?: any): Promise<Vendor[]> {
+    const filter: any = { status: VendorStatus.APPROVED, isOnline: true, isVisible: { $ne: false } };
+    const institution = await this.resolveInstitution(req);
+    if (institution) filter.institution = institution;
     const vendors = await this.vendorModel
-      .find({ status: VendorStatus.APPROVED, isOnline: true, isVisible: { $ne: false } })
+      .find(filter)
       .populate('owner', 'firstName lastName avatar')
       .sort({ rating: -1 });
     
@@ -361,8 +422,9 @@ export class VendorsService {
     lng: number,
     lat: number,
     maxDistance = 5000,
+    req?: any,
   ): Promise<Vendor[]> {
-    return this.vendorModel.find({
+    const filter: any = {
       status: VendorStatus.APPROVED,
       isOnline: true,
       isVisible: { $ne: false },
@@ -372,23 +434,48 @@ export class VendorsService {
           $maxDistance: maxDistance,
         },
       },
-    }).populate('owner', 'firstName lastName avatar');
+    };
+    const institution = await this.resolveInstitution(req);
+    if (institution) filter.institution = institution;
+    return this.vendorModel.find(filter).populate('owner', 'firstName lastName avatar');
   }
 
-  async getVendorStatus(id: string): Promise<string> {
+  async getVendorStatus(id: string, req?: any): Promise<string> {
+    const institution = await this.resolveInstitution(req);
+
+    // Unscoped requests keep the original cache-first behaviour, byte for byte.
+    if (!institution) {
+      const cached = await this.redisService.get(`vendor:status:${id}`);
+      if (cached) return cached;
+
+      const vendor = await this.vendorModel.findById(id);
+      if (!vendor) throw new NotFoundException('Vendor not found');
+
+      const status = vendor.isOnline ? 'online' : 'offline';
+      await this.redisService.set(`vendor:status:${id}`, status, 300);
+      return status;
+    }
+
+    // Scoped requests must prove tenancy before the shared cache is consulted.
+    const vendor = await this.vendorModel.findById(id);
+    if (!vendor || !this.belongsToInstitution(vendor, institution)) {
+      throw new NotFoundException('Vendor not found');
+    }
+
     const cached = await this.redisService.get(`vendor:status:${id}`);
     if (cached) return cached;
-
-    const vendor = await this.vendorModel.findById(id);
-    if (!vendor) throw new NotFoundException('Vendor not found');
 
     const status = vendor.isOnline ? 'online' : 'offline';
     await this.redisService.set(`vendor:status:${id}`, status, 300);
     return status;
   }
 
-  async getCategories(): Promise<string[]> {
-    const categories = await this.vendorModel.distinct('category', { status: VendorStatus.APPROVED }).exec();
+  async getCategories(req?: any): Promise<string[]> {
+    const filter: any = { status: VendorStatus.APPROVED };
+    const institution = await this.resolveInstitution(req);
+    if (institution) filter.institution = institution;
+
+    const categories = await this.vendorModel.distinct('category', filter).exec();
     const predefined = Object.values(VendorCategory);
     
     // Combine predefined and dynamic, remove empties, make unique
@@ -416,9 +503,21 @@ export class VendorsService {
     return vendor;
   }
 
-  async getVendorReviews(vendorId: string, page: number = 1, limit: number = 10) {
+  async getVendorReviews(vendorId: string, page: number = 1, limit: number = 10, req?: any) {
     const skip = (page - 1) * limit;
-    
+
+    // Reviews are vendor-scoped data: a campus-scoped caller must not be able to
+    // read another campus's vendor reviews.
+    const institution = await this.resolveInstitution(req);
+    if (institution) {
+      const vendor = Types.ObjectId.isValid(vendorId)
+        ? await this.vendorModel.findById(vendorId).select('institution')
+        : null;
+      if (!vendor || !this.belongsToInstitution(vendor, institution)) {
+        return { reviews: [], total: 0, page, pages: 0 };
+      }
+    }
+
     // Find all orders for this vendor that have a vendorReview
     const filter = {
       vendor: new Types.ObjectId(vendorId),

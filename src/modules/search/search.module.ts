@@ -6,6 +6,7 @@ import { Vendor, VendorSchema } from '../vendors/schemas/vendor.schema';
 import { Product, ProductSchema } from '../products/schemas/product.schema';
 import { Service, ServiceSchema } from '../services/schemas/service.schema';
 import { MenuItem, MenuItemSchema } from '../menu/schemas/menu-item.schema';
+import { InstitutionsModule } from '../institutions/institutions.module';
 
 @Module({
   imports: [
@@ -15,6 +16,8 @@ import { MenuItem, MenuItemSchema } from '../menu/schemas/menu-item.schema';
       { name: Service.name, schema: ServiceSchema },
       { name: MenuItem.name, schema: MenuItemSchema },
     ]),
+    // Exports InstitutionResolver so search results can be scoped to a campus.
+    InstitutionsModule,
   ],
   controllers: [SearchController],
   providers: [SearchService],

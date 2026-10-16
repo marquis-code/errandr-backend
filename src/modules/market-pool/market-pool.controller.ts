@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Body, Param, UseGuards, Req, Put, Delete } from '@nestjs/common';
 import { MarketPoolService } from './market-pool.service';
-import { JwtAuthGuard, RolesGuard, Roles } from '../../common/decorators';
+import { JwtAuthGuard, RolesGuard, Roles, OptionalJwtAuthGuard } from '../../common/decorators';
 import { UserRole } from '../users/schemas/user.schema';
 import { MarketPoolOrderStatus } from './schemas/market-pool-order.schema';
 
@@ -8,17 +8,21 @@ import { MarketPoolOrderStatus } from './schemas/market-pool-order.schema';
 export class MarketPoolController {
   constructor(private readonly marketPoolService: MarketPoolService) {}
 
+  // The campus resolver reads req.user BEFORE the X-Institution-Id header, so a
+  // route that accepts a token MUST populate req.user or a pinned user could be
+  // scoped to another campus just by sending that campus's header.
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('active')
-  async getActiveCampaign() {
-    const campaign = await this.marketPoolService.getActiveCampaign();
+  async getActiveCampaign(@Req() req?: any) {
+    const campaign = await this.marketPoolService.getActiveCampaign(req);
     if (!campaign) return null;
     const items = await this.marketPoolService.getCampaignItems(campaign._id.toString());
     return { campaign, items };
   }
 
   @Get('active-campaigns')
-  async getActiveCampaigns() {
-    const campaigns = await this.marketPoolService.getActiveCampaigns();
+  async getActiveCampaigns(@Req() req?: any) {
+    const campaigns = await this.marketPoolService.getActiveCampaigns(req);
     const results: any[] = [];
     for (const campaign of campaigns) {
       const items = await this.marketPoolService.getCampaignItems(campaign._id.toString());
@@ -30,7 +34,7 @@ export class MarketPoolController {
   @UseGuards(JwtAuthGuard)
   @Get('orders')
   async getUserOrders(@Req() req) {
-    return this.marketPoolService.getUserOrders(req.user._id.toString());
+    return this.marketPoolService.getUserOrders(req.user._id.toString(), req);
   }
 
   @Get('payment-details')
@@ -69,22 +73,22 @@ export class MarketPoolController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   @Get('campaigns/:id/orders')
-  async getCampaignOrders(@Param('id') campaignId: string) {
-    return this.marketPoolService.getCampaignOrders(campaignId);
+  async getCampaignOrders(@Param('id') campaignId: string, @Req() req?: any) {
+    return this.marketPoolService.getCampaignOrders(campaignId, req);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   @Get('campaigns')
-  async getAllCampaigns() {
-    return this.marketPoolService.getAllCampaigns();
+  async getAllCampaigns(@Req() req?: any) {
+    return this.marketPoolService.getAllCampaigns(req);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   @Post('campaigns')
-  async createCampaign(@Body() body: { title: string, startDate: Date, endDate: Date }) {
-    return this.marketPoolService.createCampaign(body.title, body.startDate, body.endDate);
+  async createCampaign(@Body() body: { title: string, startDate: Date, endDate: Date }, @Req() req?: any) {
+    return this.marketPoolService.createCampaign(body.title, body.startDate, body.endDate, req);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -131,8 +135,8 @@ export class MarketPoolController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   @Get('campaigns/:id/aggregation')
-  async getAggregation(@Param('id') campaignId: string) {
-    return this.marketPoolService.getAggregation(campaignId);
+  async getAggregation(@Param('id') campaignId: string, @Req() req?: any) {
+    return this.marketPoolService.getAggregation(campaignId, req);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
