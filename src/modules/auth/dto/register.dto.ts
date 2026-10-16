@@ -1,5 +1,6 @@
 import { IsEmail, IsNotEmpty, IsString, MinLength, IsOptional, IsEnum } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import { UserRole } from '../../users/schemas/user.schema';
 
 export class RegisterDto {
@@ -29,6 +30,7 @@ export class RegisterDto {
 
   @ApiProperty({ required: false, enum: UserRole })
   @IsOptional()
+  @Transform(({ value }) => (value === 'dispatch' ? UserRole.ERRANDER : value))
   @IsEnum(UserRole)
   role?: UserRole;
 
