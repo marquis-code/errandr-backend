@@ -95,11 +95,22 @@ export class UsersService {
     const user = await this.userModel
       .findByIdAndUpdate(
         id,
-        { institution: new Types.ObjectId(institutionId) },
+        { institution: new Types.ObjectId(institutionId), school: institution.shortName || institution.name },
         { new: true },
       )
       .select('-password');
     if (!user) throw new NotFoundException('User not found');
+
+    // Keep linked Errander doc in sync if this user is a rider
+    try {
+      await this.userModel.db.collection('erranders').updateMany(
+        { user: new Types.ObjectId(id) },
+        { $set: { institution: new Types.ObjectId(institutionId), school: institution.shortName || institution.name } }
+      );
+    } catch (e) {
+      // Non-blocking
+    }
+
     return user;
   }
 

@@ -45,6 +45,9 @@ export class Institution extends Document {
   @Prop({ required: true, trim: true, default: 'Nigeria' })
   country: string;
 
+  @Prop({ trim: true })
+  category?: string;
+
   // Campus centre as a GeoJSON Point: { type: 'Point', coordinates: [lng, lat] }
   @Prop({
     type: {

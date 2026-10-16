@@ -49,8 +49,12 @@ export class Errander extends Document {
   @Prop({ default: false })
   isVerified: boolean;
 
-  @Prop({ type: String, enum: ['UNILAG', 'CMUL', 'YABATECH'] })
+  @Prop({ type: String })
   school: string;
+
+  // Campus tenancy — links rider to an institution
+  @Prop({ type: Types.ObjectId, ref: 'Institution', index: true })
+  institution: Types.ObjectId;
 
   @Prop()
   matricNumber: string;

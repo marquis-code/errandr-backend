@@ -6,7 +6,7 @@ import { Vendor } from '../vendors/schemas/vendor.schema';
 import { Service } from '../services/schemas/service.schema';
 
 /** Fields the campus picker needs — never leak internal bookkeeping to guests. */
-const PICKER_FIELDS = 'name shortName slug city state country branding supportedAppTypes';
+const PICKER_FIELDS = 'name shortName slug city state country branding supportedAppTypes category';
 
 @Injectable()
 export class InstitutionsService {
@@ -115,5 +115,48 @@ export class InstitutionsService {
     ]);
 
     return { vendors, services };
+  }
+
+  /**
+   * Batch stats across all institutions in one round-trip.
+   */
+  async getAllStats(): Promise<Record<string, { vendors: number; services: number }>> {
+    const [vendorAgg, serviceAgg] = await Promise.all([
+      this.vendorModel.aggregate([
+        { $match: { institution: { $exists: true, $ne: null } } },
+        { $group: { _id: '$institution', count: { $sum: 1 } } },
+      ]),
+      this.serviceModel.aggregate([
+        {
+          $lookup: {
+            from: 'vendors',
+            localField: 'vendor',
+            foreignField: '_id',
+            as: 'vendorDoc',
+          },
+        },
+        { $unwind: '$vendorDoc' },
+        { $match: { 'vendorDoc.institution': { $exists: true, $ne: null } } },
+        { $group: { _id: '$vendorDoc.institution', count: { $sum: 1 } } },
+      ]),
+    ]);
+
+    const result: Record<string, { vendors: number; services: number }> = {};
+    for (const v of vendorAgg) {
+      if (v._id) {
+        result[v._id.toString()] = { vendors: v.count, services: 0 };
+      }
+    }
+    for (const s of serviceAgg) {
+      if (s._id) {
+        const key = s._id.toString();
+        if (result[key]) {
+          result[key].services = s.count;
+        } else {
+          result[key] = { vendors: 0, services: s.count };
+        }
+      }
+    }
+    return result;
   }
 }

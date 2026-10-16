@@ -17,6 +17,12 @@ export class InstitutionsController {
     return this.institutionsService.findAll(true);
   }
 
+  @Get('summary/stats')
+  @ApiOperation({ summary: 'Batch vendor/service counts for all campuses' })
+  getAllStats() {
+    return this.institutionsService.getAllStats();
+  }
+
   @Get(':idOrSlug/stats')
   @ApiOperation({ summary: 'Light vendor/service counts for one campus' })
   getStats(@Param('idOrSlug') idOrSlug: string) {

@@ -71,11 +71,12 @@ export class ErrandersService {
     if (existing) throw new ConflictException('Already registered as errander');
 
     // Update user role
-    await this.userModel.findByIdAndUpdate(userId, { role: UserRole.ERRANDER });
+    const user = await this.userModel.findByIdAndUpdate(userId, { role: UserRole.ERRANDER }, { new: true });
 
     return this.erranderModel.create({
       ...data,
       user: new Types.ObjectId(userId),
+      institution: data.institution || user?.institution,
     });
   }
 
@@ -247,9 +248,10 @@ export class ErrandersService {
     if (errander) return errander;
 
     try {
-      await this.userModel.findByIdAndUpdate(userId, { role: UserRole.ERRANDER });
+      const user = await this.userModel.findByIdAndUpdate(userId, { role: UserRole.ERRANDER }, { new: true });
       return await this.erranderModel.create({
         user: new Types.ObjectId(userId),
+        institution: user?.institution,
         status: ErranderStatus.OFFLINE,
       });
     } catch (e: any) {
