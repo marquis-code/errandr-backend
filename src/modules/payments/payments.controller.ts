@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Body, Query, UseGuards, Logger, Inject, forwardRef, Headers, Req, BadRequestException } from '@nestjs/common';
 import * as crypto from 'crypto';
+import axios from 'axios';
 import { Request } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
@@ -183,6 +184,55 @@ export class PaymentsController {
   @ApiOperation({ summary: 'Pay for an order using wallet balance' })
   async payWithWallet(@Req() req: any, @Body() body: { orderId: string }) {
     return this.ordersService.payWithWallet(body.orderId, req.user._id.toString());
+  }
+
+  /**
+   * Barter shares this Paystack account, and a Paystack account has exactly ONE
+   * webhook URL — this one. So every `transfer.*` event for a Barter payout
+   * arrives HERE, not at Barter. This forwards those outcomes on, authenticated
+   * with the shared BARTER_API_KEY.
+   *
+   * Fire-and-forget on purpose: Barter being down must never make Paystack think
+   * this webhook failed and retry the whole batch (which would re-run the
+   * Erranders wallet updates above). Barter also reconciles on demand via
+   * `POST /users/me/withdrawals/:id/verify`, so a dropped forward is recoverable.
+   */
+  private async forwardTransferToBarter(event: string, data: any): Promise<void> {
+    const barterApiUrl = this.configService.get<string>('BARTER_API_URL');
+    const barterApiKey = this.configService.get<string>('BARTER_API_KEY');
+
+    if (!barterApiUrl || !barterApiKey) {
+      // Not configured yet — log once per event rather than throwing.
+      this.logger.warn(
+        `BARTER_API_URL/BARTER_API_KEY not set — skipping forward of ${event} ${data?.reference}`,
+      );
+      return;
+    }
+
+    try {
+      await axios.post(
+        `${barterApiUrl.replace(/\/$/, '')}/webhooks/erranders`,
+        {
+          event,
+          data: {
+            reference: data?.reference,
+            status: data?.status,
+            reason: data?.reason || data?.message,
+            transfer_code: data?.transfer_code,
+            amount: data?.amount,
+          },
+        },
+        {
+          headers: { 'x-api-key': barterApiKey, 'Content-Type': 'application/json' },
+          timeout: 10000,
+        },
+      );
+      this.logger.log(`Forwarded ${event} ${data?.reference} to Barter`);
+    } catch (err: any) {
+      this.logger.error(
+        `Could not forward ${event} ${data?.reference} to Barter: ${err?.message}`,
+      );
+    }
   }
 
   @Post('paystack/webhook')
@@ -371,6 +421,8 @@ export class PaymentsController {
               TransactionStatus.COMPLETED,
             );
           }
+          // Barter payouts share this account — hand the outcome over.
+          await this.forwardTransferToBarter('transfer.success', data);
           break;
         }
 
@@ -381,6 +433,7 @@ export class PaymentsController {
             this.logger.warn(`Transfer failed/reversed: ${failedRef} — Reason: ${data.reason || 'Unknown'}`);
             await this.walletsService.handleFailedPayout(failedRef);
           }
+          await this.forwardTransferToBarter(event, data);
           break;
         }
 

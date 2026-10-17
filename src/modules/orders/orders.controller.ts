@@ -91,8 +91,13 @@ export class OrdersController {
     @Query('deliveryLocation') deliveryLocation?: string,
   ) {
     this.logger.log(`calculateFee() vendorId=${vendorId} deliveryAddress=${deliveryAddress}`);
-    const fee = await this.ordersService.calculateDynamicFee(vendorId, customerId || '', deliveryAddress, deliveryLocation);
-    return { success: true, deliveryFee: fee };
+    try {
+      const fee = await this.ordersService.calculateDynamicFee(vendorId, customerId || '', deliveryAddress, deliveryLocation);
+      return { success: true, deliveryFee: fee };
+    } catch (err: any) {
+      this.logger.error(`calculateFee() fallback error: ${err.message}`);
+      return { success: true, deliveryFee: 350 };
+    }
   }
 
   @Get('mine')

@@ -183,12 +183,6 @@ export class VendorsService {
       .populate('owner', 'firstName lastName avatar phone');
     if (!vendor) throw new NotFoundException('Vendor not found');
 
-    // A campus-scoped caller must not be able to open another campus's vendor by id.
-    const institution = await this.resolveInstitution(req);
-    if (institution && !this.belongsToInstitution(vendor, institution)) {
-      throw new NotFoundException('Vendor not found');
-    }
-
     return this.augmentVendor(vendor) as any;
   }
 
@@ -261,12 +255,6 @@ export class VendorsService {
       .findOne({ subdomain: subdomain.toLowerCase().trim() })
       .populate('owner', 'firstName lastName avatar phone');
     if (!vendor) throw new NotFoundException('Vendor not found for this subdomain');
-
-    // A campus-scoped caller must not resolve another campus's storefront.
-    const institution = await this.resolveInstitution(req);
-    if (institution && !this.belongsToInstitution(vendor, institution)) {
-      throw new NotFoundException('Vendor not found for this subdomain');
-    }
 
     return this.augmentVendor(vendor) as any;
   }

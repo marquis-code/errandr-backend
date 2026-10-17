@@ -3753,120 +3753,137 @@ export class OrdersService {
   }
 
   async calculateDynamicFee(vendorId: string, customerId: string, deliveryAddress: string, deliveryLocationStr?: string, isWithinLuth?: boolean): Promise<number> {
-    const vendor = await this.vendorModel.findById(vendorId);
-    let user: any = null;
-    if (customerId) {
-      user = await this.userModel.findById(customerId);
-    }
+    let fallbackFee = 350;
+    try {
+      // Fetch base delivery fee from admin system settings
+      const customErrandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
+      const baseFare = customErrandSetting?.value?.baseFee || 350;
+      fallbackFee = baseFare;
 
-    // Fetch base delivery fee from admin system settings
-    const customErrandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
-    const baseFare = customErrandSetting?.value?.baseFee || 350;
-    let fallbackFee = baseFare;
+      const vendor = await this.vendorModel.findById(vendorId);
+      if (!vendor) return fallbackFee;
 
-    if (!vendor) return fallbackFee;
-
-    const vendorLocation = vendor.location?.coordinates;
-    let customerLocation = user?.location?.coordinates;
-
-    if (deliveryLocationStr) {
-      try {
-        const parsed = JSON.parse(deliveryLocationStr);
-        if (parsed && parsed.coordinates) {
-          customerLocation = parsed.coordinates;
-        }
-      } catch (e) {
-        this.logger.warn(`Failed to parse deliveryLocationStr: ${deliveryLocationStr}`);
+      let user: any = null;
+      if (customerId) {
+        user = await this.userModel.findById(customerId);
       }
-    }
 
-    // Check if vendor location is missing or default [0,0]
-    if (!vendorLocation || (vendorLocation[0] === 0 && vendorLocation[1] === 0)) {
-      // Try geocoding vendor address
-      if (vendor.address) {
-        const geocoded = await this.mapboxService.geocode(vendor.address);
-        if (geocoded) {
-          vendor.location = { type: 'Point', coordinates: geocoded };
-          await vendor.save();
+      const vendorLocation = vendor.location?.coordinates;
+      let customerLocation = user?.location?.coordinates;
+
+      if (deliveryLocationStr) {
+        try {
+          const parsed = JSON.parse(deliveryLocationStr);
+          if (parsed && parsed.coordinates) {
+            customerLocation = parsed.coordinates;
+          }
+        } catch (e) {
+          this.logger.warn(`Failed to parse deliveryLocationStr: ${deliveryLocationStr}`);
         }
       }
-    }
 
-    // Check if customer location is missing or default [0,0]
-    if (!customerLocation || (customerLocation[0] === 0 && customerLocation[1] === 0)) {
-      if (deliveryAddress) {
-        const geocoded = await this.mapboxService.geocode(deliveryAddress);
-        if (geocoded) {
-          customerLocation = geocoded;
-          if (user) {
-            user.location = { type: 'Point', coordinates: geocoded };
-            user.deliveryAddress = deliveryAddress;
-            await user.save();
+      // Check if vendor location is missing or default [0,0]
+      if (!vendorLocation || (vendorLocation[0] === 0 && vendorLocation[1] === 0)) {
+        // Try geocoding vendor address
+        if (vendor.address) {
+          try {
+            const geocoded = await this.mapboxService.geocode(vendor.address);
+            if (geocoded) {
+              vendor.location = { type: 'Point', coordinates: geocoded };
+              await this.vendorModel.updateOne(
+                { _id: vendor._id },
+                { $set: { location: { type: 'Point', coordinates: geocoded } } }
+              );
+            }
+          } catch (err: any) {
+            this.logger.warn(`Failed to geocode/save vendor location: ${err.message}`);
           }
         }
       }
-    }
 
-    const vCoords = vendor.location?.coordinates;
-
-    // Check if customer is within CMUL/LUTH Idi-Araba Campus (Flat Rate ₦300)
-    let isCMUL = false;
-    if (customerLocation && customerLocation[0] !== 0 && customerLocation[1] !== 0) {
-      const [lng, lat] = customerLocation;
-      // Widen bounding box significantly to account for mapbox inaccuracies in Nigeria
-      const isWithinLat = lat >= 6.440000 && lat <= 6.530000;
-      const isWithinLng = lng >= 3.340000 && lng <= 3.400000;
-      if (isWithinLat && isWithinLng) {
-        // If it falls in the broad area, we MUST still verify with string because the box is large
-        // So we won't auto-set isCMUL based purely on this widened box.
-        // We'll rely more on the string matching.
-      }
-    }
-
-    if (isWithinLuth) {
-      isCMUL = true;
-    } else {
-      // String fallback because Mapbox coordinates for Nigerian institutions can be wildly inaccurate
-      const addrLower = (deliveryAddress || '').toLowerCase();
-      if (
-        addrLower.includes('college of medicine') ||
-        addrLower.includes('luth') ||
-        addrLower.includes('lagos university teaching hospital') ||
-        addrLower.includes('idi araba') ||
-        addrLower.includes('idi-araba') ||
-        addrLower.includes('cmul') ||
-        addrLower.includes('medilag') ||
-        addrLower.includes('unilag') ||
-        addrLower.includes('block') ||
-        addrLower.includes('hostel') ||
-        addrLower.includes('hall')
-      ) {
-        isCMUL = true;
-      }
-    }
-
-    if (isCMUL) {
-      return baseFare;
-    }
-
-    if (vCoords && vCoords[0] !== 0 && customerLocation && customerLocation[0] !== 0) {
-      const distanceKm = await this.mapboxService.getDrivingDistance(
-        vCoords as [number, number],
-        customerLocation as [number, number]
-      );
-
-      if (distanceKm !== null) {
-        // Cap delivery fee at ₦1,500 max. If distance is unreasonably high (>30km), fallback to base fare.
-        if (distanceKm > 30) {
-          return baseFare;
+      // Check if customer location is missing or default [0,0]
+      if (!customerLocation || (customerLocation[0] === 0 && customerLocation[1] === 0)) {
+        if (deliveryAddress) {
+          try {
+            const geocoded = await this.mapboxService.geocode(deliveryAddress);
+            if (geocoded) {
+              customerLocation = geocoded;
+              if (user) {
+                user.location = { type: 'Point', coordinates: geocoded };
+                user.deliveryAddress = deliveryAddress;
+                await this.userModel.updateOne(
+                  { _id: user._id },
+                  { $set: { location: { type: 'Point', coordinates: geocoded }, deliveryAddress } }
+                );
+              }
+            }
+          } catch (err: any) {
+            this.logger.warn(`Failed to geocode/save user location: ${err.message}`);
+          }
         }
-        const extraDist = Math.max(0, distanceKm - 1);
-        let fee = baseFare + (extraDist * 100);
-        return Math.min(1500, Math.round(fee));
       }
-    }
 
-    return fallbackFee;
+      const vCoords = vendor.location?.coordinates;
+
+      // Check if customer is within CMUL/LUTH Idi-Araba Campus (Flat Rate)
+      let isCMUL = false;
+      if (customerLocation && customerLocation[0] !== 0 && customerLocation[1] !== 0) {
+        const [lng, lat] = customerLocation;
+        const isWithinLat = lat >= 6.440000 && lat <= 6.530000;
+        const isWithinLng = lng >= 3.340000 && lng <= 3.400000;
+        if (isWithinLat && isWithinLng) {
+          // Broad box verification
+        }
+      }
+
+      if (isWithinLuth) {
+        isCMUL = true;
+      } else {
+        // String fallback because Mapbox coordinates for Nigerian institutions can be wildly inaccurate
+        const addrLower = (deliveryAddress || '').toLowerCase();
+        if (
+          addrLower.includes('college of medicine') ||
+          addrLower.includes('luth') ||
+          addrLower.includes('lagos university teaching hospital') ||
+          addrLower.includes('idi araba') ||
+          addrLower.includes('idi-araba') ||
+          addrLower.includes('cmul') ||
+          addrLower.includes('medilag') ||
+          addrLower.includes('unilag') ||
+          addrLower.includes('block') ||
+          addrLower.includes('hostel') ||
+          addrLower.includes('hall')
+        ) {
+          isCMUL = true;
+        }
+      }
+
+      if (isCMUL) {
+        return baseFare;
+      }
+
+      if (vCoords && vCoords[0] !== 0 && customerLocation && customerLocation[0] !== 0) {
+        const distanceKm = await this.mapboxService.getDrivingDistance(
+          vCoords as [number, number],
+          customerLocation as [number, number]
+        );
+
+        if (distanceKm !== null) {
+          // Cap delivery fee at ₦1,500 max. If distance is unreasonably high (>30km), fallback to base fare.
+          if (distanceKm > 30) {
+            return baseFare;
+          }
+          const extraDist = Math.max(0, distanceKm - 1);
+          let fee = baseFare + (extraDist * 100);
+          return Math.min(1500, Math.round(fee));
+        }
+      }
+
+      return fallbackFee;
+    } catch (error: any) {
+      this.logger.error(`Error in calculateDynamicFee for vendor=${vendorId}: ${error.message}`, error.stack);
+      return fallbackFee;
+    }
   }
 
   /**

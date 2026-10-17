@@ -128,11 +128,6 @@ export class ProductsService {
     if (!Types.ObjectId.isValid(vendorId)) {
       return [];
     }
-    // Campus tenancy: never list another campus's products.
-    const institution = await this.resolveInstitution(req);
-    if (institution && !(await this.vendorsService.isInInstitution(vendorId, institution))) {
-      return [];
-    }
     const products = await this.productModel
       .find({ vendor: new Types.ObjectId(vendorId) })
       .sort({ category: 1, name: 1 });
@@ -328,11 +323,6 @@ export class ProductsService {
 
   async getPacks(vendorId: string, req?: any): Promise<Pack[]> {
     if (!Types.ObjectId.isValid(vendorId)) return [];
-    // Campus tenancy: never list another campus's packs.
-    const institution = await this.resolveInstitution(req);
-    if (institution && !(await this.vendorsService.isInInstitution(vendorId, institution))) {
-      return [];
-    }
     const packs = await this.packModel
       .find({ vendorId: new Types.ObjectId(vendorId), isActive: true })
       .populate('items.itemId')
@@ -537,12 +527,6 @@ export class ProductsService {
 
   async getTopPicks(vendorId: string, req?: any): Promise<Product[]> {
     if (!Types.ObjectId.isValid(vendorId)) return [];
-
-    // Campus tenancy: never return another campus's top picks.
-    const institution = await this.resolveInstitution(req);
-    if (institution && !(await this.vendorsService.isInInstitution(vendorId, institution))) {
-      return [];
-    }
 
     const vendor = await this.vendorsService.findById(vendorId);
     if (!vendor) throw new NotFoundException('Vendor not found');
