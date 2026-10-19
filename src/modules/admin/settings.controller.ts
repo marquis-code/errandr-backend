@@ -11,7 +11,7 @@ import { UserRole } from '../users/schemas/user.schema';
 export class SettingsController {
   constructor(
     @InjectModel(SystemSetting.name) private readonly settingModel: Model<SystemSetting>,
-  ) {}
+  ) { }
 
   @Get('errands/custom')
   @ApiOperation({ summary: 'Get custom errand pricing settings' })
@@ -43,11 +43,18 @@ export class SettingsController {
     }
 
     const val = { ...(setting.value || {}) };
-    const resolvedPlatformFee = Number(val.platformFee ?? val.convenienceFee ?? val.platformProcessingFee ?? 100);
-    val.platformFee = resolvedPlatformFee;
-    if (val.convenienceFee === undefined || val.convenienceFee === 0) {
-      val.convenienceFee = resolvedPlatformFee;
-    }
+    const feeVal = val.convenienceFee !== undefined && val.convenienceFee !== null
+      ? Number(val.convenienceFee)
+      : (val.platformFee !== undefined && val.platformFee !== null ? Number(val.platformFee) : 50);
+
+    val.convenienceFee = feeVal;
+    val.platformFee = feeVal;
+    val.platformProcessingFee = val.platformProcessingFee !== undefined && val.platformProcessingFee !== null
+      ? Number(val.platformProcessingFee)
+      : 0;
+    val.platformServiceFeePercentage = val.platformServiceFeePercentage !== undefined && val.platformServiceFeePercentage !== null
+      ? Number(val.platformServiceFeePercentage)
+      : 5;
     if (val.commissionFlatFee === undefined || val.commissionFlatFee === null || Number(val.commissionFlatFee) > 50) {
       val.commissionFlatFee = 50;
     }
@@ -65,23 +72,25 @@ export class SettingsController {
       setting = new this.settingModel({ key: 'custom_errand' });
     }
 
-    const resolvedPlatformFee = Number(body.platformFee ?? body.convenienceFee ?? body.platformProcessingFee ?? 100);
-    const resolvedConvenienceFee = Number(body.convenienceFee ?? body.platformFee ?? resolvedPlatformFee);
+    const targetServiceFee = body.convenienceFee !== undefined && body.convenienceFee !== null
+      ? Number(body.convenienceFee)
+      : (body.platformFee !== undefined && body.platformFee !== null ? Number(body.platformFee) : (setting.value?.convenienceFee ?? 50));
+
     const rawCommission = body.commissionFlatFee !== undefined && body.commissionFlatFee !== null ? body.commissionFlatFee : (setting.value?.commissionFlatFee ?? 50);
     const resolvedCommissionFlatFee = Math.min(Math.max(0, Number(rawCommission)), 50);
 
     setting.value = {
-      baseFee: Number(body.baseFee || 450),
-      expressFee: Number(body.expressFee || 850),
-      roomDeliveryFee: Number(body.roomDeliveryFee || 350),
-      dropoffServiceFee: Number(body.dropoffServiceFee || 300),
-      platformFee: resolvedPlatformFee,
-      convenienceFee: resolvedConvenienceFee,
+      baseFee: Number(body.baseFee ?? 450),
+      expressFee: Number(body.expressFee ?? 850),
+      roomDeliveryFee: Number(body.roomDeliveryFee ?? 350),
+      dropoffServiceFee: Number(body.dropoffServiceFee ?? 300),
+      platformFee: targetServiceFee,
+      convenienceFee: targetServiceFee,
       commissionFlatFee: resolvedCommissionFlatFee,
       customErrandCommissionPercentage: Number(body.customErrandCommissionPercentage ?? 20),
-      platformProcessingFee: Number(body.platformProcessingFee ?? resolvedPlatformFee),
+      platformProcessingFee: Number(body.platformProcessingFee ?? 0),
       platformServiceFeePercentage: Number(body.platformServiceFeePercentage ?? 5),
-      foodMarkupPercentage: Number(body.foodMarkupPercentage ?? 5),
+      foodMarkupPercentage: Number(body.foodMarkupPercentage ?? 0),
       minOutsideCampusFee: Number(body.minOutsideCampusFee ?? 450),
       minCampusEnvironsFee: Number(body.minCampusEnvironsFee ?? 350),
       minCustomErrandFee: Number(body.minCustomErrandFee ?? 300),
@@ -243,7 +252,7 @@ export class SettingsController {
         badgeText: '🔄 Erranders Barter',
         imageUrl: 'https://images.unsplash.com/photo-1512499617640-c74ae3a79d37?auto=format&fit=crop&w=800&q=80',
         ctaText: 'Start Trading on Barter',
-        ctaLink: 'https://barter.erranders.org',
+        ctaLink: 'https://decluttered.erranders.org',
         advertiserName: 'Erranders Barter',
         isActive: true,
         placement: 'both',

@@ -576,9 +576,11 @@ export class OrdersService {
       }
     }
 
-    const defaultServiceFee = Number(deliveryFeesConfig?.value?.convenienceFee ?? deliveryFeesConfig?.value?.platformFee ?? 100);
-    const serviceFee = data.serviceFee === 0 ? 0 : defaultServiceFee;
-    const platformProcessingFee = data.platformProcessingFee || 0;
+    const defaultServiceFee = Number(deliveryFeesConfig?.value?.convenienceFee ?? deliveryFeesConfig?.value?.platformFee ?? 50);
+    const serviceFee = data.serviceFee !== undefined && data.serviceFee !== null ? Number(data.serviceFee) : defaultServiceFee;
+    const platformProcessingFee = data.platformProcessingFee !== undefined && data.platformProcessingFee !== null
+      ? Number(data.platformProcessingFee)
+      : Number(deliveryFeesConfig?.value?.platformProcessingFee ?? 0);
 
     // Batch Delivery logic for delivery fee or grouping
     const isBatchActive = await this.batchDeliveryService.isWindowActive();
@@ -650,17 +652,22 @@ export class OrdersService {
 
     const actualDeliveryCommission = effectiveDeliveryFee - erranderPayout;
 
-    // Calculate platform share (service fee + platform processing fee + delivery commission + food markup)
-    const markupPct = errandSetting?.value?.foodMarkupPercentage ?? 5;
+    // Calculate platform share (service fee + platform processing fee + delivery commission + food markup + vendor commission)
+    const markupPct = errandSetting?.value?.foodMarkupPercentage ?? 0;
     const MARKUP_FACTOR = 1 + (markupPct / 100);
     const foodMarkup = subtotal - Math.round(subtotal / MARKUP_FACTOR);
-    let platformShare = serviceFee + platformProcessingFee + actualDeliveryCommission + foodMarkup;
 
-    // Calculate vendor share (vendor subtotal + packaging fee)
+    // Vendor Commission / Platform Service Fee % (deducted from vendor food subtotal)
+    const serviceFeePct = Number(errandSetting?.value?.platformServiceFeePercentage ?? 0);
     const vendorSubtotal = Math.round(subtotal / MARKUP_FACTOR);
+    const vendorCommission = serviceFeePct > 0 ? Math.round(vendorSubtotal * (serviceFeePct / 100)) : 0;
+
+    let platformShare = serviceFee + platformProcessingFee + actualDeliveryCommission + foodMarkup + vendorCommission;
+
+    // Calculate vendor share (vendor subtotal - vendor commission + packaging fee)
     const prepaidVendorSubtotal = Math.round(prepaidSubtotal / MARKUP_FACTOR);
 
-    let vendorShare = vendorSubtotal - prepaidVendorSubtotal;
+    let vendorShare = Math.max(0, vendorSubtotal - vendorCommission - prepaidVendorSubtotal);
     platformShare += prepaidVendorSubtotal; // Platform intercepts prepaid food subtotal
 
     // Platform intercepts packaging fee if there are prepaid items (promo logic)
