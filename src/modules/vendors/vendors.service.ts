@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, ConflictException, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, ConflictException, Logger, BadRequestException, OnApplicationBootstrap } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Vendor, VendorStatus, VendorCategory } from './schemas/vendor.schema';
@@ -17,7 +17,7 @@ import { augmentVendor, checkIsOpen } from '../../utils/vendor-helpers';
 import { InstitutionResolver } from '../institutions/institution-resolver.service';
 
 @Injectable()
-export class VendorsService {
+export class VendorsService implements OnApplicationBootstrap {
   private readonly logger = new Logger(VendorsService.name);
 
   constructor(
@@ -55,9 +55,83 @@ export class VendorsService {
 
 
 
+  async onApplicationBootstrap() {
+    await this.ensureAllVendorsHaveSubdomain();
+  }
+
+  async generateUniqueSubdomain(storeName: string, excludeId?: string): Promise<string> {
+    let baseSlug = (storeName || 'store')
+      .toLowerCase()
+      .trim()
+      .replace(/['"]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+
+    if (!baseSlug || baseSlug.length < 3) {
+      baseSlug = `store-${Math.floor(1000 + Math.random() * 9000)}`;
+    }
+
+    let candidate = baseSlug;
+    let counter = 1;
+
+    while (true) {
+      const existing = await this.vendorModel.findOne({
+        subdomain: candidate,
+        ...(excludeId ? { _id: { $ne: new Types.ObjectId(excludeId) } } : {}),
+      });
+
+      if (!existing) {
+        return candidate;
+      }
+      counter++;
+      candidate = `${baseSlug}-${counter}`;
+    }
+  }
+
+  async ensureAllVendorsHaveSubdomain() {
+    try {
+      const vendorsWithoutSubdomain = await this.vendorModel.find({
+        $or: [
+          { subdomain: { $exists: false } },
+          { subdomain: null },
+          { subdomain: '' },
+        ],
+      });
+
+      if (vendorsWithoutSubdomain.length > 0) {
+        this.logger.log(`Found ${vendorsWithoutSubdomain.length} vendors without a unique business domain. Generating...`);
+        for (const vendor of vendorsWithoutSubdomain) {
+          const uniqueSubdomain = await this.generateUniqueSubdomain(
+            vendor.storeName || 'store',
+            vendor._id.toString(),
+          );
+          await this.vendorModel.updateOne(
+            { _id: vendor._id },
+            { $set: { subdomain: uniqueSubdomain } },
+          );
+          this.logger.log(`Assigned unique subdomain "${uniqueSubdomain}" to vendor "${vendor.storeName}" (${vendor._id})`);
+        }
+        this.logger.log(`Successfully healed all vendors with unique business domains.`);
+      }
+    } catch (error) {
+      this.logger.error('Failed to run vendor subdomain migration on bootstrap:', error);
+    }
+  }
+
   async create(ownerId: string, data: Partial<Vendor>): Promise<Vendor> {
+    let subdomain = data.subdomain ? data.subdomain.toLowerCase().trim().replace(/[^a-z0-9-]/g, '') : '';
+    if (!subdomain || subdomain.length < 3) {
+      subdomain = await this.generateUniqueSubdomain(data.storeName || 'store');
+    } else {
+      const existing = await this.vendorModel.findOne({ subdomain });
+      if (existing) {
+        subdomain = await this.generateUniqueSubdomain(subdomain);
+      }
+    }
+
     const vendor = await this.vendorModel.create({
       ...data,
+      subdomain,
       owner: new Types.ObjectId(ownerId),
     });
 
@@ -280,6 +354,24 @@ export class VendorsService {
       throw new ForbiddenException('You do not have permission to modify this vendor');
     }
 
+    if (data.subdomain !== undefined) {
+      let cleanSubdomain = data.subdomain ? data.subdomain.toLowerCase().trim().replace(/[^a-z0-9-]/g, '') : '';
+      if (!cleanSubdomain || cleanSubdomain.length < 3) {
+        cleanSubdomain = await this.generateUniqueSubdomain(data.storeName || vendor.storeName || 'store', vendor._id.toString());
+      } else {
+        const existing = await this.vendorModel.findOne({
+          subdomain: cleanSubdomain,
+          _id: { $ne: vendor._id },
+        });
+        if (existing) {
+          throw new ConflictException('This business domain is already taken. Please choose another.');
+        }
+      }
+      data.subdomain = cleanSubdomain;
+    } else if (!vendor.subdomain) {
+      data.subdomain = await this.generateUniqueSubdomain(data.storeName || vendor.storeName || 'store', vendor._id.toString());
+    }
+
     // Remove immutable fields to prevent 500 errors on save
     delete (data as any)._id;
     delete (data as any).__v;
@@ -298,6 +390,24 @@ export class VendorsService {
     const vendor = await this.vendorModel.findById(id);
     if (!vendor) throw new NotFoundException('Vendor not found');
     
+    if (data.subdomain !== undefined) {
+      let cleanSubdomain = data.subdomain ? data.subdomain.toLowerCase().trim().replace(/[^a-z0-9-]/g, '') : '';
+      if (!cleanSubdomain || cleanSubdomain.length < 3) {
+        cleanSubdomain = await this.generateUniqueSubdomain(data.storeName || vendor.storeName || 'store', vendor._id.toString());
+      } else {
+        const existing = await this.vendorModel.findOne({
+          subdomain: cleanSubdomain,
+          _id: { $ne: vendor._id },
+        });
+        if (existing) {
+          throw new ConflictException('This business domain is already taken. Please choose another.');
+        }
+      }
+      data.subdomain = cleanSubdomain;
+    } else if (!vendor.subdomain) {
+      data.subdomain = await this.generateUniqueSubdomain(data.storeName || vendor.storeName || 'store', vendor._id.toString());
+    }
+
     vendor.set(data);
     try {
       await vendor.save();
