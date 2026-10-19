@@ -254,8 +254,8 @@ export class OrdersService {
       subtotal: populated.subtotal,
       deliveryFee: populated.deliveryFee,
       total: populated.total,
-      erranderPayout: (populated.deliveryFee >= 350 && (!populated.erranderPayout || populated.erranderPayout < 300)) ? 300 : populated.erranderPayout,
-      erranderShare: populated.erranderShare || (populated.deliveryFee >= 350 ? 300 : populated.deliveryFee) || 0,
+      erranderPayout: (populated.deliveryFee >= 300 && (!populated.erranderPayout || populated.erranderPayout < 300)) ? populated.deliveryFee : populated.erranderPayout,
+      erranderShare: populated.erranderShare || populated.erranderPayout || (populated.deliveryFee >= 300 ? populated.deliveryFee : 0) || 0,
       status: populated.status,
       type: populated.type,
       locationType: (populated as any).locationType,
@@ -630,12 +630,12 @@ export class OrdersService {
 
     // Fetch custom errand settings to get commission flat fee for delivery
     const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
-    // Standard marketplace delivery takes a ₦50 flat commission so the errander keeps ₦300 out of ₦350.
-    // Cap commission at ₦50 to permanently guarantee rider earnings are never cut to ₦250.
+    // Standard marketplace delivery takes a commission flat fee from the delivery fee.
+    // If admin configured commissionFlatFee (e.g. 0), honor it! Cap commission at ₦50 so rider earnings are never unfairly cut.
     const rawCommissionFlatFee = deliveryFeesConfig?.value?.commissionFlatFee ?? errandSetting?.value?.commissionFlatFee;
-    const commissionFlatFee = (rawCommissionFlatFee !== undefined && rawCommissionFlatFee !== null && Number(rawCommissionFlatFee) > 0)
-      ? Math.min(Number(rawCommissionFlatFee), 50)
-      : 50;
+    const commissionFlatFee = (rawCommissionFlatFee !== undefined && rawCommissionFlatFee !== null && !isNaN(Number(rawCommissionFlatFee)))
+      ? Math.max(0, Math.min(Number(rawCommissionFlatFee), 50))
+      : 0;
     const deliveryCommission = commissionFlatFee;
 
     // Save errander payout (delivery fee minus platform commission)
@@ -645,9 +645,12 @@ export class OrdersService {
       : deliveryFee;
     let erranderPayout = Math.max(0, effectiveDeliveryFee - deliveryCommission);
 
-    // Hard floor guarantee: standard room delivery (₦350 delivery fee) ALWAYS yields at least ₦300 errander payout
-    if (effectiveDeliveryFee >= 350 && erranderPayout < 300) {
-      erranderPayout = 300;
+    // Hard floor guarantee: if delivery commission is 0, errander gets 100% of delivery fee.
+    // Standard room delivery (>= ₦300 delivery fee) ALWAYS yields at least ₦300 errander payout when delivery fee >= 300.
+    if (commissionFlatFee === 0) {
+      erranderPayout = effectiveDeliveryFee;
+    } else if (effectiveDeliveryFee >= 300 && erranderPayout < Math.min(effectiveDeliveryFee, 300)) {
+      erranderPayout = Math.min(effectiveDeliveryFee, 300);
     }
 
     const actualDeliveryCommission = effectiveDeliveryFee - erranderPayout;
@@ -2035,9 +2038,9 @@ export class OrdersService {
       .lean();
 
     return orders.map((order: any) => {
-      if (order.deliveryFee >= 350 && (!order.erranderPayout || order.erranderPayout < 300)) {
-        order.erranderPayout = 300;
-        order.erranderShare = 300;
+      if (order.deliveryFee >= 300 && (!order.erranderPayout || order.erranderPayout < 300)) {
+        order.erranderPayout = order.deliveryFee;
+        order.erranderShare = order.deliveryFee;
       }
       return order;
     });
@@ -2087,9 +2090,9 @@ export class OrdersService {
       .lean();
 
     return orders.map((order: any) => {
-      if (order.deliveryFee >= 350 && (!order.erranderPayout || order.erranderPayout < 300)) {
-        order.erranderPayout = 300;
-        order.erranderShare = 300;
+      if (order.deliveryFee >= 300 && (!order.erranderPayout || order.erranderPayout < 300)) {
+        order.erranderPayout = order.deliveryFee;
+        order.erranderShare = order.deliveryFee;
       }
       return order;
     });
@@ -2166,9 +2169,9 @@ export class OrdersService {
         errander: formatWa(erranderPhone),
       };
 
-      if (order.deliveryFee >= 350 && (!order.erranderPayout || order.erranderPayout < 300)) {
-        order.erranderPayout = 300;
-        order.erranderShare = 300;
+      if (order.deliveryFee >= 300 && (!order.erranderPayout || order.erranderPayout < 300)) {
+        order.erranderPayout = order.deliveryFee;
+        order.erranderShare = order.deliveryFee;
       }
 
       return order;
@@ -2266,8 +2269,8 @@ export class OrdersService {
     if (!fullOrder || !fullOrder.errander) return;
 
     let baseEarnings = fullOrder.erranderPayout || fullOrder.deliveryFee;
-    if (fullOrder.deliveryFee >= 350 && baseEarnings < 300) {
-      baseEarnings = 300;
+    if (fullOrder.deliveryFee >= 300 && baseEarnings < 300) {
+      baseEarnings = fullOrder.deliveryFee;
     }
     const erranderEarnings = baseEarnings + ((fullOrder as any).tips || 0);
 

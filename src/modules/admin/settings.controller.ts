@@ -48,7 +48,7 @@ export class SettingsController {
     const val = { ...(setting.value || {}) };
     const feeVal = val.convenienceFee !== undefined && val.convenienceFee !== null
       ? Number(val.convenienceFee)
-      : (val.platformFee !== undefined && val.platformFee !== null ? Number(val.platformFee) : 50);
+      : (val.platformFee !== undefined && val.platformFee !== null ? Number(val.platformFee) : 150);
 
     val.convenienceFee = feeVal;
     val.platformFee = feeVal;
@@ -57,10 +57,22 @@ export class SettingsController {
       : 0;
     val.platformServiceFeePercentage = val.platformServiceFeePercentage !== undefined && val.platformServiceFeePercentage !== null
       ? Number(val.platformServiceFeePercentage)
-      : 5;
-    if (val.commissionFlatFee === undefined || val.commissionFlatFee === null || Number(val.commissionFlatFee) > 50) {
-      val.commissionFlatFee = 50;
-    }
+      : 0;
+    val.commissionFlatFee = (val.commissionFlatFee !== undefined && val.commissionFlatFee !== null && !isNaN(Number(val.commissionFlatFee)))
+      ? Math.max(0, Math.min(50, Number(val.commissionFlatFee)))
+      : 0;
+    val.foodMarkupPercentage = (val.foodMarkupPercentage !== undefined && val.foodMarkupPercentage !== null && !isNaN(Number(val.foodMarkupPercentage)))
+      ? Number(val.foodMarkupPercentage)
+      : 0;
+    val.customErrandSafetyBufferPercentage = (val.customErrandSafetyBufferPercentage !== undefined && val.customErrandSafetyBufferPercentage !== null && !isNaN(Number(val.customErrandSafetyBufferPercentage)))
+      ? Number(val.customErrandSafetyBufferPercentage)
+      : 0;
+    val.roomDeliveryFee = (val.roomDeliveryFee !== undefined && val.roomDeliveryFee !== null && !isNaN(Number(val.roomDeliveryFee)))
+      ? Number(val.roomDeliveryFee)
+      : 300;
+    val.dropoffServiceFee = (val.dropoffServiceFee !== undefined && val.dropoffServiceFee !== null && !isNaN(Number(val.dropoffServiceFee)))
+      ? Number(val.dropoffServiceFee)
+      : 300;
     val.interceptionEnabled = val.interceptionEnabled !== false;
     val.interceptionFirstErranderPercentage = Number(val.interceptionFirstErranderPercentage ?? 60);
     val.interceptionSecondErranderPercentage = Number(val.interceptionSecondErranderPercentage ?? 40);
@@ -100,9 +112,9 @@ export class SettingsController {
 
     const targetServiceFee = body.convenienceFee !== undefined && body.convenienceFee !== null
       ? Number(body.convenienceFee)
-      : (body.platformFee !== undefined && body.platformFee !== null ? Number(body.platformFee) : (setting.value?.convenienceFee ?? 50));
+      : (body.platformFee !== undefined && body.platformFee !== null ? Number(body.platformFee) : (setting.value?.convenienceFee ?? 150));
 
-    const rawCommission = body.commissionFlatFee !== undefined && body.commissionFlatFee !== null ? body.commissionFlatFee : (setting.value?.commissionFlatFee ?? 50);
+    const rawCommission = body.commissionFlatFee !== undefined && body.commissionFlatFee !== null ? body.commissionFlatFee : (setting.value?.commissionFlatFee ?? 0);
     const resolvedCommissionFlatFee = Math.min(Math.max(0, Number(rawCommission)), 50);
 
     let firstPct = body.interceptionFirstErranderPercentage !== undefined
@@ -116,29 +128,35 @@ export class SettingsController {
       secondPct = Math.max(0, 100 - firstPct);
     }
 
-    setting.value = {
+    const newValue = {
       baseFee: Number(body.baseFee ?? 450),
       expressFee: Number(body.expressFee ?? 850),
-      roomDeliveryFee: Number(body.roomDeliveryFee ?? 350),
+      roomDeliveryFee: Number(body.roomDeliveryFee ?? 300),
       dropoffServiceFee: Number(body.dropoffServiceFee ?? 300),
       platformFee: targetServiceFee,
       convenienceFee: targetServiceFee,
       commissionFlatFee: resolvedCommissionFlatFee,
       customErrandCommissionPercentage: Number(body.customErrandCommissionPercentage ?? 20),
       platformProcessingFee: Number(body.platformProcessingFee ?? 0),
-      platformServiceFeePercentage: Number(body.platformServiceFeePercentage ?? 5),
+      platformServiceFeePercentage: Number(body.platformServiceFeePercentage ?? 0),
       foodMarkupPercentage: Number(body.foodMarkupPercentage ?? 0),
       minOutsideCampusFee: Number(body.minOutsideCampusFee ?? 450),
-      minCampusEnvironsFee: Number(body.minCampusEnvironsFee ?? 350),
-      minCustomErrandFee: Number(body.minCustomErrandFee ?? 300),
-      customErrandSafetyBufferPercentage: Number(body.customErrandSafetyBufferPercentage ?? 20),
-      enableTransferFee: body.enableTransferFee ?? false,
+      minCampusEnvironsFee: Number(body.minCampusEnvironsFee ?? 450),
+      minCustomErrandFee: Number(body.minCustomErrandFee ?? 400),
+      customErrandSafetyBufferPercentage: Number(body.customErrandSafetyBufferPercentage ?? 0),
+      enableTransferFee: Boolean(body.enableTransferFee),
       interceptionEnabled: body.interceptionEnabled ?? (setting.value?.interceptionEnabled !== false),
       interceptionFirstErranderPercentage: firstPct,
       interceptionSecondErranderPercentage: secondPct,
     };
-    await setting.save();
-    return setting.value;
+
+    const updated = await this.settingModel.findOneAndUpdate(
+      { key: 'custom_errand' },
+      { $set: { value: newValue } },
+      { upsert: true, new: true }
+    ).exec();
+
+    return updated.value;
   }
 
   @Get('market-pool/bank')
