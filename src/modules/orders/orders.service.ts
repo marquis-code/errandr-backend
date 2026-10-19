@@ -1692,18 +1692,19 @@ export class OrdersService {
     }
     const hasInterception = order.interception && (order.interception.status === 'accepted' || order.interception.status === 'completed');
     if (hasInterception && order.interception!.secondErrander) {
-      const firstShare = erranderEarnings * 0.6;
-      const secondShare = erranderEarnings * 0.4;
+      const { firstPct, secondPct } = await this.getInterceptionPercentages();
+      const firstShare = Math.round(erranderEarnings * (firstPct / 100));
+      const secondShare = Math.max(0, erranderEarnings - firstShare);
       await this.walletsService.creditWallet(
         order.errander.toString(),
         firstShare,
-        `Delivery earnings (60% Interception) for order ${order.orderNumber}`,
+        `Delivery earnings (${firstPct}% Interception) for order ${order.orderNumber}`,
         order._id.toString(),
       );
       await this.walletsService.creditWallet(
         order.interception!.secondErrander.toString(),
         secondShare,
-        `Delivery earnings (40% Interception) for order ${order.orderNumber}`,
+        `Delivery earnings (${secondPct}% Interception) for order ${order.orderNumber}`,
         order._id.toString(),
       );
     } else {
@@ -1828,18 +1829,19 @@ export class OrdersService {
     }
     const hasInterception = order.interception && (order.interception.status === 'accepted' || order.interception.status === 'completed');
     if (hasInterception && order.interception!.secondErrander) {
-      const firstShare = erranderEarnings * 0.6;
-      const secondShare = erranderEarnings * 0.4;
+      const { firstPct, secondPct } = await this.getInterceptionPercentages();
+      const firstShare = Math.round(erranderEarnings * (firstPct / 100));
+      const secondShare = Math.max(0, erranderEarnings - firstShare);
       await this.walletsService.creditWallet(
         order.errander.toString(),
         firstShare,
-        `Delivery earnings (60% Interception) for order ${order.orderNumber}`,
+        `Delivery earnings (${firstPct}% Interception) for order ${order.orderNumber}`,
         order._id.toString(),
       );
       await this.walletsService.creditWallet(
         order.interception!.secondErrander.toString(),
         secondShare,
-        `Delivery earnings (40% Interception) for order ${order.orderNumber}`,
+        `Delivery earnings (${secondPct}% Interception) for order ${order.orderNumber}`,
         order._id.toString(),
       );
     } else {
@@ -4066,9 +4068,26 @@ export class OrdersService {
 
     return order;
   }
+  private async getInterceptionPercentages(): Promise<{ firstPct: number; secondPct: number; enabled: boolean }> {
+    try {
+      const customSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
+      const firstPct = Number(customSetting?.value?.interceptionFirstErranderPercentage ?? 60);
+      const secondPct = Number(customSetting?.value?.interceptionSecondErranderPercentage ?? 40);
+      const enabled = customSetting?.value?.interceptionEnabled !== false;
+      return { firstPct, secondPct, enabled };
+    } catch (e) {
+      return { firstPct: 60, secondPct: 40, enabled: true };
+    }
+  }
+
   // --- INTERCEPTION ---
 
   async requestInterception(orderId: string, point: string, erranderId: string): Promise<Order> {
+    const { enabled } = await this.getInterceptionPercentages();
+    if (!enabled) {
+      throw new BadRequestException('Order interception is currently disabled by system administration');
+    }
+
     const order = await this.orderModel.findById(orderId);
     if (!order) throw new NotFoundException('Order not found');
     if (order.errander?.toString() !== erranderId) {

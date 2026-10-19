@@ -2,7 +2,7 @@ import { Controller, Get, Post, Put, Body, UseGuards, Param, Res, StreamableFile
 import { Response } from 'express';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { WalletsService } from './wallets.service';
-import { JwtAuthGuard, CurrentUser, Roles, RolesGuard } from '../../common/decorators';
+import { JwtAuthGuard, CurrentUser, Roles, RolesGuard, PermissionsGuard, RequirePermissions } from '../../common/decorators';
 import { User, UserRole } from '../users/schemas/user.schema';
 import { UpdatePreferencesDto } from './dto/update-preferences.dto';
 import { FundWalletDto } from './dto/fund-wallet.dto';
@@ -144,8 +144,9 @@ export class WalletsController {
   }
 
   @Post('admin/fund/:userId')
-  @UseGuards(RolesGuard)
+  @UseGuards(RolesGuard, PermissionsGuard)
   @Roles(UserRole.ADMIN)
+  @RequirePermissions('can_credit_vendor_wallet', 'can_credit_wallet', 'can_credit_user_wallet', 'can_credit_dispatcher_wallet')
   @ApiOperation({ summary: 'Manually fund a user wallet (Admin)' })
   async fundWalletByAdmin(
     @Param('userId') userId: string,
@@ -156,8 +157,9 @@ export class WalletsController {
   }
 
   @Post('admin/debit/:userId')
-  @UseGuards(RolesGuard)
+  @UseGuards(RolesGuard, PermissionsGuard)
   @Roles(UserRole.ADMIN)
+  @RequirePermissions('can_debit_vendor_wallet', 'can_debit_wallet', 'can_debit_user_wallet', 'can_debit_dispatcher_wallet')
   @ApiOperation({ summary: 'Manually debit a user wallet (Admin)' })
   async debitWalletByAdmin(
     @Param('userId') userId: string,

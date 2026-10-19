@@ -2,12 +2,12 @@ import { Controller, Get, Put, Delete, Post, Param, Query, UseGuards, DefaultVal
 import { Response } from 'express';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
-import { JwtAuthGuard, Roles, RolesGuard } from '../../common/decorators';
+import { JwtAuthGuard, Roles, RolesGuard, PermissionsGuard, RequirePermissions } from '../../common/decorators';
 import { UserRole } from '../users/schemas/user.schema';
 
 @ApiTags('Admin')
 @Controller('admin')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Roles(UserRole.ADMIN)
 @ApiBearerAuth()
 export class AdminController {
@@ -67,24 +67,28 @@ export class AdminController {
   }
 
   @Put('vendors/:id/approve')
+  @RequirePermissions('can_approve_vendor')
   @ApiOperation({ summary: 'Approve a vendor' })
   approveVendor(@Param('id') id: string) {
     return this.adminService.approveVendor(id);
   }
 
   @Put('vendors/:id/reject')
+  @RequirePermissions('can_suspend_vendor')
   @ApiOperation({ summary: 'Reject a vendor' })
   rejectVendor(@Param('id') id: string) {
     return this.adminService.rejectVendor(id);
   }
 
   @Put('users/:id/suspend')
+  @RequirePermissions('can_suspend_user')
   @ApiOperation({ summary: 'Suspend a user' })
   suspendUser(@Param('id') id: string) {
     return this.adminService.suspendUser(id);
   }
 
   @Put('users/:id/activate')
+  @RequirePermissions('can_activate_user')
   @ApiOperation({ summary: 'Activate a user' })
   activateUser(@Param('id') id: string) {
     return this.adminService.activateUser(id);
@@ -206,30 +210,35 @@ export class AdminController {
   }
 
   @Put('vendors/:id')
+  @RequirePermissions('can_edit_vendor')
   @ApiOperation({ summary: 'Update vendor full details' })
   updateVendor(@Param('id') id: string, @Body() body: any) {
     return this.adminService.updateVendor(id, body);
   }
 
   @Put('dispatchers/:id')
+  @RequirePermissions('can_edit_dispatcher')
   @ApiOperation({ summary: 'Update dispatcher full details' })
   updateDispatcher(@Param('id') id: string, @Body() body: any) {
     return this.adminService.updateDispatcher(id, body);
   }
 
   @Put('vendors/:id/visibility')
+  @RequirePermissions('can_toggle_vendor_visibility')
   @ApiOperation({ summary: 'Toggle vendor visibility' })
   toggleVendorVisibility(@Param('id') id: string, @Body() body: { isVisible: boolean }) {
     return this.adminService.toggleVendorVisibility(id, body.isVisible);
   }
 
   @Delete('vendors/:id')
+  @RequirePermissions('can_delete_vendor')
   @ApiOperation({ summary: 'Delete vendor permanently' })
   deleteVendor(@Param('id') id: string) {
     return this.adminService.deleteVendor(id);
   }
 
   @Delete('dispatchers/:id')
+  @RequirePermissions('can_delete_dispatcher')
   @ApiOperation({ summary: 'Delete dispatcher permanently' })
   deleteDispatcher(@Param('id') id: string) {
     return this.adminService.deleteDispatcher(id);

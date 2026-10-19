@@ -1,5 +1,4 @@
-import { createParamDecorator, ExecutionContext, SetMetadata } from '@nestjs/common';
-import { Injectable, CanActivate } from '@nestjs/common';
+import { createParamDecorator, ExecutionContext, SetMetadata, ForbiddenException, Injectable, CanActivate } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
 import { UserRole } from '../modules/users/schemas/user.schema';
@@ -43,6 +42,44 @@ export class RolesGuard implements CanActivate {
 
     const { user } = context.switchToHttp().getRequest();
     return requiredRoles.includes(user.role);
+  }
+}
+
+// Permissions Decorator & Guard for granular Admin Departments
+export const PERMISSIONS_KEY = 'permissions';
+export const RequirePermissions = (...permissions: string[]) => SetMetadata(PERMISSIONS_KEY, permissions);
+
+@Injectable()
+export class PermissionsGuard implements CanActivate {
+  constructor(private reflector: Reflector) {}
+
+  canActivate(context: ExecutionContext): boolean {
+    const requiredPermissions = this.reflector.getAllAndOverride<string[]>(PERMISSIONS_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (!requiredPermissions || requiredPermissions.length === 0) return true;
+
+    const { user } = context.switchToHttp().getRequest();
+    if (!user || user.role !== UserRole.ADMIN) {
+      throw new ForbiddenException('Admin privileges required');
+    }
+
+    // Super Admins without a restrictive department have unrestricted access
+    if (!user.adminDepartment) {
+      return true;
+    }
+
+    const userPermissions: string[] = user.adminDepartment.permissions || [];
+    const hasAccess = requiredPermissions.some((perm) => userPermissions.includes(perm));
+
+    if (!hasAccess) {
+      throw new ForbiddenException(
+        `Access denied: your department lacks permission [${requiredPermissions.join(', ')}] to perform this action.`,
+      );
+    }
+
+    return true;
   }
 }
 

@@ -38,6 +38,9 @@ export class SettingsController {
           minCampusEnvironsFee: 350,
           minCustomErrandFee: 300,
           enableTransferFee: false,
+          interceptionEnabled: true,
+          interceptionFirstErranderPercentage: 60,
+          interceptionSecondErranderPercentage: 40,
         },
       });
     }
@@ -58,6 +61,9 @@ export class SettingsController {
     if (val.commissionFlatFee === undefined || val.commissionFlatFee === null || Number(val.commissionFlatFee) > 50) {
       val.commissionFlatFee = 50;
     }
+    val.interceptionEnabled = val.interceptionEnabled !== false;
+    val.interceptionFirstErranderPercentage = Number(val.interceptionFirstErranderPercentage ?? 60);
+    val.interceptionSecondErranderPercentage = Number(val.interceptionSecondErranderPercentage ?? 40);
     return val;
   }
 
@@ -66,7 +72,27 @@ export class SettingsController {
   @Roles(UserRole.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update custom errand pricing settings (admin only)' })
-  async updateCustomErrandSettings(@Body() body: { baseFee: number; expressFee: number; roomDeliveryFee?: number; dropoffServiceFee?: number; platformFee?: number; convenienceFee?: number; commissionFlatFee?: number; customErrandCommissionPercentage?: number; customErrandSafetyBufferPercentage?: number; platformProcessingFee?: number; platformServiceFeePercentage?: number; foodMarkupPercentage?: number; minOutsideCampusFee?: number; minCampusEnvironsFee?: number; minCustomErrandFee?: number; enableTransferFee?: boolean }) {
+  async updateCustomErrandSettings(@Body() body: {
+    baseFee: number;
+    expressFee: number;
+    roomDeliveryFee?: number;
+    dropoffServiceFee?: number;
+    platformFee?: number;
+    convenienceFee?: number;
+    commissionFlatFee?: number;
+    customErrandCommissionPercentage?: number;
+    customErrandSafetyBufferPercentage?: number;
+    platformProcessingFee?: number;
+    platformServiceFeePercentage?: number;
+    foodMarkupPercentage?: number;
+    minOutsideCampusFee?: number;
+    minCampusEnvironsFee?: number;
+    minCustomErrandFee?: number;
+    enableTransferFee?: boolean;
+    interceptionEnabled?: boolean;
+    interceptionFirstErranderPercentage?: number;
+    interceptionSecondErranderPercentage?: number;
+  }) {
     let setting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
     if (!setting) {
       setting = new this.settingModel({ key: 'custom_errand' });
@@ -78,6 +104,17 @@ export class SettingsController {
 
     const rawCommission = body.commissionFlatFee !== undefined && body.commissionFlatFee !== null ? body.commissionFlatFee : (setting.value?.commissionFlatFee ?? 50);
     const resolvedCommissionFlatFee = Math.min(Math.max(0, Number(rawCommission)), 50);
+
+    let firstPct = body.interceptionFirstErranderPercentage !== undefined
+      ? Math.max(0, Math.min(100, Number(body.interceptionFirstErranderPercentage)))
+      : (setting.value?.interceptionFirstErranderPercentage ?? 60);
+    let secondPct = body.interceptionSecondErranderPercentage !== undefined
+      ? Math.max(0, Math.min(100, Number(body.interceptionSecondErranderPercentage)))
+      : (setting.value?.interceptionSecondErranderPercentage ?? (100 - firstPct));
+
+    if (firstPct + secondPct !== 100) {
+      secondPct = Math.max(0, 100 - firstPct);
+    }
 
     setting.value = {
       baseFee: Number(body.baseFee ?? 450),
@@ -96,6 +133,9 @@ export class SettingsController {
       minCustomErrandFee: Number(body.minCustomErrandFee ?? 300),
       customErrandSafetyBufferPercentage: Number(body.customErrandSafetyBufferPercentage ?? 20),
       enableTransferFee: body.enableTransferFee ?? false,
+      interceptionEnabled: body.interceptionEnabled ?? (setting.value?.interceptionEnabled !== false),
+      interceptionFirstErranderPercentage: firstPct,
+      interceptionSecondErranderPercentage: secondPct,
     };
     await setting.save();
     return setting.value;
