@@ -352,16 +352,16 @@ export class OrdersService {
       const itemCost = Number(data.estimatedItemCost) || 0;
       const itemCostBuffer = 0; // Buffer disabled per request
 
-      // Custom errand does not charge a fixed platform fee or transfer fee to the student.
-      // Erranders take is configured in admin based on runner negotiation (customErrandCommissionPercentage, default 20%).
-      const serviceFee = 0;
+      // Service charge is dynamically charged as the admin-configured percentage of the negotiated runner fee
+      const serviceFee = Math.round(runnerFee * (commissionPercent / 100));
       const transferFee = 0;
-      // Total is simply item cost + runner fee
-      const total = itemCost + itemCostBuffer + runnerFee;
+      // Total is item cost + runner fee + service charge
+      const total = itemCost + itemCostBuffer + runnerFee + serviceFee;
 
-      // Commission from Runner (configured in admin, default 20%)
-      const commissionAmount = Math.round(runnerFee * (commissionPercent / 100));
-      const erranderShare = runnerFee - commissionAmount;
+      // Platform share is the service charge (commission on runner fee), errander receives the full runner fee
+      const commissionAmount = serviceFee;
+      const erranderShare = runnerFee;
+      const erranderPayout = runnerFee;
       const platformShare = commissionAmount;
 
       // Optional Paystack verification
@@ -1373,12 +1373,22 @@ export class OrdersService {
       const commissionPercent = errandSetting?.value?.customErrandCommissionPercentage ?? 20;
       const commissionAmount = Math.round(newFee * (commissionPercent / 100));
 
-      updateSet.serviceFee = 0;
-      updateSet.deliveryFee = newFee;
-      updateSet.erranderShare = newFee - commissionAmount;
-      updateSet.erranderPayout = newFee - commissionAmount;
-      updateSet.platformShare = commissionAmount;
-      updateSet.total = (targetOrder.total || 0) - (targetOrder.deliveryFee || 0) + newFee;
+      if (targetOrder.type === OrderType.CUSTOM_ERRAND) {
+        const itemCost = targetOrder.customDetails?.estimatedItemCost || targetOrder.subtotal || 0;
+        updateSet.serviceFee = commissionAmount;
+        updateSet.deliveryFee = newFee;
+        updateSet.erranderShare = newFee;
+        updateSet.erranderPayout = newFee;
+        updateSet.platformShare = commissionAmount;
+        updateSet.total = itemCost + newFee + commissionAmount;
+      } else {
+        updateSet.serviceFee = 0;
+        updateSet.deliveryFee = newFee;
+        updateSet.erranderShare = newFee - commissionAmount;
+        updateSet.erranderPayout = newFee - commissionAmount;
+        updateSet.platformShare = commissionAmount;
+        updateSet.total = (targetOrder.total || 0) - (targetOrder.deliveryFee || 0) + newFee;
+      }
     }
 
     // ATOMIC UPDATE: Only update if no errander is assigned yet and status hasn't changed
@@ -3260,17 +3270,28 @@ export class OrdersService {
     }
 
     const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
-    const total = (order.total || 0) - (order.deliveryFee || 0) + newFee;
     const commissionPercent = errandSetting?.value?.customErrandCommissionPercentage ?? 20;
     const commissionAmount = Math.round(newFee * (commissionPercent / 100));
-    const erranderShare = newFee - commissionAmount;
 
-    order.serviceFee = 0;
-    order.deliveryFee = newFee;
-    order.erranderShare = erranderShare;
-    order.erranderPayout = erranderShare;
-    order.platformShare = commissionAmount;
-    order.total = total;
+    if (order.type === OrderType.CUSTOM_ERRAND) {
+      const itemCost = order.customDetails?.estimatedItemCost || order.subtotal || 0;
+      order.serviceFee = commissionAmount;
+      order.deliveryFee = newFee;
+      order.erranderShare = newFee;
+      order.erranderPayout = newFee;
+      order.platformShare = commissionAmount;
+      order.total = itemCost + newFee + commissionAmount;
+    } else {
+      const total = (order.total || 0) - (order.deliveryFee || 0) + newFee;
+      const erranderShare = newFee - commissionAmount;
+
+      order.serviceFee = 0;
+      order.deliveryFee = newFee;
+      order.erranderShare = erranderShare;
+      order.erranderPayout = erranderShare;
+      order.platformShare = commissionAmount;
+      order.total = total;
+    }
 
     await order.save();
 
@@ -3573,19 +3594,33 @@ export class OrdersService {
     }
 
     // Calculate commission
-    const baseTotal = order.total - (order.proposedDeliveryFee || order.deliveryFee || 0);
-    const total = baseTotal + newFee;
-    const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
-    const commissionPercent = errandSetting?.value?.customErrandCommissionPercentage ?? 20;
-    const commissionAmount = Math.round(newFee * (commissionPercent / 100));
-    const erranderShare = newFee - commissionAmount;
+    if (order.type === OrderType.CUSTOM_ERRAND) {
+      const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
+      const commissionPercent = errandSetting?.value?.customErrandCommissionPercentage ?? 20;
+      const serviceFee = Math.round(newFee * (commissionPercent / 100));
+      const itemCost = order.customDetails?.estimatedItemCost || order.subtotal || 0;
 
-    order.serviceFee = 0;
-    order.deliveryFee = newFee;
-    order.erranderShare = erranderShare;
-    order.erranderPayout = erranderShare;
-    order.platformShare = commissionAmount;
-    order.total = total;
+      order.serviceFee = serviceFee;
+      order.deliveryFee = newFee;
+      order.erranderShare = newFee;
+      order.erranderPayout = newFee;
+      order.platformShare = serviceFee;
+      order.total = itemCost + newFee + serviceFee;
+    } else {
+      const baseTotal = order.total - (order.proposedDeliveryFee || order.deliveryFee || 0);
+      const total = baseTotal + newFee;
+      const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
+      const commissionPercent = errandSetting?.value?.customErrandCommissionPercentage ?? 20;
+      const commissionAmount = Math.round(newFee * (commissionPercent / 100));
+      const erranderShare = newFee - commissionAmount;
+
+      order.serviceFee = 0;
+      order.deliveryFee = newFee;
+      order.erranderShare = erranderShare;
+      order.erranderPayout = erranderShare;
+      order.platformShare = commissionAmount;
+      order.total = total;
+    }
 
     // Trigger webhook for barter transactions
     if (order.type === 'custom_errand' && order.customDetails?.description?.includes('[Barter Tx ID:')) {
@@ -3629,7 +3664,7 @@ export class OrdersService {
     });
 
     await order.save();
-    this.logger.log(`acceptBid() order=${orderId} bid=${bidId} newFee=${newFee} total=${total} accepted`);
+    this.logger.log(`acceptBid() order=${orderId} bid=${bidId} newFee=${newFee} total=${order.total} accepted`);
 
     // Broadcast order accepted so it is removed from the dispatch pool
     await this.redisService.publish('notification:broadcast:erranders', JSON.stringify({
