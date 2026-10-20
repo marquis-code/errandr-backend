@@ -59,6 +59,37 @@ export class VendorsService implements OnApplicationBootstrap {
     await this.ensureAllVendorsHaveSubdomain();
   }
 
+
+  /**
+   * Is this address already a business on Erranders For Business?
+   *
+   * Vendors and businesses share `<slug>.erranders.org`. The routing Worker asks about
+   * businesses first, so a vendor that took a business's slug would be shadowed and its
+   * storefront would silently stop resolving at its own address.
+   *
+   * Fails OPEN when that API is unreachable — refusing every new vendor because another
+   * service is down is worse than a rare collision that is visible afterwards.
+   */
+  private async businessSlugTaken(slug: string): Promise<boolean> {
+    const base = (process.env.BUSINESS_API_URL || '').replace(/\/$/, '');
+    if (!base) return false;
+
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 3000);
+      const response = await fetch(`${base}/businesses/${encodeURIComponent(slug)}`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      return response.ok;
+    } catch (error: any) {
+      this.logger.warn(
+        `Could not check whether "${slug}" is a business (${error?.message || error}); allowing the vendor subdomain.`,
+      );
+      return false;
+    }
+  }
+
   async generateUniqueSubdomain(storeName: string, excludeId?: string): Promise<string> {
     let baseSlug = (storeName || 'store')
       .toLowerCase()
@@ -80,7 +111,10 @@ export class VendorsService implements OnApplicationBootstrap {
         ...(excludeId ? { _id: { $ne: new Types.ObjectId(excludeId) } } : {}),
       });
 
-      if (!existing) {
+      // Two namespaces share this domain: a business of the same name would be shadowed.
+      const takenByBusiness = !existing && (await this.businessSlugTaken(candidate));
+
+      if (!existing && !takenByBusiness) {
         return candidate;
       }
       counter++;
