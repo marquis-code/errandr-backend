@@ -352,19 +352,17 @@ export class OrdersService {
       const itemCost = Number(data.estimatedItemCost) || 0;
       const itemCostBuffer = 0; // Buffer disabled per request
 
-      // Flat Buyer's Convenience Fee (dynamically configured platform fee)
-      const serviceFee = Number(errandSetting?.value?.convenienceFee ?? errandSetting?.value?.platformFee ?? 100);
+      // Custom errand does not charge a fixed platform fee or transfer fee to the student.
+      // Erranders take is configured in admin based on runner negotiation (customErrandCommissionPercentage, default 20%).
+      const serviceFee = 0;
+      const transferFee = 0;
+      // Total is simply item cost + runner fee
+      const total = itemCost + itemCostBuffer + runnerFee;
 
-      const enableTransferFee = errandSetting?.value?.enableTransferFee === true;
-      // Paystack transfer fee: ₦10 for ≤₦5,000, ₦25 for >₦5,000 (charged to customer) ONLY if enabled
-      const transferFee = enableTransferFee && (itemCost + itemCostBuffer) > 0 ? ((itemCost + itemCostBuffer) <= 5000 ? 10 : 25) : 0;
-      // Total includes EVERYTHING: item cost + buffer + runner fee + service fee + transfer fee
-      const total = itemCost + itemCostBuffer + runnerFee + serviceFee + transferFee;
-
-      // Commission from Runner (Primary Model)
+      // Commission from Runner (configured in admin, default 20%)
       const commissionAmount = Math.round(runnerFee * (commissionPercent / 100));
       const erranderShare = runnerFee - commissionAmount;
-      const platformShare = serviceFee + commissionAmount;
+      const platformShare = commissionAmount;
 
       // Optional Paystack verification
       let paymentVerified = false;
@@ -1375,9 +1373,11 @@ export class OrdersService {
       const commissionPercent = errandSetting?.value?.customErrandCommissionPercentage ?? 20;
       const commissionAmount = Math.round(newFee * (commissionPercent / 100));
 
+      updateSet.serviceFee = 0;
       updateSet.deliveryFee = newFee;
       updateSet.erranderShare = newFee - commissionAmount;
-      updateSet.platformShare = (targetOrder.platformShare || 0) + commissionAmount - Math.round((targetOrder.deliveryFee || 0) * (commissionPercent / 100));
+      updateSet.erranderPayout = newFee - commissionAmount;
+      updateSet.platformShare = commissionAmount;
       updateSet.total = (targetOrder.total || 0) - (targetOrder.deliveryFee || 0) + newFee;
     }
 
@@ -3260,19 +3260,16 @@ export class OrdersService {
     }
 
     const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
-    const serviceFee = Number(errandSetting?.value?.convenienceFee ?? errandSetting?.value?.platformFee ?? 100);
     const total = (order.total || 0) - (order.deliveryFee || 0) + newFee;
     const commissionPercent = errandSetting?.value?.customErrandCommissionPercentage ?? 20;
     const commissionAmount = Math.round(newFee * (commissionPercent / 100));
     const erranderShare = newFee - commissionAmount;
 
-    // For platformShare, it was serviceFee + commissionAmount. But wait, what if there's other platform shares?
-    // Let's just adjust it:
-    const platformShare = (order.platformShare || 0) + commissionAmount - Math.round((order.deliveryFee || 0) * (commissionPercent / 100));
-
+    order.serviceFee = 0;
     order.deliveryFee = newFee;
     order.erranderShare = erranderShare;
-    order.platformShare = platformShare;
+    order.erranderPayout = erranderShare;
+    order.platformShare = commissionAmount;
     order.total = total;
 
     await order.save();
@@ -3583,10 +3580,11 @@ export class OrdersService {
     const commissionAmount = Math.round(newFee * (commissionPercent / 100));
     const erranderShare = newFee - commissionAmount;
 
+    order.serviceFee = 0;
     order.deliveryFee = newFee;
     order.erranderShare = erranderShare;
     order.erranderPayout = erranderShare;
-    order.platformShare = (order.platformShare || 0) + commissionAmount;
+    order.platformShare = commissionAmount;
     order.total = total;
 
     // Trigger webhook for barter transactions
