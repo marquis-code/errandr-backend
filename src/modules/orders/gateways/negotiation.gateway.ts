@@ -171,4 +171,9 @@ export class NegotiationGateway
   sendOrderAcceptedDirectly(orderId: string, payload: any) {
     this.server.to(`negotiation:${orderId}`).emit('orderAcceptedDirectly', payload);
   }
+
+  broadcastOrderCancelled(orderId: string, payload?: any) {
+    this.server.to(`negotiation:${orderId}`).emit('orderCancelled', { orderId, ...(payload || {}) });
+    this.server.emit('negotiation:order-cancelled', { orderId, ...(payload || {}) });
+  }
 }

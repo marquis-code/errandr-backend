@@ -30,7 +30,8 @@ export class AdminService {
       activeOrders,
       completedOrders,
       totalErranders,
-      revenue,
+      financialAgg,
+      customerOrdersAgg,
     ] = await Promise.all([
       this.userModel.countDocuments(),
       this.vendorModel.countDocuments({ status: VendorStatus.APPROVED }),
@@ -43,9 +44,50 @@ export class AdminService {
       this.erranderModel.countDocuments(),
       this.orderModel.aggregate([
         { $match: { status: OrderStatus.DELIVERED } },
-        { $group: { _id: null, total: { $sum: '$serviceFee' } } },
+        {
+          $group: {
+            _id: null,
+            gmv: { $sum: { $ifNull: ['$total', 0] } },
+            serviceFeeRevenue: { $sum: { $ifNull: ['$serviceFee', 0] } },
+            deliveryFeeTotal: { $sum: { $ifNull: ['$deliveryFee', 0] } },
+            erranderPayoutTotal: { $sum: { $ifNull: ['$erranderPayout', 0] } },
+            subtotalExpenses: { $sum: { $ifNull: ['$subtotal', 0] } },
+          },
+        },
+      ]),
+      this.orderModel.aggregate([
+        { $match: { status: OrderStatus.DELIVERED } },
+        {
+          $group: {
+            _id: '$customer',
+            orderCount: { $sum: 1 },
+            spend: { $sum: { $ifNull: ['$total', 0] } },
+          },
+        },
       ]),
     ]);
+
+    const fin = financialAgg[0] || {
+      gmv: 0,
+      serviceFeeRevenue: 0,
+      deliveryFeeTotal: 0,
+      erranderPayoutTotal: 0,
+      subtotalExpenses: 0,
+    };
+
+    const gmv = fin.gmv || 0;
+    const deliveryMargin = Math.max(0, (fin.deliveryFeeTotal || 0) - (fin.erranderPayoutTotal || 0));
+    const netRevenue = (fin.serviceFeeRevenue || 0) + deliveryMargin;
+    const expenses = (fin.subtotalExpenses || 0) + (fin.erranderPayoutTotal || 0);
+    const profit = Math.max(0, gmv - expenses);
+
+    const convertedCount = customerOrdersAgg.length;
+    const leads = Math.max(0, totalUsers - convertedCount);
+    const conversionRate = totalUsers > 0 ? Number(((convertedCount / totalUsers) * 100).toFixed(1)) : 0;
+    const repeatCustomers = customerOrdersAgg.filter((c) => c.orderCount > 1).length;
+    const retentionRate = convertedCount > 0 ? Number(((repeatCustomers / convertedCount) * 100).toFixed(1)) : 0;
+    const estimatedAcquisitionBudget = Math.round(gmv * 0.05);
+    const cac = convertedCount > 0 ? Math.round(estimatedAcquisitionBudget / convertedCount) : 0;
 
     return {
       totalUsers,
@@ -55,8 +97,19 @@ export class AdminService {
       activeOrders,
       completedOrders,
       totalErranders,
-      totalRevenue: revenue[0]?.total || 0,
-      totalVolume: revenue[0]?.total || 0, // Admin dashboard expects totalVolume
+      totalRevenue: gmv,
+      totalVolume: gmv,
+      gmv,
+      revenue: gmv,
+      netRevenue,
+      expenses,
+      profit,
+      leads,
+      conversions: convertedCount,
+      conversionRate,
+      retention: repeatCustomers,
+      retentionRate,
+      cac,
     };
   }
 

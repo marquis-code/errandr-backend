@@ -1688,9 +1688,9 @@ export class OrdersService {
       note: 'Order completed via Delivery PIN',
     });
 
-    // ERRANDER PAYOUT (guaranteed floor: standard ₦350 delivery fee yields at least ₦300 errander earnings)
+    // ERRANDER PAYOUT (guaranteed floor: standard ₦300 delivery fee yields at least ₦300 errander earnings)
     let erranderEarnings = order.erranderPayout || order.deliveryFee;
-    if (order.deliveryFee >= 350 && erranderEarnings < 300) {
+    if (order.deliveryFee >= 300 && erranderEarnings < 300) {
       erranderEarnings = 300;
     }
     const hasInterception = order.interception && (order.interception.status === 'accepted' || order.interception.status === 'completed');
@@ -1825,9 +1825,9 @@ export class OrdersService {
       note: 'Order completed via Contactless Drop-off (Photo Proof)',
     });
 
-    // ERRANDER PAYOUT (guaranteed floor: standard ₦350 delivery fee yields at least ₦300 errander earnings)
+    // ERRANDER PAYOUT (guaranteed floor: standard ₦300 delivery fee yields at least ₦300 errander earnings)
     let erranderEarnings = order.erranderPayout || order.deliveryFee;
-    if (order.deliveryFee >= 350 && erranderEarnings < 300) {
+    if (order.deliveryFee >= 300 && erranderEarnings < 300) {
       erranderEarnings = 300;
     }
     const hasInterception = order.interception && (order.interception.status === 'accepted' || order.interception.status === 'completed');
@@ -2554,6 +2554,23 @@ export class OrdersService {
 
     // Notify all
     await this.notifyOrderStatusUpdate(order, OrderStatus.CANCELLED, `Cancelled by customer: ${reason}`);
+
+    // Real-time broadcast: remove from Available Orders pool and close negotiation rooms
+    try {
+      this.notificationsGateway.broadcastOrderCancelled({
+        orderId: order._id.toString(),
+        orderNumber: order.orderNumber,
+        status: OrderStatus.CANCELLED,
+        reason
+      });
+      this.negotiationGateway.broadcastOrderCancelled(order._id.toString(), {
+        orderId: order._id.toString(),
+        orderNumber: order.orderNumber,
+        reason
+      });
+    } catch (e) {
+      this.logger.error(`Failed to broadcast order cancellation: ${e.message}`);
+    }
 
     // Notify Support Team aggressively
     await this.notificationsService.notifySupportTeam(`User just cancelled order #${order.orderNumber}. Reason: ${reason}`);

@@ -82,6 +82,10 @@ export class NotificationsGateway
           if (notification.type === 'ORDER_ACCEPTED') {
             this.server.emit('notification:order-accepted', notification);
             this.logger.log(`[Redis Broadcast] notification:order-accepted sent to all clients`);
+          } else if (notification.type === 'ORDER_CANCELLED') {
+            this.server.emit('notification:order-cancelled', notification);
+            this.server.emit('notification:order-accepted', notification);
+            this.logger.log(`[Redis Broadcast] notification:order-cancelled sent to all clients`);
           } else if (notification.type === 'INTERCEPTION_REQUESTED' || notification.type === 'INTERCEPTION_ACCEPTED') {
             this.server.emit('notification:new', notification);
             this.logger.log(`[Redis Broadcast] notification:new (${notification.type}) sent to all clients`);
@@ -455,6 +459,12 @@ export class NotificationsGateway
   broadcastNewOrder(orderData: any) {
     this.server.emit('notification:new-order', orderData);
     this.logger.log(`Broadcasted notification:new-order to all connected clients`);
+  }
+
+  broadcastOrderCancelled(data: any) {
+    this.server.emit('notification:order-cancelled', data);
+    this.server.emit('notification:order-accepted', data);
+    this.logger.log(`Broadcasted notification:order-cancelled to all connected clients`);
   }
 
   sendOrderAccepted(userId: string, data: any) {
