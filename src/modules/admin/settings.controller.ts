@@ -30,6 +30,7 @@ export class SettingsController {
           convenienceFee: 100,
           commissionFlatFee: 50,
           customErrandCommissionPercentage: 20,
+          serviceBusinessCommissionPercentage: 15,
           customErrandSafetyBufferPercentage: 20,
           platformProcessingFee: 100,
           platformServiceFeePercentage: 5,
@@ -93,6 +94,7 @@ export class SettingsController {
     convenienceFee?: number;
     commissionFlatFee?: number;
     customErrandCommissionPercentage?: number;
+    serviceBusinessCommissionPercentage?: number;
     customErrandSafetyBufferPercentage?: number;
     platformProcessingFee?: number;
     platformServiceFeePercentage?: number;
@@ -137,6 +139,7 @@ export class SettingsController {
       convenienceFee: targetServiceFee,
       commissionFlatFee: resolvedCommissionFlatFee,
       customErrandCommissionPercentage: Number(body.customErrandCommissionPercentage ?? 20),
+      serviceBusinessCommissionPercentage: Number(body.serviceBusinessCommissionPercentage ?? 15),
       platformProcessingFee: Number(body.platformProcessingFee ?? 0),
       platformServiceFeePercentage: Number(body.platformServiceFeePercentage ?? 0),
       foodMarkupPercentage: Number(body.foodMarkupPercentage ?? 0),
