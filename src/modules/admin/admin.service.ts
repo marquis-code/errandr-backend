@@ -79,7 +79,8 @@ export class AdminService {
     const deliveryMargin = Math.max(0, (fin.deliveryFeeTotal || 0) - (fin.erranderPayoutTotal || 0));
     const netRevenue = (fin.serviceFeeRevenue || 0) + deliveryMargin;
     const expenses = (fin.subtotalExpenses || 0) + (fin.erranderPayoutTotal || 0);
-    const profit = Math.max(0, gmv - expenses);
+    // Platform Net Profit is the retained platform revenue (service fees + delivery margin)
+    const profit = netRevenue > 0 ? netRevenue : Math.max(0, gmv - expenses);
 
     const convertedCount = customerOrdersAgg.length;
     const leads = Math.max(0, totalUsers - convertedCount);
