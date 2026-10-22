@@ -19,6 +19,30 @@ export class AdminController {
     return this.adminService.getDashboardStats();
   }
 
+  @Get('financial-breakdown')
+  @ApiOperation({ summary: 'Get detailed financials (vendors, errand ninjas, platform) grouped by normal errands, custom errands, and services' })
+  getFinancialBreakdown(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('vendorId') vendorId?: string,
+    @Query('studentId') studentId?: string,
+    @Query('erranderId') erranderId?: string,
+  ) {
+    return this.adminService.getFinancialBreakdown({
+      startDate,
+      endDate,
+      vendorId,
+      studentId,
+      erranderId,
+    });
+  }
+
+  @Get('financial-filter-options')
+  @ApiOperation({ summary: 'Get selectable list of vendors, students, and errander ninjas for financial filtering' })
+  getFinancialFilterOptions() {
+    return this.adminService.getFinancialFilterOptions();
+  }
+
   @Get('chart-data')
   @ApiOperation({ summary: 'Get admin dashboard revenue chart data' })
   getChartData(

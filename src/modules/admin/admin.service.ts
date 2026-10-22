@@ -8,6 +8,7 @@ import { Errander } from '../erranders/schemas/errander.schema';
 import { Report } from '../reports/schemas/report.schema';
 import { EmailService } from '../email/email.service';
 import { SystemSetting } from './schemas/system-setting.schema';
+import { Appointment, AppointmentStatus } from '../appointments/schemas/appointment.schema';
 
 @Injectable()
 export class AdminService {
@@ -18,6 +19,7 @@ export class AdminService {
     @InjectModel(Errander.name) private erranderModel: Model<Errander>,
     @InjectModel(Report.name) private reportModel: Model<Report>,
     @InjectModel(SystemSetting.name) private systemSettingModel: Model<SystemSetting>,
+    @InjectModel(Appointment.name) private appointmentModel: Model<Appointment>,
     private emailService: EmailService,
   ) {}
 
@@ -154,6 +156,342 @@ export class AdminService {
     }
 
     return chartData;
+  }
+
+  async getFinancialBreakdown(filters: {
+    startDate?: string;
+    endDate?: string;
+    vendorId?: string;
+    studentId?: string;
+    erranderId?: string;
+  }) {
+    // 1. Build Date Range
+    let start: Date;
+    let end: Date = new Date();
+
+    if (filters.startDate) {
+      start = new Date(filters.startDate);
+      if (filters.startDate.length === 10) {
+        start.setHours(0, 0, 0, 0);
+      }
+    } else {
+      start = new Date();
+      start.setDate(start.getDate() - 30);
+      start.setHours(0, 0, 0, 0);
+    }
+
+    if (filters.endDate) {
+      end = new Date(filters.endDate);
+      if (filters.endDate.length === 10) {
+        end.setHours(23, 59, 59, 999);
+      }
+    } else {
+      end = new Date();
+    }
+
+    // 2. Base match for Orders
+    const orderMatch: any = {
+      status: OrderStatus.DELIVERED,
+      createdAt: { $gte: start, $lte: end },
+    };
+
+    if (filters.vendorId && Types.ObjectId.isValid(filters.vendorId)) {
+      orderMatch.vendor = new Types.ObjectId(filters.vendorId);
+    }
+    if (filters.studentId && Types.ObjectId.isValid(filters.studentId)) {
+      orderMatch.customer = new Types.ObjectId(filters.studentId);
+    }
+    if (filters.erranderId && Types.ObjectId.isValid(filters.erranderId)) {
+      orderMatch.errander = new Types.ObjectId(filters.erranderId);
+    }
+
+    // 3. Match for Appointments (Services)
+    const apptMatch: any = {
+      status: { $in: [AppointmentStatus.COMPLETED, AppointmentStatus.CONFIRMED] },
+      scheduledDate: { $gte: start, $lte: end },
+    };
+
+    if (filters.vendorId && Types.ObjectId.isValid(filters.vendorId)) {
+      apptMatch.vendor = new Types.ObjectId(filters.vendorId);
+    }
+    if (filters.studentId && Types.ObjectId.isValid(filters.studentId)) {
+      apptMatch.user = new Types.ObjectId(filters.studentId);
+    }
+    // Services are handled by vendors / service providers, not errand runners
+    const includeAppointments = !filters.erranderId;
+
+    // 4. Fetch orders and appointments for aggregation
+    const [orders, appointments] = await Promise.all([
+      this.orderModel
+        .find(orderMatch)
+        .select(
+          'type total subtotal deliveryFee erranderPayout erranderShare serviceFee vendorShare agreedDeliveryFee actualItemCost createdAt',
+        )
+        .lean(),
+      includeAppointments
+        ? this.appointmentModel
+            .find(apptMatch)
+            .select('price commitmentFee scheduledDate createdAt status')
+            .lean()
+        : Promise.resolve([]),
+    ]);
+
+    // Financial accumulator variables
+    let normalErrandsVolume = 0;
+    let normalErrandsVendorPayout = 0;
+    let normalErrandsNinjaPayout = 0;
+    let normalErrandsProfit = 0;
+    let normalErrandsCount = 0;
+
+    let customErrandsVolume = 0;
+    let customErrandsVendorPayout = 0;
+    let customErrandsNinjaPayout = 0;
+    let customErrandsProfit = 0;
+    let customErrandsCount = 0;
+
+    const dailyMap = new Map<
+      string,
+      {
+        date: string;
+        vendorPayout: number;
+        ninjaPayout: number;
+        platformProfit: number;
+        profitNormal: number;
+        profitCustom: number;
+        profitServices: number;
+        totalVolume: number;
+      }
+    >();
+
+    const getDayKey = (d: Date | string) => {
+      const date = new Date(d);
+      return date.toISOString().split('T')[0];
+    };
+
+    const cursor = new Date(start);
+    while (cursor <= end) {
+      const key = getDayKey(cursor);
+      if (!dailyMap.has(key)) {
+        dailyMap.set(key, {
+          date: key,
+          vendorPayout: 0,
+          ninjaPayout: 0,
+          platformProfit: 0,
+          profitNormal: 0,
+          profitCustom: 0,
+          profitServices: 0,
+          totalVolume: 0,
+        });
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    // Process Orders
+    for (const order of orders) {
+      const total = Number(order.total || 0);
+      const deliveryFee = Number(order.deliveryFee || 0);
+      const serviceFee = Number(order.serviceFee || 0);
+      const dayKey = getDayKey(order.createdAt || start);
+      const daily = dailyMap.get(dayKey) || {
+        date: dayKey,
+        vendorPayout: 0,
+        ninjaPayout: 0,
+        platformProfit: 0,
+        profitNormal: 0,
+        profitCustom: 0,
+        profitServices: 0,
+        totalVolume: 0,
+      };
+
+      if (order.type === 'custom_errand') {
+        customErrandsCount++;
+        customErrandsVolume += total;
+
+        let ninjaPayout = 0;
+        if (order.erranderPayout && order.erranderPayout > 0) {
+          ninjaPayout = Number(order.erranderPayout);
+        } else if (order.erranderShare && order.erranderShare > 0) {
+          ninjaPayout = Number(order.erranderShare);
+        } else if (order.agreedDeliveryFee && order.agreedDeliveryFee > 0) {
+          ninjaPayout = Math.round(Number(order.agreedDeliveryFee) * 0.8);
+        } else if (deliveryFee > 0) {
+          ninjaPayout = Math.round(deliveryFee * 0.8);
+        }
+
+        const vendorPayout = Number(order.actualItemCost || order.subtotal || 0);
+        const runnerCut = (order.agreedDeliveryFee || deliveryFee || 0);
+        const deliveryPlatformCut = Math.max(0, runnerCut - ninjaPayout);
+        const profit = serviceFee + deliveryPlatformCut;
+
+        customErrandsNinjaPayout += ninjaPayout;
+        customErrandsVendorPayout += vendorPayout;
+        customErrandsProfit += profit;
+
+        daily.totalVolume += total;
+        daily.ninjaPayout += ninjaPayout;
+        daily.vendorPayout += vendorPayout;
+        daily.platformProfit += profit;
+        daily.profitCustom += profit;
+      } else {
+        normalErrandsCount++;
+        normalErrandsVolume += total;
+
+        const ninjaPayout = Number(order.erranderPayout || order.erranderShare || deliveryFee || 0);
+
+        let vendorPayout = 0;
+        if (order.vendorShare && order.vendorShare > 0) {
+          vendorPayout = Number(order.vendorShare);
+        } else if (order.subtotal && order.subtotal > 0) {
+          vendorPayout = Number(order.subtotal);
+        } else {
+          vendorPayout = Math.max(0, total - deliveryFee - serviceFee);
+        }
+
+        const deliveryMargin = Math.max(0, deliveryFee - ninjaPayout);
+        const profit = serviceFee + deliveryMargin;
+
+        normalErrandsNinjaPayout += ninjaPayout;
+        normalErrandsVendorPayout += vendorPayout;
+        normalErrandsProfit += profit;
+
+        daily.totalVolume += total;
+        daily.ninjaPayout += ninjaPayout;
+        daily.vendorPayout += vendorPayout;
+        daily.platformProfit += profit;
+        daily.profitNormal += profit;
+      }
+
+      dailyMap.set(dayKey, daily);
+    }
+
+    // Process Services (Appointments)
+    let servicesVolume = 0;
+    let servicesProviderPayout = 0;
+    let servicesProfit = 0;
+    let servicesCount = 0;
+
+    for (const appt of appointments) {
+      servicesCount++;
+      const price = Number(appt.price || appt.commitmentFee || 0);
+      const commitmentFee = Number(appt.commitmentFee || 0);
+      servicesVolume += price;
+
+      const platformFee = Math.max(200, Math.round((commitmentFee || price) * 0.1));
+      const providerPayout = Math.max(0, price - platformFee);
+
+      servicesProviderPayout += providerPayout;
+      servicesProfit += platformFee;
+
+      const dayKey = getDayKey(appt.scheduledDate || (appt as any).createdAt || start);
+      const daily = dailyMap.get(dayKey) || {
+        date: dayKey,
+        vendorPayout: 0,
+        ninjaPayout: 0,
+        platformProfit: 0,
+        profitNormal: 0,
+        profitCustom: 0,
+        profitServices: 0,
+        totalVolume: 0,
+      };
+
+      daily.totalVolume += price;
+      daily.vendorPayout += providerPayout;
+      daily.platformProfit += platformFee;
+      daily.profitServices += platformFee;
+
+      dailyMap.set(dayKey, daily);
+    }
+
+    const totalVendorPayout = normalErrandsVendorPayout + customErrandsVendorPayout + servicesProviderPayout;
+    const totalNinjaPayout = normalErrandsNinjaPayout + customErrandsNinjaPayout;
+    const totalPlatformProfit = normalErrandsProfit + customErrandsProfit + servicesProfit;
+    const totalVolume = normalErrandsVolume + customErrandsVolume + servicesVolume;
+    const totalTransactions = normalErrandsCount + customErrandsCount + servicesCount;
+
+    const timeSeries = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+
+    return {
+      summary: {
+        totalVendorPayout,
+        totalNinjaPayout,
+        totalPlatformProfit,
+        totalVolume,
+        totalTransactions,
+        vendorSharePercentage: totalVolume > 0 ? Number(((totalVendorPayout / totalVolume) * 100).toFixed(1)) : 0,
+        ninjaSharePercentage: totalVolume > 0 ? Number(((totalNinjaPayout / totalVolume) * 100).toFixed(1)) : 0,
+        platformMarginPercentage: totalVolume > 0 ? Number(((totalPlatformProfit / totalVolume) * 100).toFixed(1)) : 0,
+      },
+      profitBreakdown: {
+        normalErrands: {
+          volume: normalErrandsVolume,
+          vendorPayout: normalErrandsVendorPayout,
+          ninjaPayout: normalErrandsNinjaPayout,
+          profit: normalErrandsProfit,
+          orderCount: normalErrandsCount,
+        },
+        customErrands: {
+          volume: customErrandsVolume,
+          vendorPayout: customErrandsVendorPayout,
+          ninjaPayout: customErrandsNinjaPayout,
+          profit: customErrandsProfit,
+          orderCount: customErrandsCount,
+        },
+        services: {
+          volume: servicesVolume,
+          providerPayout: servicesProviderPayout,
+          profit: servicesProfit,
+          bookingCount: servicesCount,
+        },
+      },
+      timeSeries,
+      appliedFilters: {
+        startDate: start.toISOString(),
+        endDate: end.toISOString(),
+        vendorId: filters.vendorId || null,
+        studentId: filters.studentId || null,
+        erranderId: filters.erranderId || null,
+      },
+    };
+  }
+
+  async getFinancialFilterOptions() {
+    const [vendors, erranders, topStudents] = await Promise.all([
+      this.vendorModel
+        .find({ status: VendorStatus.APPROVED })
+        .select('_id storeName businessType')
+        .sort({ storeName: 1 })
+        .lean(),
+      this.userModel
+        .find({ role: { $in: ['errander', 'dispatcher'] } })
+        .select('_id firstName lastName phone')
+        .sort({ firstName: 1 })
+        .lean(),
+      this.userModel
+        .find({ role: 'student', totalOrders: { $gt: 0 } })
+        .select('_id firstName lastName email totalOrders')
+        .sort({ totalOrders: -1 })
+        .limit(100)
+        .lean(),
+    ]);
+
+    return {
+      vendors: vendors.map((v) => ({
+        id: v._id.toString(),
+        name: v.storeName || 'Unnamed Vendor',
+        type: v.businessType || 'store',
+      })),
+      erranders: erranders.map((e) => ({
+        id: e._id.toString(),
+        name: `${e.firstName || ''} ${e.lastName || ''}`.trim() || 'Unnamed Runner',
+        phone: e.phone || '',
+      })),
+      students: topStudents.map((s) => ({
+        id: s._id.toString(),
+        name: `${s.firstName || ''} ${s.lastName || ''}`.trim() || s.email,
+        email: s.email,
+        orders: s.totalOrders || 0,
+      })),
+    };
   }
 
   async getUsers() {

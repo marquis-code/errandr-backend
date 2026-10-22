@@ -9,6 +9,7 @@ import { Order, OrderSchema } from '../orders/schemas/order.schema';
 import { Errander, ErranderSchema } from '../erranders/schemas/errander.schema';
 import { Report, ReportSchema } from '../reports/schemas/report.schema';
 import { SystemSetting, SystemSettingSchema } from './schemas/system-setting.schema';
+import { Appointment, AppointmentSchema } from '../appointments/schemas/appointment.schema';
 import { EmailModule } from '../email/email.module';
 
 @Module({
@@ -20,6 +21,7 @@ import { EmailModule } from '../email/email.module';
       { name: Errander.name, schema: ErranderSchema },
       { name: Report.name, schema: ReportSchema },
       { name: SystemSetting.name, schema: SystemSettingSchema },
+      { name: Appointment.name, schema: AppointmentSchema },
     ]),
     EmailModule,
   ],
