@@ -44,6 +44,8 @@ import { MarketPoolModule } from './modules/market-pool/market-pool.module';
 import { DepartmentsModule } from './modules/departments/departments.module';
 import { InstitutionsModule } from './modules/institutions/institutions.module';
 
+import { CallsModule } from './modules/calls/calls.module';
+
 @Module({
   imports: [
     // Config
@@ -93,6 +95,7 @@ import { InstitutionsModule } from './modules/institutions/institutions.module';
     MenuModule,
     OrdersModule,
     ErrandersModule,
+    CallsModule,
     ChatModule,
     TrackingModule,
     UploadModule,
