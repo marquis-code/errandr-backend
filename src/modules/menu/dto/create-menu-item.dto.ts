@@ -85,6 +85,11 @@ export class CreateMenuItemDto {
   @IsMongoId({ each: true })
   addOnGroupIds?: string[];
 
+  /** Add-on options waived when bought with this item. See the schema for the rule. */
+  @IsOptional()
+  @IsArray()
+  freeAddOns?: { groupId: string; optionName: string; maxFree?: number }[];
+
   @IsOptional()
   @IsBoolean()
   isAvailable?: boolean;

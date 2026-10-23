@@ -59,6 +59,27 @@ export class MenuItem extends Document {
   @Prop({ type: [Types.ObjectId], ref: 'AddOnGroup', default: [] })
   addOnGroupIds: Types.ObjectId[]; // optional extras, shared/reusable groups
 
+  /**
+   * Add-on options that are free when bought *with this item*, while still costing money
+   * on their own.
+   *
+   * Ofada By Joke's case: the sauce is included when you buy the rice, but a customer who
+   * orders sauce alone pays for it. The price stays on the add-on option; this only marks
+   * where it is waived, and `maxFree` caps how many are waived per line so buying two
+   * plates does not hand over two free sauces by accident.
+   */
+  @Prop({
+    type: [
+      {
+        groupId: { type: Types.ObjectId, ref: 'AddOnGroup' },
+        optionName: { type: String },
+        maxFree: { type: Number, default: 1 },
+      },
+    ],
+    default: [],
+  })
+  freeAddOns: { groupId: Types.ObjectId; optionName: string; maxFree: number }[];
+
   @Prop({ default: true })
   isAvailable: boolean; // vendor stockout toggle
 
