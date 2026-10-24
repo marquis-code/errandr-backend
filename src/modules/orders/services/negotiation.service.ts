@@ -8,6 +8,8 @@ import { User } from '../../users/schemas/user.schema';
 import { WalletsService } from '../../wallets/wallets.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 
+import { SystemSetting } from '../../admin/schemas/system-setting.schema';
+
 @Injectable()
 export class NegotiationService {
   private readonly logger = new Logger(NegotiationService.name);
@@ -17,6 +19,7 @@ export class NegotiationService {
     @InjectModel(DeliveryBid.name) private readonly deliveryBidModel: Model<DeliveryBid>,
     @InjectModel(Errander.name) private readonly erranderModel: Model<Errander>,
     @InjectModel(User.name) private readonly userModel: Model<User>,
+    @InjectModel(SystemSetting.name) private readonly settingModel: Model<SystemSetting>,
     private readonly walletsService: WalletsService,
     private readonly notificationsService: NotificationsService,
   ) {}
@@ -121,21 +124,33 @@ export class NegotiationService {
       note: `Negotiation complete. Agreed fee: ${bid.bidAmount}`,
     });
     
-    // Update total (delivery fee wasn't added to total yet, or if it was, it was proposed)
-    // First remove proposed, then add agreed
-    if (order.proposedDeliveryFee) {
-        order.total = order.total - order.proposedDeliveryFee + bid.bidAmount;
-    } else {
-        order.total = order.total + bid.bidAmount;
-    }
+    // Read dynamic settings
+    const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
+    const commissionPercent = Number(errandSetting?.value?.customErrandCommissionPercentage ?? 20);
+    const customerFixedFee = Number(errandSetting?.value?.customErrandCustomerFee ?? errandSetting?.value?.convenienceFee ?? 100);
+    const ninjaCommission = Math.round(bid.bidAmount * (commissionPercent / 100));
+    const erranderPayout = Math.max(0, bid.bidAmount - ninjaCommission);
+
     order.deliveryFee = bid.bidAmount;
-    
-    // Deduct 20% platform fee from the negotiated delivery fee
-    const platformCommission = bid.bidAmount * 0.20;
-    const oldCommission = order.proposedDeliveryFee ? Math.round(order.proposedDeliveryFee * 0.20) : 0;
-    order.platformShare = (order.platformShare || 0) - oldCommission + platformCommission;
-    order.erranderPayout = bid.bidAmount - platformCommission;
-    order.erranderShare = order.erranderPayout;
+
+    if (order.type === 'custom_errand') {
+      const itemCost = Number(order.customDetails?.estimatedItemCost || order.subtotal || 0);
+      order.serviceFee = customerFixedFee;
+      order.erranderPayout = erranderPayout;
+      order.erranderShare = erranderPayout;
+      order.platformShare = customerFixedFee + ninjaCommission;
+      order.total = itemCost + bid.bidAmount + customerFixedFee;
+    } else {
+      if (order.proposedDeliveryFee) {
+        order.total = order.total - order.proposedDeliveryFee + bid.bidAmount;
+      } else {
+        order.total = order.total + bid.bidAmount;
+      }
+      const oldCommission = order.proposedDeliveryFee ? Math.round(order.proposedDeliveryFee * (commissionPercent / 100)) : 0;
+      order.platformShare = (order.platformShare || 0) - oldCommission + ninjaCommission;
+      order.erranderPayout = erranderPayout;
+      order.erranderShare = erranderPayout;
+    }
     
     await order.save();
 

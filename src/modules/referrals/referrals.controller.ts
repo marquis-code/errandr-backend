@@ -19,7 +19,7 @@ export class ReferralsController {
   // ─── Referral Stats ────────────────────────────────────────────
 
   @Get('stats')
-  @ApiOperation({ summary: 'Get referral system statistics' })
+  @ApiOperation({ summary: 'Get referral system statistics with full persona breakdown' })
   getStats() {
     return this.referralsService.getAdminReferralStats();
   }
@@ -28,6 +28,40 @@ export class ReferralsController {
   @ApiOperation({ summary: 'Validate a referral code' })
   validateCode(@Param('code') code: string) {
     return this.referralsService.validateCode(code.toUpperCase());
+  }
+
+  // ─── Unified Multi-Persona Referrers ───────────────────────────
+
+  @Get('all-referrers')
+  @ApiOperation({ summary: 'Get referrers across Errand Ninjas, Customers, Vendors, and Facilitators' })
+  getAllReferrers(
+    @Query('role') role?: string,
+    @Query('search') search?: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page?: number,
+    @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit?: number,
+  ) {
+    return this.referralsService.getAllReferrers({ role, search, page, limit });
+  }
+
+  @Get('referrer-profile/:type/:id')
+  @ApiOperation({ summary: 'Get full 360-degree profile for any referrer (facilitator or user)' })
+  getReferrerFullProfile(
+    @Param('type') type: 'facilitator' | 'user',
+    @Param('id') id: string,
+  ) {
+    return this.referralsService.getReferrerFullProfile(type, id);
+  }
+
+  @Post('generate-code')
+  @ApiOperation({ summary: 'Generate or update a referral code for any persona' })
+  generateReferralCode(
+    @Body() body: {
+      type: 'facilitator' | 'user';
+      id: string;
+      customCode?: string;
+    },
+  ) {
+    return this.referralsService.generateOrUpdateReferralCode(body.type, body.id, body.customCode);
   }
 
   // ─── All Referrals ─────────────────────────────────────────────
@@ -46,11 +80,12 @@ export class ReferralsController {
   // ─── Leaderboard ───────────────────────────────────────────────
 
   @Get('leaderboard')
-  @ApiOperation({ summary: 'Get referral leaderboard' })
+  @ApiOperation({ summary: 'Get referral leaderboard with role filter' })
   getLeaderboard(
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+    @Query('role') role?: string,
   ) {
-    return this.referralsService.getReferralLeaderboard(limit);
+    return this.referralsService.getReferralLeaderboard(limit, role);
   }
 
   // ─── Referrals by User ────────────────────────────────────────

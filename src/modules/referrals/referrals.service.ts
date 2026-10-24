@@ -1,9 +1,11 @@
-import { Injectable, NotFoundException, ConflictException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, Logger, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Referral, ReferralStatus, ReferrerType, ReferredType } from './schemas/referral.schema';
 import { Facilitator, FacilitatorTier } from './schemas/facilitator.schema';
 import { User, UserRole } from '../users/schemas/user.schema';
+import { PromoCode } from '../promo-codes/schemas/promo-code.schema';
+import { PromoRedemption } from '../promo-codes/schemas/promo-redemption.schema';
 import { EmailService } from '../email/email.service';
 
 // Tier configuration
@@ -24,6 +26,8 @@ export class ReferralsService {
     @InjectModel(Referral.name) private referralModel: Model<Referral>,
     @InjectModel(Facilitator.name) private facilitatorModel: Model<Facilitator>,
     @InjectModel(User.name) private userModel: Model<User>,
+    @InjectModel(PromoCode.name) private promoCodeModel: Model<PromoCode>,
+    @InjectModel(PromoRedemption.name) private promoRedemptionModel: Model<PromoRedemption>,
     private emailService: EmailService,
   ) {}
 
@@ -191,6 +195,311 @@ export class ReferralsService {
     return TIER_CONFIG.find(t => t.tier === tier) || TIER_CONFIG[0];
   }
 
+  // ─── Unified Multi-Persona Referrers (Ninja, Customer, Vendor, Ambassador) ───
+
+  async getAllReferrers(query?: { role?: string; search?: string; page?: number; limit?: number }) {
+    const role = query?.role || 'all';
+    const search = query?.search ? query.search.trim() : '';
+    const results: any[] = [];
+
+    // 1. Fetch Facilitators (Ambassadors)
+    if (role === 'all' || role === 'facilitator') {
+      const facFilter: any = {};
+      if (search) {
+        facFilter.$or = [
+          { name: { $regex: search, $options: 'i' } },
+          { email: { $regex: search, $options: 'i' } },
+          { referralCode: { $regex: search, $options: 'i' } },
+        ];
+      }
+      const facilitators = await this.facilitatorModel.find(facFilter).lean();
+
+      // Find all promo codes for these facilitators
+      const facIds = facilitators.map(f => f._id);
+      const facPromos = await this.promoCodeModel.find({ referrerFacilitator: { $in: facIds } }).lean();
+
+      for (const fac of facilitators) {
+        const linkedPromos = facPromos.filter(p => p.referrerFacilitator && p.referrerFacilitator.toString() === fac._id.toString());
+        const totalPromoRev = linkedPromos.reduce((acc, p) => acc + (p.totalRevenueGenerated || 0), 0);
+        const totalPromoOrders = linkedPromos.reduce((acc, p) => acc + (p.usageCount || 0), 0);
+
+        results.push({
+          _id: fac._id,
+          type: 'facilitator',
+          role: 'facilitator',
+          roleLabel: 'Campus Ambassador',
+          roleEmoji: '💎',
+          name: fac.name,
+          email: fac.email,
+          phone: fac.phone || '',
+          referralCode: fac.referralCode,
+          matricNumber: fac.matricNumber || '',
+          skill: fac.skill || '',
+          totalReferrals: fac.totalReferrals || 0,
+          pointsEarned: fac.pointsEarned || 0,
+          walletBalance: 0,
+          tier: fac.tier || this.calculateTier(fac.totalReferrals || 0),
+          isActive: fac.isActive !== false,
+          createdAt: (fac as any).createdAt,
+          promoCodes: linkedPromos.map(p => ({
+            _id: p._id,
+            code: p.code,
+            discountType: p.discountType,
+            value: p.value,
+            usageCount: p.usageCount,
+            totalRevenueGenerated: p.totalRevenueGenerated || 0,
+            isActive: p.isActive,
+          })),
+          promoCodesCount: linkedPromos.length,
+          totalPromoRevenue: totalPromoRev,
+          totalPromoOrders,
+        });
+      }
+    }
+
+    // 2. Fetch Users (Errand Ninjas, Customers, Vendors)
+    if (role === 'all' || ['errander', 'student', 'vendor'].includes(role)) {
+      const userFilter: any = {};
+      if (role !== 'all') {
+        userFilter.role = role;
+      } else {
+        userFilter.role = { $in: [UserRole.ERRANDER, UserRole.STUDENT, UserRole.VENDOR] };
+      }
+
+      if (search) {
+        userFilter.$or = [
+          { firstName: { $regex: search, $options: 'i' } },
+          { lastName: { $regex: search, $options: 'i' } },
+          { email: { $regex: search, $options: 'i' } },
+          { phone: { $regex: search, $options: 'i' } },
+          { referralCode: { $regex: search, $options: 'i' } },
+        ];
+      }
+
+      // If user has not searched and role is student/all, show active or referrers with codes or referrals
+      const users = await this.userModel.find(userFilter).limit(search ? 100 : 200).lean();
+      const userIds = users.map(u => u._id);
+      const userPromos = await this.promoCodeModel.find({ referrerUser: { $in: userIds } }).lean();
+
+      for (const u of users) {
+        const linkedPromos = userPromos.filter(p => p.referrerUser && p.referrerUser.toString() === u._id.toString());
+        const totalPromoRev = linkedPromos.reduce((acc, p) => acc + (p.totalRevenueGenerated || 0), 0);
+        const totalPromoOrders = linkedPromos.reduce((acc, p) => acc + (p.usageCount || 0), 0);
+
+        let roleLabel = 'Customer';
+        let roleEmoji = '🎓';
+        if (u.role === UserRole.ERRANDER) {
+          roleLabel = 'Errand Ninja';
+          roleEmoji = '🚲';
+        } else if (u.role === UserRole.VENDOR) {
+          roleLabel = 'Vendor';
+          roleEmoji = '🏪';
+        }
+
+        // Auto-generate code if empty
+        const code = u.referralCode || `ERR-${(u.firstName || 'REF').substring(0, 4).toUpperCase()}-${u._id.toString().substring(18, 22).toUpperCase()}`;
+
+        results.push({
+          _id: u._id,
+          type: 'user',
+          role: u.role,
+          roleLabel,
+          roleEmoji,
+          name: `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email,
+          email: u.email,
+          phone: u.phone || '',
+          referralCode: code,
+          totalReferrals: u.referralCount || 0,
+          pointsEarned: u.points || 0,
+          walletBalance: u.walletBalance || 0,
+          tier: this.calculateTier(u.referralCount || 0),
+          isActive: u.isActive !== false,
+          createdAt: (u as any).createdAt,
+          avatar: u.avatar || '',
+          promoCodes: linkedPromos.map(p => ({
+            _id: p._id,
+            code: p.code,
+            discountType: p.discountType,
+            value: p.value,
+            usageCount: p.usageCount,
+            totalRevenueGenerated: p.totalRevenueGenerated || 0,
+            isActive: p.isActive,
+          })),
+          promoCodesCount: linkedPromos.length,
+          totalPromoRevenue: totalPromoRev,
+          totalPromoOrders,
+        });
+      }
+    }
+
+    // Sort by referral count or promo revenue
+    results.sort((a, b) => (b.totalReferrals + b.totalPromoOrders) - (a.totalReferrals + a.totalPromoOrders));
+
+    const total = results.length;
+    const page = query?.page || 1;
+    const limit = query?.limit || 50;
+    const paginated = results.slice((page - 1) * limit, page * limit);
+
+    return {
+      referrers: paginated,
+      total,
+      page,
+      pages: Math.ceil(total / limit),
+    };
+  }
+
+  async getReferrerFullProfile(type: 'facilitator' | 'user', id: string) {
+    let profile: any = null;
+    let promoCodes: any[] = [];
+    let referralsList: any[] = [];
+    let redemptionsList: any[] = [];
+
+    if (type === 'facilitator') {
+      const fac = await this.facilitatorModel.findById(id).lean();
+      if (!fac) throw new NotFoundException('Facilitator not found');
+
+      profile = {
+        _id: fac._id,
+        type: 'facilitator',
+        role: 'facilitator',
+        roleLabel: 'Campus Ambassador',
+        roleEmoji: '💎',
+        name: fac.name,
+        email: fac.email,
+        phone: fac.phone || '',
+        matricNumber: fac.matricNumber || '',
+        skill: fac.skill || '',
+        referralCode: fac.referralCode,
+        totalReferrals: fac.totalReferrals || 0,
+        pointsEarned: fac.pointsEarned || 0,
+        tier: fac.tier || this.calculateTier(fac.totalReferrals || 0),
+        isActive: fac.isActive,
+        createdAt: (fac as any).createdAt,
+      };
+
+      [promoCodes, referralsList, redemptionsList] = await Promise.all([
+        this.promoCodeModel.find({ referrerFacilitator: fac._id }).lean(),
+        this.referralModel
+          .find({ facilitatorReferrer: fac._id })
+          .populate('referred', 'firstName lastName email role phone avatar createdAt')
+          .sort({ createdAt: -1 })
+          .lean(),
+        this.promoRedemptionModel
+          .find({ referrerFacilitator: fac._id })
+          .populate('customer', 'firstName lastName email phone')
+          .populate('orderId', 'orderType total status createdAt')
+          .sort({ createdAt: -1 })
+          .lean(),
+      ]);
+    } else {
+      const user = await this.userModel.findById(id).lean();
+      if (!user) throw new NotFoundException('User not found');
+
+      let roleLabel = 'Customer';
+      let roleEmoji = '🎓';
+      if (user.role === UserRole.ERRANDER) {
+        roleLabel = 'Errand Ninja';
+        roleEmoji = '🚲';
+      } else if (user.role === UserRole.VENDOR) {
+        roleLabel = 'Vendor';
+        roleEmoji = '🏪';
+      }
+
+      profile = {
+        _id: user._id,
+        type: 'user',
+        role: user.role,
+        roleLabel,
+        roleEmoji,
+        name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email,
+        email: user.email,
+        phone: user.phone || '',
+        referralCode: user.referralCode,
+        totalReferrals: user.referralCount || 0,
+        pointsEarned: user.points || 0,
+        walletBalance: user.walletBalance || 0,
+        tier: this.calculateTier(user.referralCount || 0),
+        isActive: user.isActive,
+        createdAt: (user as any).createdAt,
+        avatar: user.avatar,
+      };
+
+      [promoCodes, referralsList, redemptionsList] = await Promise.all([
+        this.promoCodeModel.find({ referrerUser: user._id }).lean(),
+        this.referralModel
+          .find({ referrer: user._id })
+          .populate('referred', 'firstName lastName email role phone avatar createdAt')
+          .sort({ createdAt: -1 })
+          .lean(),
+        this.promoRedemptionModel
+          .find({ referrerUser: user._id })
+          .populate('customer', 'firstName lastName email phone')
+          .populate('orderId', 'orderType total status createdAt')
+          .sort({ createdAt: -1 })
+          .lean(),
+      ]);
+    }
+
+    const totalRevenueDriven = promoCodes.reduce((acc, p) => acc + (p.totalRevenueGenerated || 0), 0);
+    const totalPromoOrders = promoCodes.reduce((acc, p) => acc + (p.usageCount || 0), 0);
+
+    return {
+      profile,
+      promoCodes,
+      referrals: referralsList,
+      redemptions: redemptionsList,
+      metrics: {
+        totalReferrals: profile.totalReferrals,
+        pointsEarned: profile.pointsEarned,
+        totalRevenueDriven,
+        totalPromoOrders,
+        promoCodesCount: promoCodes.length,
+      },
+    };
+  }
+
+  async generateOrUpdateReferralCode(type: 'facilitator' | 'user', id: string, customCode?: string) {
+    let cleanCode = (customCode || '').trim().toUpperCase();
+
+    if (cleanCode) {
+      const isTaken = await this.isCodeTaken(cleanCode);
+      if (isTaken) {
+        throw new BadRequestException(`Referral code "${cleanCode}" is already taken`);
+      }
+    }
+
+    if (type === 'facilitator') {
+      const fac = await this.facilitatorModel.findById(id);
+      if (!fac) throw new NotFoundException('Facilitator not found');
+
+      if (!cleanCode) {
+        cleanCode = this.generateBrandedCode(fac.name);
+        if (await this.isCodeTaken(cleanCode)) {
+          cleanCode = `${cleanCode}${Math.random().toString(36).substring(2, 4).toUpperCase()}`;
+        }
+      }
+
+      fac.referralCode = cleanCode;
+      await fac.save();
+      return fac;
+    } else {
+      const user = await this.userModel.findById(id);
+      if (!user) throw new NotFoundException('User not found');
+
+      if (!cleanCode) {
+        const prefix = user.role === UserRole.ERRANDER ? 'NINJA' : user.role === UserRole.VENDOR ? 'VENDOR' : 'CUST';
+        cleanCode = `ERR-${prefix}-${(user.firstName || 'USER').substring(0, 4).toUpperCase()}-${Math.random().toString(36).substring(2, 5).toUpperCase()}`;
+        if (await this.isCodeTaken(cleanCode)) {
+          cleanCode = `${cleanCode}X`;
+        }
+      }
+
+      user.referralCode = cleanCode;
+      await user.save();
+      return user;
+    }
+  }
+
   // ─── Facilitator Management ───────────────────────────────────────
 
   async createFacilitator(dto: {
@@ -211,7 +520,6 @@ export class ReferralsService {
     // Check code uniqueness across both collections
     const codeExists = await this.isCodeTaken(code);
     if (codeExists) {
-      // Append random suffix
       const suffix = Math.random().toString(36).substring(2, 4).toUpperCase();
       dto.referralCode = `${code}${suffix}`;
     } else {
@@ -312,8 +620,8 @@ export class ReferralsService {
     const [referrals, total] = await Promise.all([
       this.referralModel
         .find(filter)
-        .populate('referrer', 'firstName lastName email avatar role')
-        .populate('referred', 'firstName lastName email avatar role createdAt')
+        .populate('referrer', 'firstName lastName email avatar role phone')
+        .populate('referred', 'firstName lastName email avatar role phone createdAt')
         .populate('facilitatorReferrer', 'name email referralCode')
         .sort({ createdAt: -1 })
         .skip(skip)
@@ -331,47 +639,76 @@ export class ReferralsService {
       .sort({ createdAt: -1 });
   }
 
-  async getReferralLeaderboard(limit = 20) {
-    // Get top facilitators
-    const topFacilitators = await this.facilitatorModel
-      .find({ isActive: true, totalReferrals: { $gt: 0 } })
-      .sort({ totalReferrals: -1 })
-      .limit(limit)
-      .lean();
+  async getReferralLeaderboard(limit = 20, roleFilter?: string) {
+    const combined: any[] = [];
 
-    // Get top users
-    const topUsers = await this.userModel
-      .find({ referralCount: { $gt: 0 } })
-      .select('firstName lastName email avatar referralCode referralCount points role')
-      .sort({ referralCount: -1 })
-      .limit(limit)
-      .lean();
+    // 1. Facilitators
+    if (!roleFilter || roleFilter === 'all' || roleFilter === 'facilitator') {
+      const topFacilitators = await this.facilitatorModel
+        .find({ isActive: true, totalReferrals: { $gt: 0 } })
+        .sort({ totalReferrals: -1 })
+        .limit(limit)
+        .lean();
 
-    // Merge and sort
-    const combined = [
-      ...topFacilitators.map(f => ({
+      combined.push(...topFacilitators.map(f => ({
         id: f._id,
         name: f.name,
         email: f.email,
         referralCode: f.referralCode,
         referralCount: f.totalReferrals,
         pointsEarned: f.pointsEarned,
-        tier: f.tier,
+        tier: f.tier || this.calculateTier(f.totalReferrals || 0),
         type: 'facilitator' as const,
-      })),
-      ...topUsers.map(u => ({
-        id: u._id,
-        name: `${u.firstName} ${u.lastName}`,
-        email: u.email,
-        referralCode: u.referralCode,
-        referralCount: u.referralCount,
-        pointsEarned: u.points || 0,
-        tier: this.calculateTier(u.referralCount || 0),
-        type: u.role as string,
-      })),
-    ].sort((a, b) => b.referralCount - a.referralCount).slice(0, limit);
+        roleLabel: 'Campus Ambassador',
+        roleEmoji: '💎',
+      })));
+    }
 
-    return combined;
+    // 2. Users
+    if (!roleFilter || roleFilter === 'all' || ['errander', 'student', 'vendor'].includes(roleFilter)) {
+      const userQuery: any = { referralCount: { $gt: 0 } };
+      if (roleFilter && roleFilter !== 'all') {
+        userQuery.role = roleFilter;
+      } else {
+        userQuery.role = { $in: [UserRole.ERRANDER, UserRole.STUDENT, UserRole.VENDOR] };
+      }
+
+      const topUsers = await this.userModel
+        .find(userQuery)
+        .select('firstName lastName email avatar referralCode referralCount points role')
+        .sort({ referralCount: -1 })
+        .limit(limit)
+        .lean();
+
+      combined.push(...topUsers.map(u => {
+        let roleLabel = 'Customer';
+        let roleEmoji = '🎓';
+        if (u.role === UserRole.ERRANDER) {
+          roleLabel = 'Errand Ninja';
+          roleEmoji = '🚲';
+        } else if (u.role === UserRole.VENDOR) {
+          roleLabel = 'Vendor';
+          roleEmoji = '🏪';
+        }
+
+        return {
+          id: u._id,
+          name: `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email,
+          email: u.email,
+          referralCode: u.referralCode,
+          referralCount: u.referralCount || 0,
+          pointsEarned: u.points || 0,
+          tier: this.calculateTier(u.referralCount || 0),
+          type: u.role as string,
+          roleLabel,
+          roleEmoji,
+        };
+      }));
+    }
+
+    // Sort by referral count desc
+    combined.sort((a, b) => b.referralCount - a.referralCount);
+    return combined.slice(0, limit);
   }
 
   async getAdminReferralStats() {
@@ -383,6 +720,11 @@ export class ReferralsService {
       referralsByType,
       recentReferrals,
       totalPointsAwarded,
+      ninjasCount,
+      vendorsCount,
+      customersCount,
+      referralPromosCount,
+      promoRedemptionsStats,
     ] = await Promise.all([
       this.referralModel.countDocuments(),
       this.facilitatorModel.countDocuments(),
@@ -397,10 +739,33 @@ export class ReferralsService {
       this.referralModel.aggregate([
         { $group: { _id: null, total: { $sum: { $add: ['$referrerPointsAwarded', '$referredPointsAwarded'] } } } },
       ]),
+      this.userModel.countDocuments({ role: UserRole.ERRANDER }),
+      this.userModel.countDocuments({ role: UserRole.VENDOR }),
+      this.userModel.countDocuments({ role: UserRole.STUDENT }),
+      this.promoCodeModel.countDocuments({
+        $or: [{ isReferralPromo: true }, { referrerType: { $in: ['errander', 'student', 'vendor', 'facilitator'] } }],
+      }),
+      this.promoRedemptionModel.aggregate([
+        {
+          $group: {
+            _id: null,
+            totalOrders: { $sum: 1 },
+            totalRevenue: { $sum: '$orderTotal' },
+            totalDiscounts: { $sum: '$discountAmount' },
+          },
+        },
+      ]),
     ]);
 
-    const referralTypeMap: Record<string, number> = {};
-    referralsByType.forEach((r: any) => { referralTypeMap[r._id] = r.count; });
+    const referralTypeMap: Record<string, number> = {
+      facilitator: 0,
+      errander: 0,
+      student: 0,
+      vendor: 0,
+    };
+    referralsByType.forEach((r: any) => { 
+      if (r._id) referralTypeMap[r._id] = r.count; 
+    });
 
     return {
       totalReferrals,
@@ -411,6 +776,30 @@ export class ReferralsService {
       totalPointsAwarded: totalPointsAwarded[0]?.total || 0,
       referralsByType: referralTypeMap,
       conversionRate: totalReferrals > 0 ? Math.round((completedReferrals / totalReferrals) * 100) : 0,
+      personas: {
+        ninjas: {
+          total: ninjasCount,
+          referrals: referralTypeMap['errander'] || 0,
+        },
+        customers: {
+          total: customersCount,
+          referrals: referralTypeMap['student'] || 0,
+        },
+        vendors: {
+          total: vendorsCount,
+          referrals: referralTypeMap['vendor'] || 0,
+        },
+        ambassadors: {
+          total: totalFacilitators,
+          referrals: referralTypeMap['facilitator'] || 0,
+        },
+      },
+      affiliatePromos: {
+        totalPromoCodes: referralPromosCount,
+        totalOrdersDriven: promoRedemptionsStats[0]?.totalOrders || 0,
+        totalRevenueDriven: promoRedemptionsStats[0]?.totalRevenue || 0,
+        totalDiscountsGiven: promoRedemptionsStats[0]?.totalDiscounts || 0,
+      },
     };
   }
 
@@ -451,7 +840,6 @@ export class ReferralsService {
   }
 
   private generateBrandedCode(name: string): string {
-    // Take first name, uppercase, prefix with ERR-
     const firstName = name.split(' ')[0].toUpperCase().replace(/[^A-Z]/g, '');
     return `ERR-${firstName}`;
   }

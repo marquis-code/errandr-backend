@@ -28,6 +28,7 @@ export class SettingsController {
           dropoffServiceFee: 300,
           platformFee: 100,
           convenienceFee: 100,
+          customErrandCustomerFee: 100,
           commissionFlatFee: 50,
           customErrandCommissionPercentage: 20,
           serviceBusinessCommissionPercentage: 15,
@@ -53,6 +54,12 @@ export class SettingsController {
 
     val.convenienceFee = feeVal;
     val.platformFee = feeVal;
+    val.customErrandCustomerFee = val.customErrandCustomerFee !== undefined && val.customErrandCustomerFee !== null
+      ? Number(val.customErrandCustomerFee)
+      : feeVal;
+    val.customErrandCommissionPercentage = val.customErrandCommissionPercentage !== undefined && val.customErrandCommissionPercentage !== null
+      ? Number(val.customErrandCommissionPercentage)
+      : 20;
     val.platformProcessingFee = val.platformProcessingFee !== undefined && val.platformProcessingFee !== null
       ? Number(val.platformProcessingFee)
       : 0;
@@ -92,6 +99,7 @@ export class SettingsController {
     dropoffServiceFee?: number;
     platformFee?: number;
     convenienceFee?: number;
+    customErrandCustomerFee?: number;
     commissionFlatFee?: number;
     customErrandCommissionPercentage?: number;
     serviceBusinessCommissionPercentage?: number;
@@ -116,6 +124,10 @@ export class SettingsController {
       ? Number(body.convenienceFee)
       : (body.platformFee !== undefined && body.platformFee !== null ? Number(body.platformFee) : (setting.value?.convenienceFee ?? 150));
 
+    const resolvedCustomCustomerFee = body.customErrandCustomerFee !== undefined && body.customErrandCustomerFee !== null
+      ? Number(body.customErrandCustomerFee)
+      : (setting.value?.customErrandCustomerFee ?? targetServiceFee);
+
     const rawCommission = body.commissionFlatFee !== undefined && body.commissionFlatFee !== null ? body.commissionFlatFee : (setting.value?.commissionFlatFee ?? 0);
     const resolvedCommissionFlatFee = Math.min(Math.max(0, Number(rawCommission)), 50);
 
@@ -137,6 +149,7 @@ export class SettingsController {
       dropoffServiceFee: Number(body.dropoffServiceFee ?? 300),
       platformFee: targetServiceFee,
       convenienceFee: targetServiceFee,
+      customErrandCustomerFee: resolvedCustomCustomerFee,
       commissionFlatFee: resolvedCommissionFlatFee,
       customErrandCommissionPercentage: Number(body.customErrandCommissionPercentage ?? 20),
       serviceBusinessCommissionPercentage: Number(body.serviceBusinessCommissionPercentage ?? 15),

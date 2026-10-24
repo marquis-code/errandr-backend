@@ -339,11 +339,12 @@ export class OrdersService {
     if (data.type === 'custom_errand') {
       const runnerFee = Number(data.runnerFee);
 
-      // Fetch minimum runner fee from admin settings
+      // Fetch minimum runner fee and commission from admin settings
       const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
       const minCustomErrandFee = Number(errandSetting?.value?.minCustomErrandFee ?? 300);
-      const commissionPercent = errandSetting?.value?.customErrandCommissionPercentage ?? 20;
-      const safetyBufferPercent = errandSetting?.value?.customErrandSafetyBufferPercentage ?? 20;
+      const commissionPercent = Number(errandSetting?.value?.customErrandCommissionPercentage ?? 20);
+      const customerFixedFee = Number(errandSetting?.value?.customErrandCustomerFee ?? errandSetting?.value?.convenienceFee ?? 100);
+      const safetyBufferPercent = Number(errandSetting?.value?.customErrandSafetyBufferPercentage ?? 0);
 
       if (!runnerFee || runnerFee < minCustomErrandFee) {
         throw new BadRequestException(`Runner fee must be at least ₦${minCustomErrandFee}`);
@@ -352,17 +353,20 @@ export class OrdersService {
       const itemCost = Number(data.estimatedItemCost) || 0;
       const itemCostBuffer = 0; // Buffer disabled per request
 
-      // Service charge is dynamically charged as the admin-configured percentage of the negotiated runner fee
-      const serviceFee = Math.round(runnerFee * (commissionPercent / 100));
+      // Customer pays a fixed platform service fee specially for custom errands
+      const serviceFee = customerFixedFee;
       const transferFee = 0;
-      // Total is item cost + runner fee + service charge
-      const total = itemCost + itemCostBuffer + runnerFee + serviceFee;
 
-      // Platform share is the service charge (commission on runner fee), errander receives the full runner fee
-      const commissionAmount = serviceFee;
-      const erranderShare = runnerFee;
-      const erranderPayout = runnerFee;
-      const platformShare = commissionAmount;
+      // Errand ninja has commission deducted from their negotiated runner fee
+      const ninjaCommission = Math.round(runnerFee * (commissionPercent / 100));
+      const erranderPayout = Math.max(0, runnerFee - ninjaCommission);
+      const erranderShare = erranderPayout;
+
+      // Platform share is the customer fixed fee PLUS the ninja commission
+      const platformShare = customerFixedFee + ninjaCommission;
+
+      // Total is item cost + runner fee + customer fixed service fee
+      const total = itemCost + itemCostBuffer + runnerFee + customerFixedFee;
 
       // Optional Paystack verification
       let paymentVerified = false;
@@ -950,6 +954,17 @@ export class OrdersService {
       vendorNote: data.vendorNote || '',
     });
 
+    // Record Promo Code Redemption & Affiliate Referral Rewards
+    if (appliedPromoCode) {
+      this.promoCodesService.recordRedemption({
+        code: appliedPromoCode,
+        orderId: order._id.toString(),
+        customerId: customerId,
+        orderTotal: order.total,
+        discountAmount: promoDiscount,
+      }).catch(e => this.logger.error(`Failed to record promo redemption for order ${order._id}: ${e.message}`));
+    }
+
     // Reward for Clear Instructions (Compliance)
     if (order.deliveryNotes || order.deliveryLocation) {
       await this.rewardsService.updateUserStats(customerId, { clearInstructions: true });
@@ -1370,23 +1385,25 @@ export class OrdersService {
     if ((isNegotiating || isCustomErrandPending) && targetOrder.proposedDeliveryFee) {
       const newFee = targetOrder.proposedDeliveryFee;
       const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
-      const commissionPercent = errandSetting?.value?.customErrandCommissionPercentage ?? 20;
-      const commissionAmount = Math.round(newFee * (commissionPercent / 100));
+      const commissionPercent = Number(errandSetting?.value?.customErrandCommissionPercentage ?? 20);
+      const customerFixedFee = Number(errandSetting?.value?.customErrandCustomerFee ?? errandSetting?.value?.convenienceFee ?? 100);
+      const ninjaCommission = Math.round(newFee * (commissionPercent / 100));
+      const erranderPayout = Math.max(0, newFee - ninjaCommission);
 
       if (targetOrder.type === OrderType.CUSTOM_ERRAND) {
         const itemCost = targetOrder.customDetails?.estimatedItemCost || targetOrder.subtotal || 0;
-        updateSet.serviceFee = commissionAmount;
+        updateSet.serviceFee = customerFixedFee;
         updateSet.deliveryFee = newFee;
-        updateSet.erranderShare = newFee;
-        updateSet.erranderPayout = newFee;
-        updateSet.platformShare = commissionAmount;
-        updateSet.total = itemCost + newFee + commissionAmount;
+        updateSet.erranderShare = erranderPayout;
+        updateSet.erranderPayout = erranderPayout;
+        updateSet.platformShare = customerFixedFee + ninjaCommission;
+        updateSet.total = itemCost + newFee + customerFixedFee;
       } else {
         updateSet.serviceFee = 0;
         updateSet.deliveryFee = newFee;
-        updateSet.erranderShare = newFee - commissionAmount;
-        updateSet.erranderPayout = newFee - commissionAmount;
-        updateSet.platformShare = commissionAmount;
+        updateSet.erranderShare = erranderPayout;
+        updateSet.erranderPayout = erranderPayout;
+        updateSet.platformShare = ninjaCommission;
         updateSet.total = (targetOrder.total || 0) - (targetOrder.deliveryFee || 0) + newFee;
       }
     }
@@ -1698,9 +1715,9 @@ export class OrdersService {
       note: 'Order completed via Delivery PIN',
     });
 
-    // ERRANDER PAYOUT (guaranteed floor: standard ₦300 delivery fee yields at least ₦300 errander earnings)
-    let erranderEarnings = order.erranderPayout || order.deliveryFee;
-    if (order.deliveryFee >= 300 && erranderEarnings < 300) {
+    // ERRANDER PAYOUT (guaranteed floor: standard ₦300 delivery fee yields at least ₦300 errander earnings for normal orders)
+    let erranderEarnings = order.erranderPayout !== undefined && order.erranderPayout !== null ? order.erranderPayout : order.deliveryFee;
+    if (order.type !== OrderType.CUSTOM_ERRAND && order.deliveryFee >= 300 && erranderEarnings < 300) {
       erranderEarnings = 300;
     }
     const hasInterception = order.interception && (order.interception.status === 'accepted' || order.interception.status === 'completed');
@@ -1835,9 +1852,9 @@ export class OrdersService {
       note: 'Order completed via Contactless Drop-off (Photo Proof)',
     });
 
-    // ERRANDER PAYOUT (guaranteed floor: standard ₦300 delivery fee yields at least ₦300 errander earnings)
-    let erranderEarnings = order.erranderPayout || order.deliveryFee;
-    if (order.deliveryFee >= 300 && erranderEarnings < 300) {
+    // ERRANDER PAYOUT (guaranteed floor: standard ₦300 delivery fee yields at least ₦300 errander earnings for normal orders)
+    let erranderEarnings = order.erranderPayout !== undefined && order.erranderPayout !== null ? order.erranderPayout : order.deliveryFee;
+    if (order.type !== OrderType.CUSTOM_ERRAND && order.deliveryFee >= 300 && erranderEarnings < 300) {
       erranderEarnings = 300;
     }
     const hasInterception = order.interception && (order.interception.status === 'accepted' || order.interception.status === 'completed');
@@ -2048,7 +2065,7 @@ export class OrdersService {
       .lean();
 
     return orders.map((order: any) => {
-      if (order.deliveryFee >= 300 && (!order.erranderPayout || order.erranderPayout < 300)) {
+      if (order.type !== OrderType.CUSTOM_ERRAND && order.deliveryFee >= 300 && (!order.erranderPayout || order.erranderPayout < 300)) {
         order.erranderPayout = order.deliveryFee;
         order.erranderShare = order.deliveryFee;
       }
@@ -2100,7 +2117,7 @@ export class OrdersService {
       .lean();
 
     return orders.map((order: any) => {
-      if (order.deliveryFee >= 300 && (!order.erranderPayout || order.erranderPayout < 300)) {
+      if (order.type !== OrderType.CUSTOM_ERRAND && order.deliveryFee >= 300 && (!order.erranderPayout || order.erranderPayout < 300)) {
         order.erranderPayout = order.deliveryFee;
         order.erranderShare = order.deliveryFee;
       }
@@ -2179,7 +2196,7 @@ export class OrdersService {
         errander: formatWa(erranderPhone),
       };
 
-      if (order.deliveryFee >= 300 && (!order.erranderPayout || order.erranderPayout < 300)) {
+      if (order.type !== OrderType.CUSTOM_ERRAND && order.deliveryFee >= 300 && (!order.erranderPayout || order.erranderPayout < 300)) {
         order.erranderPayout = order.deliveryFee;
         order.erranderShare = order.deliveryFee;
       }
@@ -3270,26 +3287,26 @@ export class OrdersService {
     }
 
     const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
-    const commissionPercent = errandSetting?.value?.customErrandCommissionPercentage ?? 20;
-    const commissionAmount = Math.round(newFee * (commissionPercent / 100));
+    const commissionPercent = Number(errandSetting?.value?.customErrandCommissionPercentage ?? 20);
+    const customerFixedFee = Number(errandSetting?.value?.customErrandCustomerFee ?? errandSetting?.value?.convenienceFee ?? 100);
+    const ninjaCommission = Math.round(newFee * (commissionPercent / 100));
+    const erranderPayout = Math.max(0, newFee - ninjaCommission);
 
     if (order.type === OrderType.CUSTOM_ERRAND) {
       const itemCost = order.customDetails?.estimatedItemCost || order.subtotal || 0;
-      order.serviceFee = commissionAmount;
+      order.serviceFee = customerFixedFee;
       order.deliveryFee = newFee;
-      order.erranderShare = newFee;
-      order.erranderPayout = newFee;
-      order.platformShare = commissionAmount;
-      order.total = itemCost + newFee + commissionAmount;
+      order.erranderShare = erranderPayout;
+      order.erranderPayout = erranderPayout;
+      order.platformShare = customerFixedFee + ninjaCommission;
+      order.total = itemCost + newFee + customerFixedFee;
     } else {
       const total = (order.total || 0) - (order.deliveryFee || 0) + newFee;
-      const erranderShare = newFee - commissionAmount;
-
       order.serviceFee = 0;
       order.deliveryFee = newFee;
-      order.erranderShare = erranderShare;
-      order.erranderPayout = erranderShare;
-      order.platformShare = commissionAmount;
+      order.erranderShare = erranderPayout;
+      order.erranderPayout = erranderPayout;
+      order.platformShare = ninjaCommission;
       order.total = total;
     }
 
@@ -3596,21 +3613,23 @@ export class OrdersService {
     // Calculate commission
     if (order.type === OrderType.CUSTOM_ERRAND) {
       const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
-      const commissionPercent = errandSetting?.value?.customErrandCommissionPercentage ?? 20;
-      const serviceFee = Math.round(newFee * (commissionPercent / 100));
+      const commissionPercent = Number(errandSetting?.value?.customErrandCommissionPercentage ?? 20);
+      const customerFixedFee = Number(errandSetting?.value?.customErrandCustomerFee ?? errandSetting?.value?.convenienceFee ?? 100);
+      const ninjaCommission = Math.round(newFee * (commissionPercent / 100));
+      const erranderPayout = Math.max(0, newFee - ninjaCommission);
       const itemCost = order.customDetails?.estimatedItemCost || order.subtotal || 0;
 
-      order.serviceFee = serviceFee;
+      order.serviceFee = customerFixedFee;
       order.deliveryFee = newFee;
-      order.erranderShare = newFee;
-      order.erranderPayout = newFee;
-      order.platformShare = serviceFee;
-      order.total = itemCost + newFee + serviceFee;
+      order.erranderShare = erranderPayout;
+      order.erranderPayout = erranderPayout;
+      order.platformShare = customerFixedFee + ninjaCommission;
+      order.total = itemCost + newFee + customerFixedFee;
     } else {
       const baseTotal = order.total - (order.proposedDeliveryFee || order.deliveryFee || 0);
       const total = baseTotal + newFee;
       const errandSetting = await this.settingModel.findOne({ key: 'custom_errand' }).exec();
-      const commissionPercent = errandSetting?.value?.customErrandCommissionPercentage ?? 20;
+      const commissionPercent = Number(errandSetting?.value?.customErrandCommissionPercentage ?? 20);
       const commissionAmount = Math.round(newFee * (commissionPercent / 100));
       const erranderShare = newFee - commissionAmount;
 
