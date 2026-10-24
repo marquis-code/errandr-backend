@@ -1920,7 +1920,23 @@ export class OrdersService {
     const filter: any = { customer: new Types.ObjectId(customerId) };
     // Campus tenancy: a student only ever sees their own campus's orders.
     const institution = await this.resolveInstitution(req);
-    if (institution) filter.institution = institution;
+    if (institution) {
+      // A custom errand that arrived from Barter has no campus: it is created under the
+      // platform's admin account, which belongs to no institution. Requiring the rider's
+      // campus therefore hid every Barter errand from every campus board, which is why a
+      // negotiation started on Barter never appeared in the Errand Ninja app.
+      //
+      // Campus-less CUSTOM errands are now visible to any campus. Vendor orders still
+      // respect tenancy, so no campus sees another campus's shop orders.
+      filter.$and = [
+        {
+          $or: [
+            { institution },
+            { institution: { $in: [null, undefined] }, type: OrderType.CUSTOM_ERRAND },
+          ],
+        },
+      ];
+    }
 
     const [orders, total] = await Promise.all([
       this.orderModel
