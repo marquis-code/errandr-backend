@@ -335,7 +335,7 @@ export class OrdersService {
     return this.create(adminUser._id.toString(), payload);
   }
 
-  async create(customerId: string, data: any): Promise<Order> {
+  async create(customerId: string, data: any, req?: any): Promise<Order> {
     if (data.type === 'custom_errand') {
       const runnerFee = Number(data.runnerFee);
 
@@ -378,8 +378,15 @@ export class OrdersService {
       }
 
       // Campus tenancy: a custom errand has no vendor, so it inherits the
-      // ordering student's institution (or stays unset).
-      const institution = await this.resolveOrderInstitution(customerId);
+      // ordering student's institution, or request context, or stays unset.
+      let institution = data.institution ? this.toObjectId(data.institution) : undefined;
+      if (!institution) {
+        institution = await this.resolveOrderInstitution(customerId);
+      }
+      if (!institution && req) {
+        const resolved = await this.resolveInstitution(req);
+        if (resolved) institution = resolved;
+      }
 
       const order = await this.orderModel.create({
         orderNumber: `EXT-${uuidv4().slice(0, 8).toUpperCase()}`,
@@ -2069,9 +2076,19 @@ export class OrdersService {
       ]
     };
 
-    // Campus tenancy: a rider only ever sees work from their own campus.
+    // Campus tenancy: a rider only ever sees work from their own campus,
+    // plus any orders assigned to them that have no campus stamped.
     const institution = await this.resolveInstitution(req);
-    if (institution) filter.institution = institution;
+    if (institution) {
+      filter.$and = [
+        {
+          $or: [
+            { institution },
+            { institution: { $in: [null, undefined] } },
+          ],
+        },
+      ];
+    }
 
     const orders = await this.orderModel
       .find(filter)
@@ -2121,8 +2138,19 @@ export class OrdersService {
     };
 
     // Campus tenancy: the errand board must never show another campus's errands.
+    // Campus-less custom errands (or errands created prior to campus selection)
+    // are visible to riders so they can be fulfilled.
     const institution = await this.resolveInstitution(req);
-    if (institution) filter.institution = institution;
+    if (institution) {
+      filter.$and = [
+        {
+          $or: [
+            { institution },
+            { institution: { $in: [null, undefined] }, type: OrderType.CUSTOM_ERRAND },
+          ],
+        },
+      ];
+    }
 
     const orders = await this.orderModel
       .find(filter)

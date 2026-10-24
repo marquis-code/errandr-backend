@@ -20,9 +20,9 @@ export class OrdersController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Place a new order' })
-  create(@CurrentUser() user: User, @Body() body: any) {
+  create(@CurrentUser() user: User, @Body() body: any, @Req() req?: any) {
     this.logger.log(`create() called by user=${user._id}`);
-    return this.ordersService.create((user._id as unknown) as string, body);
+    return this.ordersService.create((user._id as unknown) as string, body, req);
   }
 
   @Post('webhook/barter')
