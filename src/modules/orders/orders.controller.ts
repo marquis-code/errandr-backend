@@ -254,6 +254,18 @@ async getMyVendorOrders(
     return this.ordersService.pingParticipant(id, target, message, user._id.toString());
   }
 
+  @Post(':id/resend-delivery-pin')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Resend delivery PIN to customer via SMS and push alert' })
+  async resendDeliveryPin(
+    @Param('id') id: string,
+    @CurrentUser() user: User
+  ) {
+    this.logger.log(`resendDeliveryPin() id=${id} user=${user._id}`);
+    return this.ordersService.resendDeliveryPin(id, user._id.toString());
+  }
+
   @Get(':id')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

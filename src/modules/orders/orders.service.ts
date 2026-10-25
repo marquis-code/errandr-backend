@@ -150,13 +150,16 @@ export class OrdersService {
 
   private async notifyOrderStatusUpdate(order: any, status: OrderStatus, note?: string) {
     const title = 'Order Update';
-    const body = `Your order #${order.orderNumber} is now ${status.replace(/_/g, ' ').toLowerCase()}`;
+    let body = `Your order #${order.orderNumber} is now ${status.replace(/_/g, ' ').toLowerCase()}`;
+    if (order.deliveryPin && (status === OrderStatus.PICKED_UP || status === OrderStatus.IN_TRANSIT)) {
+      body = `Your order #${order.orderNumber} is on the way! 🔑 Delivery PIN: ${order.deliveryPin}. Give this code to your rider.`;
+    }
 
     const customerId = order.customer?._id || order.customer;
     const erranderId = order.errander?._id || order.errander;
     const vendorOwnerId = order.vendor?.owner?._id || order.vendor?.owner;
 
-    const statusData = { orderId: order._id.toString(), status, orderNumber: order.orderNumber };
+    const statusData = { orderId: order._id.toString(), status, orderNumber: order.orderNumber, deliveryPin: order.deliveryPin };
 
     // Milestone control: Only send SMS for major order state changes
     const majorStatuses = [
@@ -176,6 +179,19 @@ export class OrdersService {
       this.notificationsGateway.sendOrderStatusUpdate(customerId.toString(), {
         title, body, ...statusData,
       });
+
+      // Send dedicated SMS with 4-digit Delivery PIN when order is picked up or in transit
+      if ((status === OrderStatus.PICKED_UP || status === OrderStatus.IN_TRANSIT) && order.deliveryPin) {
+        this.userModel.findById(customerId).select('phone').then(customerUser => {
+          if (customerUser?.phone) {
+            this.notificationsService.sendZavuSMS(
+              customerUser.phone,
+              `Erranders: Your Errand Ninja has picked up order #${order.orderNumber}! Your 4-digit Delivery PIN is: ${order.deliveryPin}. Share this PIN with the rider upon arrival to collect your order.`,
+              { forceSms: true }
+            ).catch(e => this.logger.warn(`Failed to send Delivery PIN SMS: ${e.message}`));
+          }
+        }).catch(e => this.logger.warn(`Error finding customer for SMS: ${e.message}`));
+      }
     }
 
     // Notify Errander if assigned (stored + real-time)
@@ -2892,6 +2908,50 @@ export class OrdersService {
     });
 
     return { success: true, message: `Pinged ${target} successfully` };
+  }
+
+  async resendDeliveryPin(orderId: string, requesterUserId?: string): Promise<{ success: boolean; message: string; pin?: string }> {
+    const order = await this.orderModel.findById(orderId).populate('customer errander');
+    if (!order) throw new NotFoundException('Order not found');
+
+    if (!order.deliveryPin) {
+      order.deliveryPin = Math.floor(1000 + Math.random() * 9000).toString();
+      await order.save();
+    }
+
+    const customer = order.customer as any;
+    if (customer && customer.phone) {
+      await this.notificationsService.sendZavuSMS(
+        customer.phone,
+        `Your Erranders Delivery PIN for Order #${order.orderNumber} is: ${order.deliveryPin}. Please share this 4-digit code with your Errand Ninja to receive your delivery.`,
+        { forceSms: true }
+      );
+    }
+
+    const customerId = customer?._id?.toString() || (order.customer ? order.customer.toString() : null);
+    if (customerId) {
+      await this.notificationsService.sendNotification(customerId, {
+        title: `🔑 Delivery PIN: ${order.deliveryPin}`,
+        body: `Your Erranders Delivery PIN for #${order.orderNumber} is ${order.deliveryPin}. Give this code to your rider.`,
+        type: 'DELIVERY_PIN',
+        data: { orderId: order._id.toString(), deliveryPin: order.deliveryPin, type: 'delivery_pin' },
+        skipSms: true,
+      });
+
+      this.notificationsGateway.sendOrderStatusUpdate(customerId, {
+        orderId: order._id.toString(),
+        status: order.status,
+        orderNumber: order.orderNumber,
+        deliveryPin: order.deliveryPin,
+        showArrivalModal: true,
+      });
+    }
+
+    return {
+      success: true,
+      message: 'Delivery PIN sent successfully to customer via SMS and in-app alert',
+      pin: order.deliveryPin,
+    };
   }
 
   async generateAndSendOtp(
