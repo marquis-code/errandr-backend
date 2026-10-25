@@ -318,19 +318,31 @@ export class OrdersService {
       throw new InternalServerErrorException('No admin user found to act as customer for Barter errand');
     }
 
+    const runnerFee = Math.max(300, Number(data.fee || data.runnerFee) || 500);
+    let desc = data.description || 'Barter Delivery';
+    if (!desc.startsWith('Barter Delivery')) {
+      desc = `Barter Delivery: ${desc}`;
+    }
+
+    const txId = data.barterTransactionId || data.transactionId;
+    if (txId && !desc.includes('[Barter Tx ID:')) {
+      desc += `\n[Barter Tx ID: ${txId}]`;
+    }
+
+    // Default institution to admin's institution
+    const institution = adminUser.institution;
+
     const payload = {
       type: 'custom_errand',
-      pickupLocation: data.pickupAddress || data.pickupLocation,
-      dropoffLocation: data.dropoffAddress || data.dropoffLocation,
-      description: data.description || 'Barter Delivery',
-      runnerFee: data.fee || data.runnerFee,
+      pickupLocation: data.pickupAddress || data.pickupLocation || 'Seller Campus Location',
+      dropoffLocation: data.dropoffAddress || data.dropoffLocation || 'Buyer Campus Delivery Address',
+      description: desc,
+      runnerFee,
       estimatedItemCost: 0,
-      paymentMethod: 'cash', // Skip paystack check
+      paymentMethod: 'cash', // Skip paystack check for peer-to-peer barter
+      deliveryOption: 'use_an_errander',
+      institution: institution ? institution.toString() : undefined,
     };
-    
-    if (data.barterTransactionId) {
-      payload.description += `\n[Barter Tx ID: ${data.barterTransactionId}]`;
-    }
 
     return this.create(adminUser._id.toString(), payload);
   }
@@ -2132,7 +2144,6 @@ export class OrdersService {
           status: OrderStatus.PENDING,
           type: OrderType.CUSTOM_ERRAND,
           errander: noErranderFilter,
-          deliveryOption: { $in: ['use_an_errander', null] }
         }
       ]
     };

@@ -25,11 +25,20 @@ export class OrdersController {
     return this.ordersService.create((user._id as unknown) as string, body, req);
   }
 
+  private isValidBarterKey(apiKey: string): boolean {
+    const validKeys = [
+      process.env.BARTER_API_KEY,
+      process.env.BARTER_SECRET_KEY,
+      'barter_secret_123',
+    ].filter(Boolean);
+    return !!apiKey && validKeys.includes(apiKey);
+  }
+
   @Post('webhook/barter')
   @ApiOperation({ summary: 'Webhook to create an errand from Barter' })
   createFromBarterWebhook(@Body() body: any, @Headers('x-api-key') apiKey: string) {
     this.logger.log(`createFromBarterWebhook() called`);
-    if (apiKey !== (process.env.BARTER_API_KEY || 'barter_secret_123')) {
+    if (!this.isValidBarterKey(apiKey)) {
       throw new UnauthorizedException('Invalid API Key');
     }
     return this.ordersService.createFromBarter(body);
@@ -39,7 +48,7 @@ export class OrdersController {
   @ApiOperation({ summary: 'Webhook to accept a negotiation from Barter' })
   async acceptBarterNegotiationWebhook(@Body() body: { orderId: string, bidId: string }, @Headers('x-api-key') apiKey: string) {
     this.logger.log(`acceptBarterNegotiationWebhook() called`);
-    if (apiKey !== (process.env.BARTER_API_KEY || 'barter_secret_123')) {
+    if (!this.isValidBarterKey(apiKey)) {
       throw new UnauthorizedException('Invalid API Key');
     }
     
@@ -55,7 +64,7 @@ export class OrdersController {
   @ApiOperation({ summary: 'Webhook to counter a negotiation from Barter' })
   async counterBarterNegotiationWebhook(@Body() body: { orderId: string, bidId: string, counterAmount: number }, @Headers('x-api-key') apiKey: string) {
     this.logger.log(`counterBarterNegotiationWebhook() called with amount=${body.counterAmount}`);
-    if (apiKey !== (process.env.BARTER_API_KEY || 'barter_secret_123')) {
+    if (!this.isValidBarterKey(apiKey)) {
       throw new UnauthorizedException('Invalid API Key');
     }
     
@@ -69,7 +78,7 @@ export class OrdersController {
   @ApiOperation({ summary: 'Webhook to set order to disputed from Barter' })
   async disputeWebhook(@Body() body: { orderId: string }, @Headers('x-api-key') apiKey: string) {
     this.logger.log(`disputeWebhook() called for order=${body.orderId}`);
-    if (apiKey !== (process.env.BARTER_API_KEY || 'barter_secret_123')) {
+    if (!this.isValidBarterKey(apiKey)) {
       throw new UnauthorizedException('Invalid API Key');
     }
     
