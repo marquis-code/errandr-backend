@@ -41,7 +41,7 @@ export class AuthService {
     const user = await this.userModel.create({
       ...registerDto,
       password: hashedPassword,
-      isVerified: isVendor ? true : false, // Skip verification for vendors
+      isVerified: true, // Verification not required
     });
 
     // Initialize Wallet
@@ -55,10 +55,10 @@ export class AuthService {
       await this.referralsService.processReferral((user._id as unknown) as string, registerDto.referredBy);
     }
 
-    // Send initial OTP instead of welcome email (which comes after verification)
-    if (!isVendor) {
-      await this.sendOTP(user.email, 'email', user._id.toString());
-    }
+    // Send welcome email directly
+    this.emailService.sendWelcomeEmail(user.email, user.firstName).catch(err => {
+      this.logger.warn(`Failed to send welcome email to ${user.email}: ${err.message}`);
+    });
 
     const token = this.generateToken(user);
     const refreshToken = this.generateRefreshToken(user);
@@ -67,10 +67,8 @@ export class AuthService {
       user: this.sanitizeUser(user),
       token,
       refreshToken,
-      requiresVerification: !isVendor,
-      message: isVendor 
-        ? `Welcome to Erranders, ${user.firstName}! 🚀` 
-        : `Welcome to Erranders, ${user.firstName}! 🚀 We've sent a verification code to your email.`,
+      requiresVerification: false,
+      message: `Welcome to Erranders, ${user.firstName}! 🚀`,
     };
   }
 
