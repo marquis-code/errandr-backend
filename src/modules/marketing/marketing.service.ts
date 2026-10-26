@@ -18,23 +18,10 @@ export class MarketingService {
     private emailService: EmailService,
   ) {}
 
-  // Daily Digest: 8:30 AM
-  @Cron('30 8 * * *')
+  // Daily Digest: Permanently disabled to stop consuming email credits
+  // @Cron('30 8 * * *')
   async sendDailyMarketing() {
-    this.logger.log('Sending daily marketing emails...');
-    const users = await this.userModel.find({ isVerified: true });
-    
-    // Pick 2 featured vendors
-    const vendors = await this.vendorModel.find({ isOnline: true }).limit(2);
-    
-    for (const user of users) {
-      const orderCount = await this.orderModel.countDocuments({ customer: user._id });
-      await this.emailService.sendCuteDailyEmail(
-        user.email,
-        `${user.firstName || ''} ${user.lastName || ''}`.trim(),
-        user.points || 0,
-        orderCount
-      );
-    }
+    this.logger.log('Daily morning marketing email reminder is permanently disabled to conserve email credits.');
+    return;
   }
 }

@@ -982,59 +982,9 @@ export class EmailService {
 
 
   async sendCuteDailyEmail(to: string, name: string, points: number, orderCount: number) {
-    const formatName = (str: string) => {
-      if (!str) return 'there';
-      return str.split(' ')
-        .filter(part => part.trim().length > 0)
-        .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
-        .join(' ')
-        .trim();
-    };
-    
-    const formattedName = formatName(name);
-    
-    let personalizedMessage = '';
-    let ctaText = 'ORDER YOUR MEALS TODAY';
-    let title = 'Fuel your entire day with Erranders 🍳';
-    
-    if (orderCount === 0) {
-      personalizedMessage = `We noticed you haven't made your first purchase with Erranders yet! We are all about delivering joy and happiness in every errand. Why not give us a try today and enjoy your favorite African dishes delivered straight to you?`;
-      title = `Hi ${formattedName}, let's get you started! 🚀`;
-      ctaText = 'MAKE YOUR FIRST ORDER';
-    } else {
-      personalizedMessage = `Wow ${formattedName}, you've already made <b>${orderCount} orders</b> with us! Thank you for letting us deliver joy and happiness to your doorstep. Keep the streak going with some delicious local dishes today!`;
-      title = `Hi ${formattedName}, ready for your next meal? 🥘`;
-    }
-
-    const africanDishes = [
-      'https://images.unsplash.com/photo-1604329760661-e71dc83f8f26?q=80&w=800&auto=format&fit=crop',
-      'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?q=80&w=800&auto=format&fit=crop',
-      'https://images.unsplash.com/photo-1588123190131-1c3fac394f4b?q=80&w=800&auto=format&fit=crop',
-      'https://images.unsplash.com/photo-1504674900247-0877df9cc836?q=80&w=800&auto=format&fit=crop',
-      'https://images.unsplash.com/photo-1628294895950-9805252327bc?q=80&w=800&auto=format&fit=crop',
-      'https://images.unsplash.com/photo-1574484284002-952d92456975?q=80&w=800&auto=format&fit=crop'
-    ];
-    
-    const imageIndex = to.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % africanDishes.length;
-    const selectedImage = africanDishes[imageIndex];
-
-    const html = this.wrap({
-      preheader: 'Your Daily Craving Guide! 🍽️',
-      badge: { text: points > 0 ? `YOU HAVE ${points} POINTS 🌟` : 'DELIVERING JOY', color: 'orange' },
-      title: title,
-      subtitle: personalizedMessage,
-      content: `
-        <img src="${selectedImage}" style="width: 100%; border-radius: 16px; margin: 0 0 24px; display: block; border: 1px solid #e4e4e7; box-shadow: 0 4px 12px rgba(0,0,0,0.05);" alt="Delicious African Dish">
-        <div style="background: #fff8f5; border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 24px; border: 1px dashed #ffb399;">
-          <h3 style="margin: 0 0 8px 0; color: #ff5c1a; font-size: 18px;">Did you know?</h3>
-          <p style="margin: 0; color: #4a4a4a; font-size: 14px; line-height: 1.5;">You can use your <b>${points} points</b> to get discounts on your orders! Erranders is dedicated to delivering happiness in every single errand.</p>
-        </div>
-        <div style="text-align: center;">
-          <a href="https://erranders.org/vendors" class="btn" style="background-color: #ff5c1a; color: white; font-weight: bold; border-radius: 30px; padding: 14px 28px; text-decoration: none; display: inline-block;">${ctaText}</a>
-        </div>
-      `
-    });
-    return this.sendEmail(to, 'Your Daily Craving Guide! 🍽️', html);
+    // Early morning daily craving reminder emails are permanently disabled to conserve email credits
+    console.log(`[EMAIL_AGENT] Morning reminder email to ${to} skipped (permanently disabled to conserve email credits)`);
+    return true;
   }
 
   // ─── AMBASSADOR ─────────────────────────────────────────────────
