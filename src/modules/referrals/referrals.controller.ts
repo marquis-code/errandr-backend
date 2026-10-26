@@ -109,11 +109,12 @@ export class ReferralsController {
   }
 
   @Post('facilitators')
-  @ApiOperation({ summary: 'Create a new facilitator' })
+  @ApiOperation({ summary: 'Create a new facilitator / ambassador' })
   createFacilitator(
     @Body() body: {
       name: string;
-      email: string;
+      email?: string;
+      phone?: string;
       matricNumber?: string;
       skill?: string;
       referralCode?: string;
@@ -121,6 +122,20 @@ export class ReferralsController {
     },
   ) {
     return this.referralsService.createFacilitator(body);
+  }
+
+  @Post('staff')
+  @ApiOperation({ summary: 'Create a new Erranders staff / internal team member' })
+  createStaff(
+    @Body() body: {
+      name: string;
+      email?: string;
+      phone?: string;
+      department?: string;
+      referralCode?: string;
+    },
+  ) {
+    return this.referralsService.createStaff(body);
   }
 
   @Get('facilitators/:id')

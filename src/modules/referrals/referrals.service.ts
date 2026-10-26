@@ -512,39 +512,52 @@ export class ReferralsService {
 
   async createFacilitator(dto: {
     name: string;
-    email: string;
+    email?: string;
+    phone?: string;
     matricNumber?: string;
     skill?: string;
     referralCode?: string;
     sendWelcomeEmail?: boolean;
   }) {
-    // Check for existing facilitator
-    const existing = await this.facilitatorModel.findOne({ email: dto.email });
-    if (existing) throw new ConflictException(`Facilitator with email ${dto.email} already exists`);
+    if (!dto.name || !dto.name.trim()) {
+      throw new BadRequestException('Full name is required');
+    }
+
+    let email = dto.email ? dto.email.trim().toLowerCase() : '';
+    const hasRealEmail = !!email;
+
+    if (!email) {
+      const cleanSlug = dto.name.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 15) || 'ambassador';
+      const rand = Math.random().toString(36).substring(2, 7);
+      email = `${cleanSlug}-${rand}@ambassador.erranders.internal`;
+    } else {
+      // Check for existing facilitator
+      const existing = await this.facilitatorModel.findOne({ email });
+      if (existing) throw new ConflictException(`Facilitator with email ${email} already exists`);
+    }
 
     // Generate branded referral code from name
-    const code = dto.referralCode || this.generateBrandedCode(dto.name);
+    let code = dto.referralCode ? dto.referralCode.trim().toUpperCase() : this.generateBrandedCode(dto.name);
 
     // Check code uniqueness across both collections
     const codeExists = await this.isCodeTaken(code);
     if (codeExists) {
-      const suffix = Math.random().toString(36).substring(2, 4).toUpperCase();
-      dto.referralCode = `${code}${suffix}`;
-    } else {
-      dto.referralCode = code;
+      const suffix = Math.random().toString(36).substring(2, 5).toUpperCase();
+      code = `${code}${suffix}`;
     }
 
     const facilitator = await this.facilitatorModel.create({
-      name: dto.name,
-      email: dto.email,
+      name: dto.name.trim(),
+      email,
+      phone: dto.phone || '',
       matricNumber: dto.matricNumber || '',
       skill: dto.skill || '',
-      referralCode: dto.referralCode,
+      referralCode: code,
       tier: FacilitatorTier.STARTER,
     });
 
-    // Send welcome email
-    if (dto.sendWelcomeEmail !== false) {
+    // Send welcome email if real email was provided
+    if (hasRealEmail && dto.sendWelcomeEmail !== false) {
       try {
         await this.emailService.sendFacilitatorWelcomeEmail(
           facilitator.email,
@@ -561,6 +574,58 @@ export class ReferralsService {
     }
 
     return facilitator;
+  }
+
+  // ─── Staff / Internal Team Management ─────────────────────────────
+
+  async createStaff(dto: {
+    name: string;
+    email?: string;
+    phone?: string;
+    department?: string;
+    referralCode?: string;
+  }) {
+    if (!dto.name || !dto.name.trim()) {
+      throw new BadRequestException('Full name is required');
+    }
+
+    const trimmedName = dto.name.trim();
+    const parts = trimmedName.split(/\s+/);
+    const firstName = parts[0] || 'Staff';
+    const lastName = parts.slice(1).join(' ') || 'Erranders';
+
+    let email = dto.email ? dto.email.trim().toLowerCase() : '';
+    if (!email) {
+      const cleanSlug = firstName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'staff';
+      const rand = Math.random().toString(36).substring(2, 7);
+      email = `${cleanSlug}.${rand}@erranders.internal`;
+    } else {
+      const existingUser = await this.userModel.findOne({ email });
+      if (existingUser) {
+        throw new ConflictException(`User with email ${email} already exists`);
+      }
+    }
+
+    // Generate referral code
+    let code = dto.referralCode ? dto.referralCode.trim().toUpperCase() : `ERR-${firstName.substring(0, 4).toUpperCase()}`;
+    const codeExists = await this.isCodeTaken(code);
+    if (codeExists) {
+      const suffix = Math.random().toString(36).substring(2, 5).toUpperCase();
+      code = `${code}${suffix}`;
+    }
+
+    const staffUser = await this.userModel.create({
+      firstName,
+      lastName,
+      email,
+      phone: dto.phone || '',
+      department: dto.department || 'Internal Operations',
+      role: 'staff',
+      referralCode: code,
+      isEmailVerified: true,
+    });
+
+    return staffUser;
   }
 
   async getFacilitators(query?: { isActive?: boolean; search?: string }) {
