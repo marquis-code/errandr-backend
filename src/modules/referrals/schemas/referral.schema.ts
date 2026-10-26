@@ -12,6 +12,7 @@ export enum ReferrerType {
   VENDOR = 'vendor',
   ERRANDER = 'errander',
   FACILITATOR = 'facilitator',
+  STAFF = 'staff',
 }
 
 export enum ReferredType {

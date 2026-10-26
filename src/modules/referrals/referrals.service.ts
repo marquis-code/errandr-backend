@@ -257,13 +257,15 @@ export class ReferralsService {
       }
     }
 
-    // 2. Fetch Users (Errand Ninjas, Customers, Vendors)
-    if (role === 'all' || ['errander', 'student', 'vendor'].includes(role)) {
+    // 2. Fetch Users (Staff, Errand Ninjas, Customers, Vendors)
+    if (role === 'all' || ['staff', 'admin', 'errander', 'student', 'vendor'].includes(role)) {
       const userFilter: any = {};
-      if (role !== 'all') {
+      if (role === 'staff' || role === 'admin') {
+        userFilter.role = { $in: [UserRole.ADMIN, 'staff'] };
+      } else if (role !== 'all') {
         userFilter.role = role;
       } else {
-        userFilter.role = { $in: [UserRole.ERRANDER, UserRole.STUDENT, UserRole.VENDOR] };
+        userFilter.role = { $in: [UserRole.ADMIN, 'staff', UserRole.ERRANDER, UserRole.STUDENT, UserRole.VENDOR] };
       }
 
       if (search) {
@@ -286,14 +288,20 @@ export class ReferralsService {
         const totalPromoRev = linkedPromos.reduce((acc, p) => acc + (p.totalRevenueGenerated || 0), 0);
         const totalPromoOrders = linkedPromos.reduce((acc, p) => acc + (p.usageCount || 0), 0);
 
-        let roleLabel = 'Customer';
+        let roleLabel = 'Customer/Student';
         let roleEmoji = '🎓';
-        if (u.role === UserRole.ERRANDER) {
-          roleLabel = 'Errand Ninja';
-          roleEmoji = '🚲';
+        let mappedRole: string = u.role;
+
+        if (u.role === UserRole.ADMIN || (u as any).role === 'staff') {
+          roleLabel = 'Erranders Staffs / Internal Team';
+          roleEmoji = '👔';
+          mappedRole = 'staff';
         } else if (u.role === UserRole.VENDOR) {
           roleLabel = 'Vendor';
           roleEmoji = '🏪';
+        } else if (u.role === UserRole.ERRANDER) {
+          roleLabel = 'Errand Ninja';
+          roleEmoji = '🛵';
         }
 
         // Auto-generate code if empty
@@ -302,7 +310,7 @@ export class ReferralsService {
         results.push({
           _id: u._id,
           type: 'user',
-          role: u.role,
+          role: mappedRole,
           roleLabel,
           roleEmoji,
           name: `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email,
@@ -720,6 +728,7 @@ export class ReferralsService {
       referralsByType,
       recentReferrals,
       totalPointsAwarded,
+      staffCount,
       ninjasCount,
       vendorsCount,
       customersCount,
@@ -739,11 +748,12 @@ export class ReferralsService {
       this.referralModel.aggregate([
         { $group: { _id: null, total: { $sum: { $add: ['$referrerPointsAwarded', '$referredPointsAwarded'] } } } },
       ]),
+      this.userModel.countDocuments({ role: { $in: [UserRole.ADMIN, 'staff'] } }),
       this.userModel.countDocuments({ role: UserRole.ERRANDER }),
       this.userModel.countDocuments({ role: UserRole.VENDOR }),
       this.userModel.countDocuments({ role: UserRole.STUDENT }),
       this.promoCodeModel.countDocuments({
-        $or: [{ isReferralPromo: true }, { referrerType: { $in: ['errander', 'student', 'vendor', 'facilitator'] } }],
+        $or: [{ isReferralPromo: true }, { referrerType: { $in: ['staff', 'admin', 'errander', 'student', 'vendor', 'facilitator'] } }],
       }),
       this.promoRedemptionModel.aggregate([
         {
@@ -758,13 +768,17 @@ export class ReferralsService {
     ]);
 
     const referralTypeMap: Record<string, number> = {
+      staff: 0,
       facilitator: 0,
       errander: 0,
       student: 0,
       vendor: 0,
     };
     referralsByType.forEach((r: any) => { 
-      if (r._id) referralTypeMap[r._id] = r.count; 
+      if (r._id) {
+        if (r._id === 'admin') referralTypeMap['staff'] = (referralTypeMap['staff'] || 0) + r.count;
+        else referralTypeMap[r._id] = (referralTypeMap[r._id] || 0) + r.count;
+      }
     });
 
     return {
@@ -777,6 +791,14 @@ export class ReferralsService {
       referralsByType: referralTypeMap,
       conversionRate: totalReferrals > 0 ? Math.round((completedReferrals / totalReferrals) * 100) : 0,
       personas: {
+        staff: {
+          total: staffCount,
+          referrals: referralTypeMap['staff'] || 0,
+        },
+        vendors: {
+          total: vendorsCount,
+          referrals: referralTypeMap['vendor'] || 0,
+        },
         ninjas: {
           total: ninjasCount,
           referrals: referralTypeMap['errander'] || 0,
@@ -784,10 +806,6 @@ export class ReferralsService {
         customers: {
           total: customersCount,
           referrals: referralTypeMap['student'] || 0,
-        },
-        vendors: {
-          total: vendorsCount,
-          referrals: referralTypeMap['vendor'] || 0,
         },
         ambassadors: {
           total: totalFacilitators,
@@ -852,8 +870,11 @@ export class ReferralsService {
     return !!(userWithCode || facilitatorWithCode);
   }
 
-  private mapRoleToReferrerType(role: UserRole): ReferrerType {
+  private mapRoleToReferrerType(role: UserRole | string): ReferrerType {
     switch (role) {
+      case UserRole.ADMIN:
+      case 'staff':
+        return ReferrerType.STAFF;
       case UserRole.STUDENT: return ReferrerType.STUDENT;
       case UserRole.VENDOR: return ReferrerType.VENDOR;
       case UserRole.ERRANDER: return ReferrerType.ERRANDER;
