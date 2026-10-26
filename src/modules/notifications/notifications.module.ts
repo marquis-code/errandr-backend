@@ -2,6 +2,7 @@ import { Module, Global, forwardRef } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { NotificationsGateway } from './notifications.gateway';
 import { NotificationsController } from './notifications.controller';
+import { WebhooksController } from './webhooks.controller';
 import { CronService } from './cron.service';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Order, OrderSchema } from '../orders/schemas/order.schema';
@@ -21,7 +22,7 @@ import { ChatModule } from '../chat/chat.module';
     ]),
     forwardRef(() => ChatModule),
   ],
-  controllers: [NotificationsController],
+  controllers: [NotificationsController, WebhooksController],
   providers: [NotificationsService, NotificationsGateway, CronService],
   exports: [NotificationsService, NotificationsGateway],
 })

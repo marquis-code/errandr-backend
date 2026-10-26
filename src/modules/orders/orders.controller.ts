@@ -377,6 +377,20 @@ async getMyVendorOrders(
     return this.ordersService.updateStatus(id, body.status, (user._id as unknown) as string, body.note);
   }
 
+  @Post(':id/delay')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Report an order delay and trigger WhatsApp alerts' })
+  reportDelay(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+    @Body() body: { delayMinutes: number; reason?: string },
+  ) {
+    this.logger.log(`reportDelay() id=${id} user=${user._id} delay=${body.delayMinutes} mins`);
+    return this.ordersService.reportOrderDelay(id, body.delayMinutes, body.reason, user);
+  }
+
+
   @Put(':id/accept')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

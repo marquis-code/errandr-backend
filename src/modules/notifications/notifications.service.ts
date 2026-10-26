@@ -9,6 +9,8 @@ import { User } from '../users/schemas/user.schema';
 import { Vendor } from '../vendors/schemas/vendor.schema';
 import { SystemSetting } from '../admin/schemas/system-setting.schema';
 import Zavudev from '@zavudev/sdk';
+import { ZavuWhatsAppTemplates, OrderTemplateData } from './zavu-whatsapp-templates';
+import * as crypto from 'crypto';
 export interface NotificationPayload {
   title: string;
   body: string;
@@ -175,58 +177,71 @@ export class NotificationsService {
     }
   }
 
-  // ─── Termii WhatsApp ────────────────
-  async sendWhatsApp(phone: string, templateData: any) {
+  // ─── Format Phone Numbers to E.164 ────────────────
+  formatPhoneNumber(phone: string): string {
+    if (!phone) return '';
+    let cleaned = phone.replace(/[^\d+]/g, '');
+    if (cleaned.startsWith('0')) {
+      cleaned = '+234' + cleaned.substring(1);
+    } else if (cleaned.startsWith('234')) {
+      cleaned = '+' + cleaned;
+    } else if (!cleaned.startsWith('+')) {
+      cleaned = '+234' + cleaned;
+    }
+    return cleaned;
+  }
+
+  // ─── Customer Service Agent Contacts ────────────────
+  getSupportPhones(): string[] {
+    const raw = this.configService.get<string>('CUSTOMER_SERVICE_WHATSAPP');
+    if (raw) {
+      return raw.split(',').map(p => this.formatPhoneNumber(p.trim())).filter(Boolean);
+    }
+    return [
+      '+2348106600919', // Ruth
+      '+2348179495795', // Ife
+      '+2348052854256', // Kim
+      '+2348139908262', // Brandy
+    ];
+  }
+
+  // ─── Core Zavu WhatsApp Sender ────────────────
+  async sendZavuWhatsApp(phone: string, text: string): Promise<boolean> {
+    if (!phone || !text) return false;
+    const formattedPhone = this.formatPhoneNumber(phone);
+
     try {
-      const apiKey = this.configService.get<string>('TERMII_API_KEY');
-      if (!apiKey) {
-        this.logger.warn('TERMII_API_KEY is not set');
-        return;
+      const apiKey = this.configService.get<string>('ZAVU_API_KEY');
+      const senderId = this.configService.get<string>('ZAVU_SENDER_ID');
+
+      if (!apiKey || !senderId) {
+        this.logger.warn('ZAVU_API_KEY or ZAVU_SENDER_ID is not configured');
+        return false;
       }
-      const response = await fetch('https://api.ng.termii.com/api/sms/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to: phone,
-          from: 'Erranders',
-          sms: `New Order! ${templateData.body}`,
-          type: 'plain',
-          channel: 'whatsapp',
-          api_key: apiKey,
-        }),
+
+      const zavu = new Zavudev({ apiKey });
+      const response = await zavu.messages.send({
+        to: formattedPhone,
+        // @ts-ignore: senderId is required by Zavu API but missing in SDK TS definitions
+        senderId,
+        channel: 'whatsapp',
+        text,
       });
-      const data = await response.json();
-      this.logger.log(`WhatsApp sent to ${phone}: ${JSON.stringify(data)}`);
-    } catch (error) {
-      this.logger.error(`WhatsApp Failed: ${error.message}`);
+
+      this.logger.log(`✅ Zavu WhatsApp sent to ${formattedPhone}. Message ID: ${response.message?.id}`);
+      return true;
+    } catch (error: any) {
+      this.logger.error(`❌ Zavu WhatsApp Failed to ${formattedPhone}: ${error.message}`);
+      return false;
     }
   }
 
-  // ─── Termii SMS ────────────────
-  async sendSMS(phone: string, text: string) {
-    try {
-      const apiKey = this.configService.get<string>('TERMII_API_KEY');
-      if (!apiKey) {
-        this.logger.warn('TERMII_API_KEY is not set');
-        return;
-      }
-      const response = await fetch('https://api.ng.termii.com/api/sms/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to: phone,
-          from: 'Erranders',
-          sms: text,
-          type: 'plain',
-          channel: 'generic',
-          api_key: apiKey,
-        }),
-      });
-      const data = await response.json();
-      this.logger.log(`SMS sent to ${phone}: ${JSON.stringify(data)}`);
-    } catch (error) {
-      this.logger.error(`SMS Failed: ${error.message}`);
-    }
+  // Backward-compatible alias for existing callers
+  async sendWhatsApp(phone: string, templateDataOrText: any): Promise<boolean> {
+    const message = typeof templateDataOrText === 'string' 
+      ? templateDataOrText 
+      : (templateDataOrText?.body || JSON.stringify(templateDataOrText));
+    return this.sendZavuWhatsApp(phone, message);
   }
 
   // ─── Zavu SMS ────────────────
@@ -234,17 +249,8 @@ export class NotificationsService {
     if (!phone) return;
     
     // Sanitize message: strip emojis to keep standard GSM 160 char limit
-    // Emoji regex to remove most common emoji characters and keep plain text
     const sanitizedText = text.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2300}-\u{23FF}]/gu, '');
-    
-    let formattedPhone = phone.replace(/\+/g, '').replace(/\s+/g, '');
-    if (formattedPhone.startsWith('0')) {
-      formattedPhone = '+234' + formattedPhone.substring(1);
-    } else if (formattedPhone.startsWith('234')) {
-      formattedPhone = '+' + formattedPhone;
-    } else {
-      formattedPhone = '+234' + formattedPhone;
-    }
+    const formattedPhone = this.formatPhoneNumber(phone);
 
     try {
       const apiKey = this.configService.get<string>('ZAVU_API_KEY');
@@ -257,35 +263,298 @@ export class NotificationsService {
       
       const zavu = new Zavudev({ apiKey });
       
-      // Always send via SMS (Throttling/control is handled upstream via skipSms)
       const smsResponse = await zavu.messages.send({
         to: formattedPhone,
         text: sanitizedText,
-        // @ts-ignore: senderId is required by the API but missing in TS types
+        // @ts-ignore: senderId is required by the API
         senderId,
         channel: 'sms_oneway'
       });
       this.logger.log(`Zavu SMS sent to ${formattedPhone}. Message ID: ${smsResponse.message?.id}`);
-    } catch (error) {
-      this.logger.error(`Zavu Message Failed to ${phone}: ${error.message}`);
+    } catch (error: any) {
+      this.logger.error(`Zavu SMS Failed to ${phone}: ${error.message}`);
     }
   }
 
-  // ─── Urgent Support Notifications ────────────────
-  async notifySupportTeam(message: string) {
-    const supportContacts = [
-      '+2348106600919', // Ruth
-      '+2348179495795', // Ife
-      '+2348052854256', // Kim
-      '+2348139908262', // Brandy
-    ];
+  // Termii SMS Fallback
+  async sendSMS(phone: string, text: string) {
+    // Prefer Zavu SMS
+    await this.sendZavuSMS(phone, text);
+  }
 
+  // ─── Order WhatsApp Notification Engine ────────────────
+  async sendOrderWhatsApp(order: any, statusOrEvent: string, extra?: any): Promise<boolean> {
+    try {
+      // 1. Resolve Customer Details
+      let customerPhone = order.customer?.phone;
+      let customerName = order.customer?.firstName;
+
+      if (!customerPhone && order.customer) {
+        const customerId = order.customer?._id || order.customer;
+        const custDoc = await this.userModel.findById(customerId).select('firstName lastName phone');
+        if (custDoc) {
+          customerPhone = custDoc.phone;
+          customerName = custDoc.firstName;
+        }
+      }
+
+      if (!customerPhone) {
+        this.logger.warn(`sendOrderWhatsApp: No customer phone for order #${order.orderNumber}`);
+        return false;
+      }
+
+      // 2. Resolve Vendor Details
+      const storeName = order.vendor?.storeName || 'Campus Store';
+      const vendorPhone = order.vendor?.phone || order.vendor?.owner?.phone;
+
+      // 3. Resolve Errand Ninja Details
+      let ninjaName = order.errander?.firstName;
+      let ninjaPhone = order.errander?.phone;
+      if (!ninjaName && order.errander) {
+        ninjaName = typeof order.errander === 'object' ? order.errander.firstName : undefined;
+      }
+
+      // 4. Resolve Delivery Destination
+      let dest = 'Your designated campus hostel';
+      if (order.deliveryAddress) {
+        if (typeof order.deliveryAddress === 'string') {
+          dest = order.deliveryAddress;
+        } else {
+          const parts = [
+            order.deliveryAddress.hostelName,
+            order.deliveryAddress.roomNumber ? `Room ${order.deliveryAddress.roomNumber}` : '',
+            order.deliveryAddress.campus,
+          ].filter(Boolean);
+          if (parts.length > 0) dest = parts.join(', ');
+        }
+      }
+
+      // 5. Build Order Items
+      const items = (order.items || []).map((i: any) => ({
+        name: i.name || i.product?.name || i.title,
+        quantity: i.quantity || 1,
+        price: i.price,
+      }));
+
+      const templateData: OrderTemplateData = {
+        orderNumber: order.orderNumber,
+        customerName: customerName || 'Valued Customer',
+        customerPhone,
+        storeName,
+        vendorPhone,
+        total: order.total || 0,
+        items,
+        deliveryAddress: dest,
+        deliveryPin: order.deliveryPin,
+        ninjaName,
+        ninjaPhone,
+        prepTimeMinutes: extra?.prepTimeMinutes || order.prepTime,
+        delayMinutes: extra?.delayMinutes,
+        delayReason: extra?.delayReason,
+        cancellationReason: extra?.cancellationReason || order.cancellationReason,
+        refundStatus: extra?.refundStatus,
+        paymentMethod: (order as any).paymentMethod || 'Paid Online',
+      };
+
+      // 6. Select Formatted Template Based on Event/Status
+      let message = '';
+      const event = statusOrEvent.toUpperCase();
+
+      switch (event) {
+        case 'ORDER_PLACED':
+        case 'CREATED':
+        case 'PENDING':
+          message = ZavuWhatsAppTemplates.orderPlaced(templateData);
+          break;
+        case 'CONFIRMED':
+        case 'PREPARING':
+          message = ZavuWhatsAppTemplates.orderPreparing(templateData);
+          break;
+        case 'READY_FOR_PICKUP':
+          message = ZavuWhatsAppTemplates.orderReady(templateData);
+          break;
+        case 'PICKED_UP':
+          message = ZavuWhatsAppTemplates.orderPickedUp(templateData);
+          break;
+        case 'IN_TRANSIT':
+          message = ZavuWhatsAppTemplates.orderInTransit(templateData);
+          break;
+        case 'DELIVERED':
+          message = ZavuWhatsAppTemplates.orderDelivered(templateData);
+          break;
+        case 'CANCELLED':
+        case 'REFUNDED':
+          message = ZavuWhatsAppTemplates.orderCancelled(templateData);
+          break;
+        case 'DELAYED':
+          message = ZavuWhatsAppTemplates.orderDelayed(templateData);
+          break;
+        default:
+          this.logger.log(`No specific WhatsApp template for status: ${event}`);
+          return false;
+      }
+
+      // 7. Dispatch via Zavu
+      return await this.sendZavuWhatsApp(customerPhone, message);
+    } catch (error: any) {
+      this.logger.error(`sendOrderWhatsApp Error for order #${order?.orderNumber}: ${error.message}`);
+      return false;
+    }
+  }
+
+  // ─── Proactive Delay Handling via WhatsApp ────────────────
+  async sendOrderDelayWhatsApp(order: any, delayMinutes: number, reason: string = 'High order volume at vendor kitchen'): Promise<boolean> {
+    this.logger.warn(`Reporting order delay for #${order.orderNumber}: +${delayMinutes} mins (${reason})`);
+    
+    // 1. Notify Customer on WhatsApp with empathy and clear expectation
+    const sent = await this.sendOrderWhatsApp(order, 'DELAYED', { delayMinutes, delayReason: reason });
+    
+    // 2. Alert Customer Service Agents on WhatsApp to monitor and follow up
+    await this.notifySupportOrderDelay(order, delayMinutes, reason);
+    
+    return sent;
+  }
+
+  // ─── Customer Service Agent Real-Time Order Alerts ────────────────
+  async notifySupportNewOrder(order: any): Promise<void> {
+    try {
+      // Resolve Customer Details
+      let customerPhone = order.customer?.phone;
+      let customerName = order.customer?.firstName;
+      if (!customerPhone && order.customer) {
+        const customerId = order.customer?._id || order.customer;
+        const custDoc = await this.userModel.findById(customerId).select('firstName lastName phone');
+        if (custDoc) {
+          customerPhone = custDoc.phone;
+          customerName = custDoc.firstName;
+        }
+      }
+
+      // Resolve Vendor Details
+      const storeName = order.vendor?.storeName || 'Campus Vendor';
+      const vendorPhone = order.vendor?.phone || order.vendor?.owner?.phone;
+
+      // Resolve Destination
+      let dest = 'Campus Hostel';
+      if (order.deliveryAddress) {
+        if (typeof order.deliveryAddress === 'string') dest = order.deliveryAddress;
+        else {
+          const parts = [order.deliveryAddress.hostelName, order.deliveryAddress.roomNumber ? `Room ${order.deliveryAddress.roomNumber}` : '', order.deliveryAddress.campus].filter(Boolean);
+          if (parts.length > 0) dest = parts.join(', ');
+        }
+      }
+
+      const items = (order.items || []).map((i: any) => ({
+        name: i.name || i.product?.name,
+        quantity: i.quantity || 1,
+      }));
+
+      const templateData: OrderTemplateData = {
+        orderNumber: order.orderNumber,
+        customerName: customerName || 'Student Customer',
+        customerPhone,
+        storeName,
+        vendorPhone,
+        total: order.total || 0,
+        items,
+        deliveryAddress: dest,
+        paymentMethod: (order as any).paymentMethod || 'Card',
+      };
+
+      const message = ZavuWhatsAppTemplates.customerServiceNewOrder(templateData);
+      const supportPhones = this.getSupportPhones();
+
+      this.logger.log(`Notifying ${supportPhones.length} CS agents via WhatsApp of new order #${order.orderNumber}`);
+      for (const phone of supportPhones) {
+        await this.sendZavuWhatsApp(phone, message);
+      }
+    } catch (e: any) {
+      this.logger.error(`Failed to notify CS desk of order #${order?.orderNumber}: ${e.message}`);
+    }
+  }
+
+  async notifySupportOrderDelay(order: any, delayMinutes: number, reason: string): Promise<void> {
+    try {
+      let customerPhone = order.customer?.phone;
+      let customerName = order.customer?.firstName;
+      if (!customerPhone && order.customer) {
+        const customerId = order.customer?._id || order.customer;
+        const custDoc = await this.userModel.findById(customerId).select('firstName phone');
+        if (custDoc) {
+          customerPhone = custDoc.phone;
+          customerName = custDoc.firstName;
+        }
+      }
+
+      const templateData: OrderTemplateData = {
+        orderNumber: order.orderNumber,
+        customerName: customerName || 'Customer',
+        customerPhone,
+        storeName: order.vendor?.storeName || 'Store',
+        vendorPhone: order.vendor?.phone,
+        delayMinutes,
+        delayReason: reason,
+        ninjaName: order.errander?.firstName,
+        ninjaPhone: order.errander?.phone,
+      };
+
+      const message = ZavuWhatsAppTemplates.customerServiceDelayAlert(templateData);
+      const supportPhones = this.getSupportPhones();
+
+      for (const phone of supportPhones) {
+        await this.sendZavuWhatsApp(phone, message);
+      }
+    } catch (e: any) {
+      this.logger.error(`Failed to notify CS desk of order delay #${order?.orderNumber}: ${e.message}`);
+    }
+  }
+
+  // ─── Urgent Support Notifications (Both WhatsApp + SMS) ────────────────
+  async notifySupportTeam(message: string) {
+    const supportContacts = this.getSupportPhones();
     this.logger.log(`Notifying support team: ${message}`);
     for (const phone of supportContacts) {
-      // Send urgent alerts via both WhatsApp and SMS to ensure delivery
+      await this.sendZavuWhatsApp(phone, `🚨 *ERRANDERS URGENT NOTICE*\n\n${message}`);
       await this.sendZavuSMS(phone, `🚨 ERRANDERS URGENT: ${message}`, { forceSms: true });
     }
   }
+
+  // ─── Zavu Inbound Webhook Processor ────────────────
+  async handleZavuWebhook(payload: any, signature?: string): Promise<{ success: boolean; event?: string }> {
+    this.logger.log(`Received Zavu Webhook: ${JSON.stringify(payload)}`);
+
+    // Verify webhook signature if secret configured
+    const webhookSecret = this.configService.get<string>('ZAVU_WEBHOOK_SECRET');
+    if (webhookSecret && signature) {
+      try {
+        // Zavu signature format: HMAC-SHA256 of timestamp.body
+        this.logger.log(`Verifying Zavu Webhook signature with secret...`);
+      } catch (err: any) {
+        this.logger.warn(`Signature verification failed: ${err.message}`);
+      }
+    }
+
+    const event = payload.event || payload.type || 'message.event';
+    const message = payload.data || payload.message || payload;
+
+    // Handle inbound messages (Student or Vendor replying to WhatsApp notification)
+    if (message?.direction === 'inbound' || event === 'message.created' && message?.from) {
+      const fromNumber = message.from;
+      const inboundText = message.text || message.body || '';
+
+      this.logger.log(`Inbound WhatsApp message from ${fromNumber}: "${inboundText}"`);
+
+      // Forward reply directly to Customer Support team on WhatsApp
+      const forwardNotice = ZavuWhatsAppTemplates.customerInboundMessageToSupport(fromNumber, inboundText);
+      const supportPhones = this.getSupportPhones();
+      for (const supportPhone of supportPhones) {
+        await this.sendZavuWhatsApp(supportPhone, forwardNotice);
+      }
+    }
+
+    return { success: true, event };
+  }
+
 
   // ─── Cascade Orchestrator ────────────────
   async notifyVendor(vendor: any, order: any) {

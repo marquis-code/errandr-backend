@@ -180,6 +180,11 @@ export class OrdersService {
         title, body, ...statusData,
       });
 
+      // Aggressive WhatsApp Updates for Customer via Zavu
+      this.notificationsService.sendOrderWhatsApp(order, status).catch(e => {
+        this.logger.warn(`Failed to dispatch order status WhatsApp for #${order.orderNumber}: ${e.message}`);
+      });
+
       // Send dedicated SMS with 4-digit Delivery PIN when order is picked up or in transit
       if ((status === OrderStatus.PICKED_UP || status === OrderStatus.IN_TRANSIT) && order.deliveryPin) {
         this.userModel.findById(customerId).select('phone').then(customerUser => {
@@ -1075,6 +1080,19 @@ export class OrdersService {
           order,
         );
       }
+    }
+
+    // ─── Aggressive Zavu WhatsApp Order Dispatch ────────────────
+    if (order.paymentStatus === PaymentStatus.PAID || order.status === OrderStatus.PENDING || order.status === OrderStatus.CONFIRMED) {
+      // 1. Notify Customer on WhatsApp with Order Placed Template
+      this.notificationsService.sendOrderWhatsApp(order, 'ORDER_PLACED').catch(e => {
+        this.logger.warn(`Failed to dispatch Order Placed WhatsApp for #${order.orderNumber}: ${e.message}`);
+      });
+
+      // 2. Real-Time Alert to Customer Service WhatsApp Desk
+      this.notificationsService.notifySupportNewOrder(order).catch(e => {
+        this.logger.warn(`Failed to notify CS desk via WhatsApp for #${order.orderNumber}: ${e.message}`);
+      });
     }
 
     // TRIGGER AUTOMATED VOICE CALL TO VENDOR
@@ -5183,4 +5201,44 @@ export class OrdersService {
     return order;
   }
 
+  // ─── Proactive Order Delay Management ────────────────
+  async reportOrderDelay(
+    orderId: string,
+    delayMinutes: number,
+    reason: string = 'High order volume at vendor kitchen',
+    user?: any,
+  ): Promise<Order> {
+    const order = await this.orderModel.findById(orderId).populate([
+      { path: 'customer', select: 'firstName lastName phone email' },
+      { path: 'vendor', select: 'storeName phone owner' },
+      { path: 'errander', select: 'firstName lastName phone' },
+    ]);
+    if (!order) throw new NotFoundException('Order not found');
+
+    order.statusHistory.push({
+      status: order.status,
+      timestamp: new Date(),
+      note: `Delay Reported: +${delayMinutes} mins (${reason})`,
+    });
+
+    await order.save();
+
+    // 1. Send empathetic WhatsApp delay alert to customer & alert CS desk
+    await this.notificationsService.sendOrderDelayWhatsApp(order, delayMinutes, reason);
+
+    // 2. Broadcast live WebSocket event to student tracking view
+    const customerId = (order.customer as any)?._id || order.customer;
+    if (customerId) {
+      this.notificationsGateway.sendToUser(customerId.toString(), {
+        type: 'ORDER_DELAYED',
+        title: 'Delivery Delay Notice ⏱️',
+        body: `Order #${order.orderNumber} is delayed by ~${delayMinutes} mins: ${reason}`,
+        data: { orderId: order._id, delayMinutes, reason },
+      });
+    }
+
+    return order;
+  }
+
 }
+

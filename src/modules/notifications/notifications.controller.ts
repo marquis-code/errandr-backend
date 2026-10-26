@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Put, Post, Body, Headers, Param, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { NotificationsService } from './notifications.service';
 import { JwtAuthGuard, CurrentUser } from '../../common/decorators';
@@ -53,4 +53,14 @@ export class NotificationsController {
     );
     return { success: true };
   }
+
+  @Post('zavu/webhook')
+  @ApiOperation({ summary: 'Handle Zavu Inbound & Status Webhooks' })
+  async handleZavuWebhook(
+    @Body() body: any,
+    @Headers('x-zavu-signature') signature?: string,
+  ) {
+    return this.notificationsService.handleZavuWebhook(body, signature);
+  }
 }
+
