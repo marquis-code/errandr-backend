@@ -268,4 +268,17 @@ export class AdminController {
     return this.adminService.deleteDispatcher(id);
   }
 
+  @Delete('users/:id')
+  @RequirePermissions('can_delete_user')
+  @ApiOperation({ summary: 'Delete user permanently' })
+  deleteUser(@Param('id') id: string) {
+    return this.adminService.deleteUser(id);
+  }
+
+  @Post('users/batch-delete')
+  @RequirePermissions('can_delete_user')
+  @ApiOperation({ summary: 'Batch delete users' })
+  batchDeleteUsers(@Body() body: { ids: string[] }) {
+    return this.adminService.batchDeleteUsers(body.ids);
+  }
 }

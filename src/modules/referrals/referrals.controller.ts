@@ -153,10 +153,27 @@ export class ReferralsController {
     return this.referralsService.updateFacilitator(id, body);
   }
 
+  @Delete('referrers/:type/:id')
+  @ApiOperation({ summary: 'Delete a single referrer (Ambassador, Staff, Vendor, Ninja, Customer)' })
+  deleteReferrer(
+    @Param('type') type: 'facilitator' | 'user',
+    @Param('id') id: string,
+  ) {
+    return this.referralsService.deleteReferrer(type, id);
+  }
+
+  @Post('referrers/batch-delete')
+  @ApiOperation({ summary: 'Batch delete referrers across all personas' })
+  batchDeleteReferrers(
+    @Body() body: { items: Array<{ type: 'facilitator' | 'user'; id: string }> },
+  ) {
+    return this.referralsService.batchDeleteReferrers(body.items);
+  }
+
   @Delete('facilitators/:id')
-  @ApiOperation({ summary: 'Deactivate a facilitator' })
+  @ApiOperation({ summary: 'Delete a facilitator permanently' })
   deactivateFacilitator(@Param('id') id: string) {
-    return this.referralsService.deactivateFacilitator(id);
+    return this.referralsService.deleteReferrer('facilitator', id);
   }
 
   @Get('facilitators/:id/referrals')

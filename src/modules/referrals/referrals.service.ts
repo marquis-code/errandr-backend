@@ -6,6 +6,8 @@ import { Facilitator, FacilitatorTier } from './schemas/facilitator.schema';
 import { User, UserRole } from '../users/schemas/user.schema';
 import { PromoCode } from '../promo-codes/schemas/promo-code.schema';
 import { PromoRedemption } from '../promo-codes/schemas/promo-redemption.schema';
+import { Vendor } from '../vendors/schemas/vendor.schema';
+import { Errander } from '../erranders/schemas/errander.schema';
 import { EmailService } from '../email/email.service';
 
 // Tier configuration
@@ -28,6 +30,8 @@ export class ReferralsService {
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(PromoCode.name) private promoCodeModel: Model<PromoCode>,
     @InjectModel(PromoRedemption.name) private promoRedemptionModel: Model<PromoRedemption>,
+    @InjectModel(Vendor.name) private vendorModel: Model<Vendor>,
+    @InjectModel(Errander.name) private erranderModel: Model<Errander>,
     private emailService: EmailService,
   ) {}
 
@@ -655,6 +659,99 @@ export class ReferralsService {
 
   async deactivateFacilitator(id: string) {
     return this.updateFacilitator(id, { isActive: false } as any);
+  }
+
+  async deleteReferrer(type: 'facilitator' | 'user' | string, id: string) {
+    if (!id) throw new BadRequestException('ID is required');
+
+    if (type === 'facilitator') {
+      const facilitator = await this.facilitatorModel.findById(id);
+      if (!facilitator) {
+        throw new NotFoundException(`Ambassador with ID ${id} not found`);
+      }
+      const facObjId = Types.ObjectId.isValid(id) ? new Types.ObjectId(id) : id;
+      await this.promoCodeModel.deleteMany({ referrerFacilitator: facObjId });
+      await this.facilitatorModel.findByIdAndDelete(id);
+      this.logger.log(`Deleted Ambassador ${id} (${facilitator.name})`);
+      return { success: true, message: `Ambassador ${facilitator.name} deleted successfully` };
+    }
+
+    if (type === 'user') {
+      const user = await this.userModel.findById(id);
+      if (!user) {
+        const v = await this.vendorModel.findById(id);
+        if (v) {
+          const ownerId = (v as any).owner;
+          if (ownerId) {
+            await this.userModel.findByIdAndDelete(ownerId);
+            await this.promoCodeModel.deleteMany({ referrerUser: ownerId });
+          }
+          await this.vendorModel.findByIdAndDelete(id);
+          return { success: true, message: `Vendor ${v.storeName || id} deleted successfully` };
+        }
+        const e = await this.erranderModel.findById(id);
+        if (e) {
+          const riderUserId = (e as any).user;
+          if (riderUserId) {
+            await this.userModel.findByIdAndDelete(riderUserId);
+            await this.promoCodeModel.deleteMany({ referrerUser: riderUserId });
+          }
+          await this.erranderModel.findByIdAndDelete(id);
+          return { success: true, message: `Errand Ninja deleted successfully` };
+        }
+        const fac = await this.facilitatorModel.findById(id);
+        if (fac) {
+          await this.promoCodeModel.deleteMany({ referrerFacilitator: id });
+          await this.facilitatorModel.findByIdAndDelete(id);
+          return { success: true, message: `Ambassador ${fac.name} deleted successfully` };
+        }
+        throw new NotFoundException(`User with ID ${id} not found`);
+      }
+
+      const userName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email;
+      const role = user.role;
+      const userObjId = Types.ObjectId.isValid(id) ? new Types.ObjectId(id) : id;
+
+      if (role === UserRole.VENDOR) {
+        await this.vendorModel.deleteMany({ $or: [{ owner: userObjId }, { _id: userObjId }] });
+      } else if (role === UserRole.ERRANDER) {
+        await this.erranderModel.deleteMany({ $or: [{ user: userObjId }, { _id: userObjId }] });
+      }
+
+      await this.promoCodeModel.deleteMany({ referrerUser: userObjId });
+      await this.userModel.findByIdAndDelete(id);
+
+      this.logger.log(`Deleted user ${id} (${userName}, role: ${role})`);
+      return { success: true, message: `${userName} deleted successfully` };
+    }
+
+    throw new BadRequestException(`Invalid referrer type: ${type}`);
+  }
+
+  async batchDeleteReferrers(items: Array<{ type: 'facilitator' | 'user'; id: string }>) {
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new BadRequestException('Items array is required');
+    }
+
+    let deletedCount = 0;
+    const errors: string[] = [];
+
+    for (const item of items) {
+      try {
+        await this.deleteReferrer(item.type, item.id);
+        deletedCount++;
+      } catch (err: any) {
+        errors.push(`Failed to delete ${item.type} (${item.id}): ${err?.message}`);
+      }
+    }
+
+    return {
+      success: true,
+      deletedCount,
+      totalRequested: items.length,
+      errors: errors.length > 0 ? errors : undefined,
+      message: `Successfully deleted ${deletedCount} of ${items.length} items`,
+    };
   }
 
   async getFacilitatorReferrals(facilitatorId: string) {

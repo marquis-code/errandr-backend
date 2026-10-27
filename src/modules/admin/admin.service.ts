@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { User } from '../users/schemas/user.schema';
+import { User, UserRole } from '../users/schemas/user.schema';
 import { Vendor, VendorStatus } from '../vendors/schemas/vendor.schema';
 import { Order, OrderStatus } from '../orders/schemas/order.schema';
 import { Errander } from '../erranders/schemas/errander.schema';
@@ -1171,6 +1171,32 @@ export class AdminService {
 
   async batchDeleteDispatchers(ids: string[]): Promise<any> {
     return this.erranderModel.deleteMany({ _id: { $in: ids } });
+  }
+
+  async deleteUser(id: string) {
+    const user = await this.userModel.findById(id);
+    if (!user) throw new NotFoundException('User not found');
+    const userObjId = Types.ObjectId.isValid(id) ? new Types.ObjectId(id) : id;
+    if (user.role === UserRole.VENDOR) {
+      await this.vendorModel.deleteMany({ $or: [{ owner: userObjId }, { _id: userObjId }] });
+    } else if (user.role === UserRole.ERRANDER) {
+      await this.erranderModel.deleteMany({ $or: [{ user: userObjId }, { _id: userObjId }] });
+    }
+    return this.userModel.findByIdAndDelete(id);
+  }
+
+  async batchDeleteUsers(ids: string[]) {
+    if (!Array.isArray(ids) || ids.length === 0) return { deletedCount: 0 };
+    let count = 0;
+    for (const id of ids) {
+      try {
+        await this.deleteUser(id);
+        count++;
+      } catch (err) {
+        console.error(`Error deleting user ${id}`, err);
+      }
+    }
+    return { success: true, count };
   }
 
   async getSetting(key: string) {

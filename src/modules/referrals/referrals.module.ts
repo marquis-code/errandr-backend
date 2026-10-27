@@ -8,6 +8,8 @@ import { Facilitator, FacilitatorSchema } from './schemas/facilitator.schema';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { PromoCode, PromoCodeSchema } from '../promo-codes/schemas/promo-code.schema';
 import { PromoRedemption, PromoRedemptionSchema } from '../promo-codes/schemas/promo-redemption.schema';
+import { Vendor, VendorSchema } from '../vendors/schemas/vendor.schema';
+import { Errander, ErranderSchema } from '../erranders/schemas/errander.schema';
 import { EmailModule } from '../email/email.module';
 
 @Module({
@@ -18,6 +20,8 @@ import { EmailModule } from '../email/email.module';
       { name: User.name, schema: UserSchema },
       { name: PromoCode.name, schema: PromoCodeSchema },
       { name: PromoRedemption.name, schema: PromoRedemptionSchema },
+      { name: Vendor.name, schema: VendorSchema },
+      { name: Errander.name, schema: ErranderSchema },
     ]),
     EmailModule,
   ],
