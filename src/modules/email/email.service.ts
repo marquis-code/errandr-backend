@@ -190,10 +190,12 @@ export class EmailService {
         .data-table .value-highlight { font-weight: 700; color: #FF5C1A; text-align: right; }
         
         /* OTP specific */
-        .otp-container { display: flex; justify-content: center; gap: 8px; margin: 32px 0; }
-        .otp-box { width: 48px; height: 56px; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 800; color: #27272a; border: 1px solid #e4e4e7; border-radius: 8px; background: #fafafa; }
+        .otp-table { margin: 0 auto; border-collapse: separate !important; border-spacing: 6px; text-align: center; }
+        .otp-td { width: 46px; height: 56px; min-width: 46px; max-width: 46px; background-color: #FFFFFF; border: 2px solid #FF5C1A; border-radius: 12px; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 26px; font-weight: 800; color: #0F172A; text-align: center; vertical-align: middle; line-height: 56px; mso-line-height-rule: exactly; padding: 0; box-shadow: 0 2px 6px rgba(255, 92, 26, 0.12); }
+        .otp-container { display: table; margin: 0 auto; }
+        .otp-box { width: 46px; height: 56px; text-align: center; vertical-align: middle; line-height: 56px; font-size: 26px; font-weight: 800; color: #0F172A; border: 2px solid #FF5C1A; border-radius: 12px; background: #FFFFFF; }
         .otp-box.highlight { border-color: #FF5C1A; color: #FF5C1A; background: #FFF7ED; }
-        .otp-warning { font-size: 12px; color: #a1a1aa; background: #fafafa; padding: 12px; border-radius: 8px; margin: 0; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .otp-warning { font-size: 12px; color: #71717a; background: #fafafa; border: 1px solid #f4f4f5; padding: 12px; border-radius: 8px; margin: 0; text-align: center; }
 
         @media only screen and (max-width: 520px) {
           .wrapper { padding: 0; }
@@ -203,7 +205,9 @@ export class EmailService {
           .ecosystem { padding: 32px 20px; }
           .footer { padding: 32px 20px; }
           .btn { display: block !important; width: 100% !important; box-sizing: border-box !important; }
-          .otp-box { width: 40px; height: 48px; font-size: 20px; }
+          .otp-table { border-spacing: 4px !important; }
+          .otp-td { width: 40px !important; height: 50px !important; min-width: 40px !important; max-width: 40px !important; font-size: 22px !important; line-height: 50px !important; border-radius: 8px !important; }
+          .otp-box { width: 40px !important; height: 50px !important; font-size: 22px !important; line-height: 50px !important; }
         }
       </style>
     `;
@@ -369,26 +373,63 @@ export class EmailService {
   }
 
   private getOtpBoxes(otp: string) {
-    let boxes = '';
-    for (let i = 0; i < otp.length; i++) {
-      boxes += `<div class="otp-box ${i >= 3 ? 'highlight' : ''}">${otp[i]}</div>`;
+    let cells = '';
+    const cleanOtp = (otp || '').trim();
+    for (let i = 0; i < cleanOtp.length; i++) {
+      const char = cleanOtp[i];
+      cells += `
+        <td class="otp-td" align="center" valign="middle" width="46" height="56" style="width: 46px; height: 56px; min-width: 46px; max-width: 46px; background-color: #FFFFFF; border: 2px solid #FF5C1A; border-radius: 12px; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 26px; font-weight: 800; color: #0F172A; text-align: center; vertical-align: middle; line-height: 56px; mso-line-height-rule: exactly; padding: 0; box-shadow: 0 2px 6px rgba(255, 92, 26, 0.12);">
+          ${char}
+        </td>
+      `;
     }
-    return `<div class="otp-container">${boxes}</div>`;
+    return `
+      <table class="otp-table" role="presentation" align="center" border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto; border-collapse: separate !important; border-spacing: 6px; text-align: center;">
+        <tr>
+          ${cells}
+        </tr>
+      </table>
+    `;
   }
 
   async sendVerificationOTP(to: string, otp: string) {
     const html = this.wrap({
-      preheader: `Your Erranders code: ${otp}`,
+      preheader: `Your verification code is ${otp}`,
       badge: { text: 'EMAIL VERIFICATION', color: 'orange' },
       title: 'Verify your email address',
       subtitle: 'Use the code below to complete your verification. It expires in <b>10 minutes</b>.',
       content: `
-        <p style="text-align: left; font-size: 10px; font-weight: 700; color: #a1a1aa; letter-spacing: 1px; margin: 0; text-transform: uppercase;">YOUR ONE-TIME CODE</p>
-        ${this.getOtpBoxes(otp)}
-        <p class="otp-warning">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-          Didn't request this? You can safely ignore this email.
-        </p>
+        <!-- Hero OTP Card -->
+        <div style="background-color: #FAFAFA; border: 1px solid #E4E4E7; border-radius: 16px; padding: 28px 16px; margin: 4px 0 20px; text-align: center;">
+          <p style="margin: 0 0 16px; font-size: 11px; font-weight: 800; color: #71717A; letter-spacing: 1.5px; text-transform: uppercase;">
+            YOUR ONE-TIME CODE
+          </p>
+          
+          ${this.getOtpBoxes(otp)}
+          
+          <div style="margin-top: 18px;">
+            <span style="display: inline-block; padding: 6px 14px; background-color: #FFF7ED; border: 1px solid #FED7AA; border-radius: 9999px; font-size: 12px; font-weight: 600; color: #EA580C;">
+              ⏱️ Expires in 10 minutes &bull; Single-use only
+            </span>
+          </div>
+        </div>
+
+        <!-- Advisory Notice -->
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="width: 100%; margin: 20px 0 0; background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px; text-align: left;">
+          <tr>
+            <td style="padding: 16px 12px 16px 16px; vertical-align: top; width: 36px;">
+              <div style="width: 32px; height: 32px; background-color: #EEF2F6; border: 1px solid #E2E8F0; border-radius: 8px; text-align: center; line-height: 32px; font-size: 16px;">
+                💡
+              </div>
+            </td>
+            <td style="padding: 16px 16px 16px 0; vertical-align: top;">
+              <p style="margin: 0 0 4px; font-size: 13px; font-weight: 700; color: #0F172A;">Didn't request this verification?</p>
+              <p style="margin: 0; font-size: 12px; color: #64748B; line-height: 1.5;">
+                You can safely ignore this email. No changes or verifications will occur without entering this code.
+              </p>
+            </td>
+          </tr>
+        </table>
       `
     });
     return this.sendEmail(to, `${otp} is your verification code`, html);
@@ -396,16 +437,46 @@ export class EmailService {
 
   async sendPasswordResetOTP(to: string, otp: string) {
     const html = this.wrap({
-      preheader: `Reset code: ${otp}`,
-      badge: { text: 'PASSWORD RESET', color: 'blue' },
+      preheader: `Security code: ${otp} — Reset your Erranders password`,
+      badge: { text: 'PASSWORD RESET', color: 'orange' },
       title: 'Reset your password',
-      subtitle: 'Enter this code to set a new password. If you didn\'t request this, your account is safe.',
+      subtitle: 'Enter this 6-digit code to securely reset your password. If you didn\'t request this, your account is safe.',
       content: `
-        <p style="text-align: left; font-size: 10px; font-weight: 700; color: #a1a1aa; letter-spacing: 1px; margin: 0; text-transform: uppercase;">RESET CODE</p>
-        ${this.getOtpBoxes(otp)}
-        <p class="otp-warning">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-          Your credentials remain secure if you didn't request this.
+        <!-- Hero OTP Card -->
+        <div style="background-color: #FAFAFA; border: 1px solid #E4E4E7; border-radius: 16px; padding: 28px 16px; margin: 4px 0 20px; text-align: center;">
+          <p style="margin: 0 0 16px; font-size: 11px; font-weight: 800; color: #71717A; letter-spacing: 1.5px; text-transform: uppercase;">
+            YOUR ONE-TIME RESET CODE
+          </p>
+          
+          ${this.getOtpBoxes(otp)}
+          
+          <div style="margin-top: 18px;">
+            <span style="display: inline-block; padding: 6px 14px; background-color: #FFF7ED; border: 1px solid #FED7AA; border-radius: 9999px; font-size: 12px; font-weight: 600; color: #EA580C;">
+              ⏱️ Expires in 10 minutes &bull; Single-use only
+            </span>
+          </div>
+        </div>
+
+        <!-- Security Advisory Card -->
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="width: 100%; margin: 20px 0 0; background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px; text-align: left;">
+          <tr>
+            <td style="padding: 16px 12px 16px 16px; vertical-align: top; width: 36px;">
+              <div style="width: 32px; height: 32px; background-color: #EEF2F6; border: 1px solid #E2E8F0; border-radius: 8px; text-align: center; line-height: 32px; font-size: 16px;">
+                🛡️
+              </div>
+            </td>
+            <td style="padding: 16px 16px 16px 0; vertical-align: top;">
+              <p style="margin: 0 0 4px; font-size: 13px; font-weight: 700; color: #0F172A;">Didn't request this reset?</p>
+              <p style="margin: 0; font-size: 12px; color: #64748B; line-height: 1.5;">
+                Your credentials remain secure if you didn't request this. No changes have been made to your account.
+              </p>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Security Footnote -->
+        <p style="margin: 18px 0 0; font-size: 12px; color: #A1A1AA; text-align: center; line-height: 1.5;">
+          🔒 <b>Security Tip:</b> Never share this code with anyone. Erranders staff will never ask for your reset code.
         </p>
       `
     });
