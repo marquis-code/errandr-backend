@@ -410,13 +410,13 @@ export class AuthService {
       sub: user._id,
       email: user.email,
       role: user.role,
-    });
+    }, { expiresIn: '365d' });
   }
 
   private generateRefreshToken(user: User): string {
     return this.jwtService.sign(
       { sub: user._id, type: 'refresh' },
-      { expiresIn: '30d' }
+      { expiresIn: '365d' }
     );
   }
 

@@ -18,7 +18,7 @@ import { ReferralsModule } from '../referrals/referrals.module';
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
         secret: configService.get('JWT_SECRET'),
-        signOptions: { expiresIn: configService.get('JWT_EXPIRATION', '7d') },
+        signOptions: { expiresIn: configService.get('JWT_EXPIRATION', '365d') },
       }),
       inject: [ConfigService],
     }),
