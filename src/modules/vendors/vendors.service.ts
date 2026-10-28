@@ -183,10 +183,16 @@ export class VendorsService implements OnApplicationBootstrap {
       rawVendorType === 'service_provider' ||
       SERVICE_CATEGORIES.has(category);
 
-    const businessType =
-      rawBusinessType === BusinessType.PHYSICAL_PRODUCT ||
-      rawBusinessType === BusinessType.SERVICE_PROVIDER ||
-      rawBusinessType === BusinessType.HYBRID
+    // The chosen category wins over a conflicting type. The form defaults businessType to
+    // 'physical_product', so a fumigation service that never touched the type cards was
+    // sent as a valid-but-wrong value and is why this kept happening.
+    const categorySaysService = SERVICE_CATEGORIES.has(category);
+
+    const businessType = categorySaysService
+      ? BusinessType.SERVICE_PROVIDER
+      : rawBusinessType === BusinessType.PHYSICAL_PRODUCT ||
+          rawBusinessType === BusinessType.SERVICE_PROVIDER ||
+          rawBusinessType === BusinessType.HYBRID
         ? (rawBusinessType as BusinessType)
         : offersService
           ? BusinessType.SERVICE_PROVIDER
