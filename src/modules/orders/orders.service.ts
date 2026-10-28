@@ -350,8 +350,13 @@ export class OrdersService {
       desc += `\n[Barter Tx ID: ${txId}]`;
     }
 
-    // Default institution to admin's institution
-    const institution = adminUser.institution;
+    // Deliberately no institution.
+    //
+    // This used to default to the ADMIN's campus, because the order is created under the
+    // admin account. A Barter delivery can come from any campus, so pinning it to whichever
+    // campus the admin happened to belong to meant riders on every other campus saw an
+    // empty pool. The errand board includes campus-less custom errands for exactly this
+    // reason, so leaving it unset makes the request visible to all of them.
 
     const payload = {
       type: 'custom_errand',
@@ -362,7 +367,6 @@ export class OrdersService {
       estimatedItemCost: 0,
       paymentMethod: 'cash', // Skip paystack check for peer-to-peer barter
       deliveryOption: 'use_an_errander',
-      institution: institution ? institution.toString() : undefined,
     };
 
     return this.create(adminUser._id.toString(), payload);
