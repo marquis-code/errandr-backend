@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException, ConflictException, Logger, BadRequestException, OnApplicationBootstrap } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { Vendor, VendorStatus, VendorCategory } from './schemas/vendor.schema';
+import { Vendor, VendorStatus, VendorCategory, VendorType, BusinessType } from './schemas/vendor.schema';
 import { RedisService } from '../redis/redis.service';
 import { EmailService } from '../email/email.service';
 import { User } from '../users/schemas/user.schema';
@@ -163,8 +163,48 @@ export class VendorsService implements OnApplicationBootstrap {
       }
     }
 
+    // Two overlapping fields describe what a vendor is, and they used to disagree.
+    // The signup form writes `vendorType = 'service_provider'`, which is not a valid
+    // VendorType, and never sets `businessType` — so the schema defaults ('restaurant',
+    // 'physical_product') won and a fumigation service was stored as a food vendor.
+    // Derive both from what the vendor actually chose, and never store an invalid enum.
+    const SERVICE_CATEGORIES = new Set([
+      'hair_salon', 'nails', 'eyebrows_lashes', 'beauty_salon', 'medspa', 'spa_sauna',
+      'waxing_salon', 'tattooing_piercing', 'tanning_studio', 'fitness_recovery',
+      'physical_therapy', 'health_practice', 'pet_grooming', 'other',
+    ]);
+
+    const rawBusinessType = String((data as any).businessType || '').trim();
+    const rawVendorType = String((data as any).vendorType || '').trim();
+    const category = String((data as any).category || '').trim();
+
+    const offersService =
+      rawBusinessType === BusinessType.SERVICE_PROVIDER ||
+      rawVendorType === 'service_provider' ||
+      SERVICE_CATEGORIES.has(category);
+
+    const businessType =
+      rawBusinessType === BusinessType.PHYSICAL_PRODUCT ||
+      rawBusinessType === BusinessType.SERVICE_PROVIDER ||
+      rawBusinessType === BusinessType.HYBRID
+        ? (rawBusinessType as BusinessType)
+        : offersService
+          ? BusinessType.SERVICE_PROVIDER
+          : BusinessType.PHYSICAL_PRODUCT;
+
+    const vendorType =
+      rawVendorType === VendorType.MINI_MART ||
+      rawVendorType === VendorType.RESTAURANT ||
+      rawVendorType === VendorType.SINGLE_CATEGORY
+        ? (rawVendorType as VendorType)
+        : offersService
+          ? VendorType.SINGLE_CATEGORY
+          : VendorType.RESTAURANT;
+
     const vendor = await this.vendorModel.create({
       ...data,
+      businessType,
+      vendorType,
       subdomain,
       owner: new Types.ObjectId(ownerId),
     });
