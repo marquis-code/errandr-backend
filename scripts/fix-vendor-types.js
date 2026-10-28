@@ -32,24 +32,40 @@ const dryRun = process.argv.includes('--dry-run');
   await mongoose.connect(uri);
   const vendors = mongoose.connection.collection('vendors');
 
-  const suspects = await vendors
-    .find({
-      $or: [{ businessType: { $ne: 'service_provider' } }, { vendorType: { $in: ['service_provider', null] } }],
-      $and: [{ $or: [{ category: { $in: SERVICE_CATEGORIES } }, { tags: { $in: SERVICE_CATEGORIES } }] }],
-    })
-    .toArray();
+  // Two separate problems, because the first run found vendors whose businessType was
+  // already right but whose serviceLocation said 'virtual_online' — a fumigation crew
+  // does not work online.
+  const wrongType = {
+    $or: [{ businessType: { $ne: 'service_provider' } }, { vendorType: { $in: ['service_provider', null] } }],
+    $and: [{ $or: [{ category: { $in: SERVICE_CATEGORIES } }, { tags: { $in: SERVICE_CATEGORIES } }] }],
+  };
 
-  console.log(`  found ${suspects.length} vendor(s) whose category is a service but type is not`);
+  const wrongLocation = {
+    businessType: 'service_provider',
+    serviceLocation: { $in: ['virtual_online', null] },
+  };
+
+  const suspects = await vendors.find({ $or: [wrongType, wrongLocation] }).toArray();
+
+  console.log(`  found ${suspects.length} vendor(s) to inspect`);
 
   for (const vendor of suspects) {
     const haystack = `${vendor.storeName || ''} ${vendor.description || ''}`.toLowerCase();
     const mobile = MOBILE_HINTS.some((hint) => haystack.includes(hint));
 
-    const patch = {
-      businessType: 'service_provider',
-      vendorType: 'single-category',
-      ...(mobile ? { serviceLocation: 'mobile_operator' } : {}),
-    };
+    const patch = {};
+
+    if (vendor.businessType !== 'service_provider') {
+      patch.businessType = 'service_provider';
+      patch.vendorType = 'single-category';
+    }
+
+    // A service marked online that describes coming to you is a mobile operator.
+    if (mobile && vendor.serviceLocation !== 'mobile_operator') {
+      patch.serviceLocation = 'mobile_operator';
+    }
+
+    if (Object.keys(patch).length === 0) continue;
 
     console.log(
       `  ${dryRun ? 'would fix' : 'fixing'} ${vendor.storeName} (${vendor.category}) ->`,
