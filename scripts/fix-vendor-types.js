@@ -14,7 +14,9 @@ const mongoose = require('mongoose');
 const SERVICE_CATEGORIES = [
   'hair_salon', 'nails', 'eyebrows_lashes', 'beauty_salon', 'medspa', 'spa_sauna',
   'waxing_salon', 'tattooing_piercing', 'tanning_studio', 'fitness_recovery',
-  'physical_therapy', 'health_practice', 'pet_grooming', 'other',
+  'physical_therapy', 'health_practice', 'pet_grooming',
+  'fumigation', 'cleaning', 'laundry', 'moving', 'tutoring', 'tech_repair', 'barbing',
+  'other',
 ];
 
 // Words in a store name or description that mean the vendor comes to you.

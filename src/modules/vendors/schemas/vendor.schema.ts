@@ -29,6 +29,16 @@ export enum VendorCategory {
   HEALTH_PRACTICE = 'health_practice',
   PET_GROOMING = 'pet_grooming',
 
+  // Trades that come to you. Without these, pest control had nowhere to live and was
+  // filed under 'other', which is why a fumigation business rendered like a generic shop.
+  FUMIGATION = 'fumigation',
+  CLEANING = 'cleaning',
+  LAUNDRY = 'laundry',
+  MOVING = 'moving',
+  TUTORING = 'tutoring',
+  TECH_REPAIR = 'tech_repair',
+  BARBING = 'barbing',
+
   OTHER = 'other',
 }
 
