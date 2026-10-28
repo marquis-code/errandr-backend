@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Put, Body, Param, Query,
+  Controller, Get, Post, Put, Body, Param, Query, BadRequestException,
   UseGuards, Logger, DefaultValuePipe, ParseIntPipe,
   Headers, Req, UnauthorizedException
 } from '@nestjs/common';
@@ -32,6 +32,32 @@ export class OrdersController {
       'barter_secret_123',
     ].filter(Boolean);
     return !!apiKey && validKeys.includes(apiKey);
+  }
+
+  /**
+   * Places an order on a customer's behalf.
+   *
+   * Support takes orders by phone — a student who cannot complete checkout, or a custom
+   * errand arranged during a call. The order must belong to the customer, not to the
+   * admin, or the customer never sees it, cannot track it, and cannot be refunded.
+   */
+  @Post('admin/place')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Admin: place an order for a customer' })
+  async placeForCustomer(@Body() body: any, @CurrentUser() admin: User) {
+    const customerId = String(body?.customerId || '').trim();
+    if (!customerId) {
+      throw new BadRequestException('customerId is required');
+    }
+
+    this.logger.log(`placeForCustomer() admin=${admin?._id} customer=${customerId}`);
+
+    const { customerId: _ignored, ...payload } = body;
+    // The order is created as the customer, so attribution, tracking and refunds all work
+    // exactly as if they had checked out themselves.
+    return this.ordersService.create(customerId, payload);
   }
 
   @Post('webhook/barter')
