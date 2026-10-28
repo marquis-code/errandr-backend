@@ -368,6 +368,81 @@ export class OrdersService {
     return this.create(adminUser._id.toString(), payload);
   }
 
+
+  /**
+   * Places a vendor order for a customer on their behalf, priced by the server.
+   *
+   * The admin supplies only what a person on a call would know: the customer, the vendor
+   * and the items. Prices come from the catalogue and the delivery fee from the vendor's
+   * own settings, so the total cannot be typed wrong.
+   */
+  async createVendorOrderForAdmin(
+    customerId: string,
+    vendorId: string,
+    lines: Array<{ productId: string; quantity?: number }>,
+    extras: { deliveryAddress?: string; recipientName?: string; recipientPhone?: string; notes?: string } = {},
+  ): Promise<Order> {
+    if (!Types.ObjectId.isValid(customerId)) throw new BadRequestException('Invalid customerId');
+    if (!Types.ObjectId.isValid(vendorId)) throw new BadRequestException('Invalid vendorId');
+
+    const vendor: any = await this.vendorModel.findById(vendorId).lean().exec();
+    if (!vendor) throw new NotFoundException('Vendor not found');
+
+    const items: any[] = [];
+    let subtotal = 0;
+
+    for (const line of lines) {
+      if (!Types.ObjectId.isValid(String(line?.productId))) {
+        throw new BadRequestException(`Invalid product: ${line?.productId}`);
+      }
+      const quantity = Math.max(1, Number(line.quantity) || 1);
+
+      // A product may live in either catalogue; accept whichever the vendor actually has.
+      const product: any =
+        (await this.productModel.findOne({ _id: line.productId, vendor: vendorId }).lean().exec()) ||
+        (await this.menuItemModel.findOne({ _id: line.productId, vendor: vendorId }).lean().exec());
+
+      if (!product) {
+        throw new BadRequestException('That item does not belong to this vendor');
+      }
+
+      const price = Number(product.price ?? product.pricePerPortion ?? 0);
+      items.push({
+        product: product._id,
+        name: product.name,
+        price,
+        image: product.image || (Array.isArray(product.images) ? product.images[0] : undefined),
+        quantity,
+        subtotal: price * quantity,
+        customizations: [],
+      });
+      subtotal += price * quantity;
+    }
+
+    const deliveryFee = Number(vendor.deliveryFee ?? 150);
+
+    const payload = {
+      vendorId,
+      items,
+      subtotal,
+      deliveryFee,
+      serviceFee: 0,
+      platformProcessingFee: 0,
+      packagingFee: 0,
+      total: subtotal + deliveryFee,
+      deliveryOption: 'use_an_errander',
+      deliveryMode: 'delivery',
+      recipientName: extras.recipientName || 'Customer',
+      recipientPhone: extras.recipientPhone,
+      specificAddress: extras.deliveryAddress,
+      deliveryAddress: extras.deliveryAddress,
+      vendorNote: extras.notes || '',
+      notes: extras.notes || 'Placed by support on the customer\'s behalf',
+    };
+
+    return this.create(customerId, payload);
+  }
+
   async create(customerId: string, data: any, req?: any): Promise<Order> {
     if (data.type === 'custom_errand') {
       const runnerFee = Number(data.runnerFee);

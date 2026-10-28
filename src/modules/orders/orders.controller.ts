@@ -60,6 +60,41 @@ export class OrdersController {
     return this.ordersService.create(customerId, payload);
   }
 
+
+  /**
+   * A normal (vendor) order, priced by the server.
+   *
+   * The student checkout sends a fully computed payload — subtotal, fees, packaging,
+   * total — because the customer sees those numbers before paying. An admin typing an
+   * order by phone must not be trusted with them, so the price is derived here from the
+   * product catalogue and the vendor's own delivery fee.
+   */
+  @Post('admin/place-vendor')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Admin: place a vendor order for a customer' })
+  async placeVendorOrderForCustomer(@Body() body: any, @CurrentUser() admin: User) {
+    const customerId = String(body?.customerId || '').trim();
+    const vendorId = String(body?.vendorId || '').trim();
+    const lines: Array<{ productId: string; quantity?: number }> = Array.isArray(body?.items) ? body.items : [];
+
+    if (!customerId) throw new BadRequestException('customerId is required');
+    if (!vendorId) throw new BadRequestException('vendorId is required');
+    if (!lines.length) throw new BadRequestException('At least one item is required');
+
+    this.logger.log(
+      `placeVendorOrderForCustomer() admin=${admin?._id} customer=${customerId} vendor=${vendorId} lines=${lines.length}`,
+    );
+
+    return this.ordersService.createVendorOrderForAdmin(customerId, vendorId, lines, {
+      deliveryAddress: body?.deliveryAddress,
+      recipientName: body?.recipientName,
+      recipientPhone: body?.recipientPhone,
+      notes: body?.notes,
+    });
+  }
+
   @Post('webhook/barter')
   @ApiOperation({ summary: 'Webhook to create an errand from Barter' })
   createFromBarterWebhook(@Body() body: any, @Headers('x-api-key') apiKey: string) {
