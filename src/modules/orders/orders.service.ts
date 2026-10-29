@@ -35,6 +35,7 @@ import { ModuleRef } from '@nestjs/core';
 import { ExamModeService } from '../exam-mode/exam-mode.service';
 import { NegotiationGateway } from './gateways/negotiation.gateway';
 import { InstitutionResolver } from '../institutions/institution-resolver.service';
+import { InstitutionsService } from '../institutions/institutions.service';
 
 @Injectable()
 export class OrdersService {
@@ -67,6 +68,7 @@ export class OrdersService {
     @Inject(forwardRef(() => ErrandersService))
     private errandersService: ErrandersService,
     private institutionResolver: InstitutionResolver,
+    private institutionsService: InstitutionsService,
   ) { }
 
   /**
@@ -350,13 +352,31 @@ export class OrdersService {
       desc += `\n[Barter Tx ID: ${txId}]`;
     }
 
-    // Deliberately no institution.
-    //
-    // This used to default to the ADMIN's campus, because the order is created under the
-    // admin account. A Barter delivery can come from any campus, so pinning it to whichever
-    // campus the admin happened to belong to meant riders on every other campus saw an
-    // empty pool. The errand board includes campus-less custom errands for exactly this
-    // reason, so leaving it unset makes the request visible to all of them.
+    // Resolve target institution from Barter payload if provided (by ID, slug, or university name),
+    // but CRITICALLY NEVER fall back to the platform admin's campus, which previously trapped
+    // all Barter errands on CMUL and made them invisible to riders on other campuses.
+    let targetInstitution: Types.ObjectId | undefined;
+    if (data.institution && Types.ObjectId.isValid(data.institution)) {
+      targetInstitution = new Types.ObjectId(data.institution);
+    } else if (data.university || data.campus) {
+      const uniQuery = String(data.university || data.campus).trim();
+      try {
+        const found = await this.institutionsService.findByIdOrSlug(uniQuery.toLowerCase());
+        if (found) targetInstitution = found._id as Types.ObjectId;
+      } catch {
+        try {
+          const all = await this.institutionsService.findAll(false);
+          const match = all.find(i => 
+            i.shortName?.toLowerCase() === uniQuery.toLowerCase() ||
+            i.name?.toLowerCase().includes(uniQuery.toLowerCase()) ||
+            i.slug?.toLowerCase() === uniQuery.toLowerCase()
+          );
+          if (match) targetInstitution = match._id as Types.ObjectId;
+        } catch (e) {
+          this.logger.warn(`Failed to resolve institution for university ${uniQuery}: ${e}`);
+        }
+      }
+    }
 
     const payload = {
       type: 'custom_errand',
@@ -365,8 +385,11 @@ export class OrdersService {
       description: desc,
       runnerFee,
       estimatedItemCost: 0,
-      paymentMethod: 'cash', // Skip paystack check for peer-to-peer barter
+      paymentMethod: 'cash',
       deliveryOption: 'use_an_errander',
+      institution: targetInstitution || undefined,
+      skipInstitutionFallback: true,
+      isBarter: true,
     };
 
     return this.create(adminUser._id.toString(), payload);
@@ -492,10 +515,10 @@ export class OrdersService {
       // Campus tenancy: a custom errand has no vendor, so it inherits the
       // ordering student's institution, or request context, or stays unset.
       let institution = data.institution ? this.toObjectId(data.institution) : undefined;
-      if (!institution) {
+      if (!institution && !data.skipInstitutionFallback && !data.isBarter) {
         institution = await this.resolveOrderInstitution(customerId);
       }
-      if (!institution && req) {
+      if (!institution && req && !data.skipInstitutionFallback && !data.isBarter) {
         const resolved = await this.resolveInstitution(req);
         if (resolved) institution = resolved;
       }
@@ -506,6 +529,8 @@ export class OrdersService {
         deliveryPin: Math.floor(1000 + Math.random() * 9000).toString(),
         customer: new Types.ObjectId(customerId),
         institution,
+        isBarter: !!data.isBarter,
+        paymentMethod: data.paymentMethod || (data.isBarter ? 'cash' : 'card'),
         type: OrderType.CUSTOM_ERRAND,
         customDetails: {
           pickupLocation: data.pickupLocation,
@@ -528,13 +553,13 @@ export class OrdersService {
         erranderPayout: erranderShare,
         platformShare,
         total,
-        paymentStatus: data.paymentReference ? (paymentVerified ? PaymentStatus.PAID : PaymentStatus.PENDING) : PaymentStatus.PENDING,
+        paymentStatus: data.isBarter ? PaymentStatus.PAID : (data.paymentReference ? (paymentVerified ? PaymentStatus.PAID : PaymentStatus.PENDING) : PaymentStatus.PENDING),
         paymentReference: data.paymentReference || undefined,
-        status: (paymentVerified || data.paymentMethod === 'cash') ? OrderStatus.PENDING : OrderStatus.NEGOTIATING,
+        status: (data.isBarter || paymentVerified || data.paymentMethod === 'cash') ? OrderStatus.PENDING : OrderStatus.NEGOTIATING,
         itemCostDisbursementStatus: itemCost > 0 ? 'pending' : 'not_applicable',
         reconciliationStatus: itemCost > 0 ? 'pending' : 'not_applicable',
         statusHistory: [
-          { status: (paymentVerified || data.paymentMethod === 'cash') ? OrderStatus.PENDING : OrderStatus.NEGOTIATING, timestamp: new Date(), note: 'Custom errand created and awaiting negotiation' },
+          { status: (data.isBarter || paymentVerified || data.paymentMethod === 'cash') ? OrderStatus.PENDING : OrderStatus.NEGOTIATING, timestamp: new Date(), note: 'Custom errand created and awaiting negotiation' },
         ],
       });
 
@@ -1482,7 +1507,7 @@ export class OrdersService {
         if (orderValue > 3000) {
           throw new BadRequestException('You need Tier 3 (Verified Pro) status to accept orders above ₦3,000');
         }
-        if (targetOrder.paymentMethod === 'cash') {
+        if (targetOrder.paymentMethod === 'cash' && !targetOrder.isBarter && !targetOrder.customDetails?.description?.includes('Barter')) {
           throw new BadRequestException('You need Tier 3 (Verified Pro) status to accept Cash on Delivery orders');
         }
       }
@@ -2053,18 +2078,15 @@ export class OrdersService {
     // Campus tenancy: a student only ever sees their own campus's orders.
     const institution = await this.resolveInstitution(req);
     if (institution) {
-      // A custom errand that arrived from Barter has no campus: it is created under the
-      // platform's admin account, which belongs to no institution. Requiring the rider's
-      // campus therefore hid every Barter errand from every campus board, which is why a
-      // negotiation started on Barter never appeared in the Errand Ninja app.
-      //
-      // Campus-less CUSTOM errands are now visible to any campus. Vendor orders still
-      // respect tenancy, so no campus sees another campus's shop orders.
+      // Campus-less CUSTOM errands and Barter peer-to-peer deliveries are visible
+      // to riders across campuses.
       filter.$and = [
         {
           $or: [
             { institution },
             { institution: { $in: [null, undefined] }, type: OrderType.CUSTOM_ERRAND },
+            { isBarter: true },
+            { 'customDetails.description': { $regex: /Barter/i } },
           ],
         },
       ];
@@ -2210,6 +2232,8 @@ export class OrdersService {
           $or: [
             { institution },
             { institution: { $in: [null, undefined] } },
+            { isBarter: true },
+            { 'customDetails.description': { $regex: /Barter/i } },
           ],
         },
       ];
@@ -2271,6 +2295,8 @@ export class OrdersService {
           $or: [
             { institution },
             { institution: { $in: [null, undefined] }, type: OrderType.CUSTOM_ERRAND },
+            { isBarter: true },
+            { 'customDetails.description': { $regex: /Barter/i } },
           ],
         },
       ];

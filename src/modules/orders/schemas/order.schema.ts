@@ -78,6 +78,9 @@ export class Order extends Document {
   @Prop({ type: Number })
   agreedDeliveryFee?: number;
 
+  @Prop({ type: Boolean, default: false })
+  isBarter: boolean;
+
   @Prop({
     type: {
       pickupLocation: String,
