@@ -64,26 +64,29 @@ export class NegotiationService {
     const activeBid = existingBid;
 
     // Trigger webhook for barter transactions
-    if (order.type === 'custom_errand' && order.customDetails?.description?.includes('[Barter Tx ID:')) {
-      const match = order.customDetails.description.match(/\[Barter Tx ID: (.+)\]/);
-      if (match) {
-        const barterTxId = match[1];
-        try {
-          const res = await fetch(`${process.env.BARTER_API_URL || 'http://localhost:3100/api/v1'}/escrow/webhook/negotiation`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.BARTER_API_KEY || '' },
-            body: JSON.stringify({
-              barterTransactionId: barterTxId,
-              orderId: order._id.toString(),
-              bidId: activeBid._id.toString(),
-              proposedFee: bidAmount
-            })
-          });
-          const text = await res.text();
-          this.logger.log(`Barter Webhook Response: ${res.status} - ${text}`);
-        } catch (e) {
-          this.logger.error('Failed to notify barter about negotiation', e);
-        }
+    const barterTxId = order.barterTransactionId || (order.customDetails?.description?.match(/\[Barter Tx ID:\s*([^\]\s]+)\]/)?.[1]);
+    if (barterTxId) {
+      const rawBase = (process.env.BARTER_API_URL || 'https://barter-backend-api.erranders.org/api/v1').trim();
+      const cleanBase = rawBase.replace(/\/+$/, '');
+      const finalBase = cleanBase.endsWith('/api/v1') ? cleanBase : `${cleanBase}/api/v1`;
+      const webhookUrl = `${finalBase}/escrow/webhook/negotiation`;
+      const apiKey = (process.env.BARTER_API_KEY || process.env.BARTER_SECRET_KEY || 'barter_secret_123').trim();
+
+      try {
+        const res = await fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+          body: JSON.stringify({
+            barterTransactionId: barterTxId.trim(),
+            orderId: order._id.toString(),
+            bidId: activeBid._id.toString(),
+            proposedFee: bidAmount
+          })
+        });
+        const text = await res.text();
+        this.logger.log(`Barter Webhook Response: ${res.status} - ${text}`);
+      } catch (e) {
+        this.logger.error(`Failed to notify barter about negotiation at ${webhookUrl}: ${e.message}`, e.stack);
       }
     }
 

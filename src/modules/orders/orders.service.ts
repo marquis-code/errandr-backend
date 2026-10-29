@@ -384,12 +384,15 @@ export class OrdersService {
       dropoffLocation: data.dropoffAddress || data.dropoffLocation || 'Buyer Campus Delivery Address',
       description: desc,
       runnerFee,
+      proposedDeliveryFee: runnerFee,
       estimatedItemCost: 0,
       paymentMethod: 'cash',
       deliveryOption: 'use_an_errander',
       institution: targetInstitution || undefined,
       skipInstitutionFallback: true,
       isBarter: true,
+      barterTransactionId: txId ? String(txId).trim() : undefined,
+      isNegotiating: data.isNegotiating !== false,
     };
 
     return this.create(adminUser._id.toString(), payload);
@@ -530,8 +533,10 @@ export class OrdersService {
         customer: new Types.ObjectId(customerId),
         institution,
         isBarter: !!data.isBarter,
+        barterTransactionId: data.barterTransactionId,
         paymentMethod: data.paymentMethod || (data.isBarter ? 'cash' : 'card'),
         type: OrderType.CUSTOM_ERRAND,
+        proposedDeliveryFee: data.proposedDeliveryFee || runnerFee,
         customDetails: {
           pickupLocation: data.pickupLocation,
           dropoffLocation: data.dropoffLocation,
@@ -555,11 +560,11 @@ export class OrdersService {
         total,
         paymentStatus: data.isBarter ? PaymentStatus.PAID : (data.paymentReference ? (paymentVerified ? PaymentStatus.PAID : PaymentStatus.PENDING) : PaymentStatus.PENDING),
         paymentReference: data.paymentReference || undefined,
-        status: (data.isBarter || paymentVerified || data.paymentMethod === 'cash') ? OrderStatus.PENDING : OrderStatus.NEGOTIATING,
+        status: (data.isBarter && data.isNegotiating !== false) ? OrderStatus.NEGOTIATING : ((data.isBarter || paymentVerified || data.paymentMethod === 'cash') ? OrderStatus.PENDING : OrderStatus.NEGOTIATING),
         itemCostDisbursementStatus: itemCost > 0 ? 'pending' : 'not_applicable',
         reconciliationStatus: itemCost > 0 ? 'pending' : 'not_applicable',
         statusHistory: [
-          { status: (data.isBarter || paymentVerified || data.paymentMethod === 'cash') ? OrderStatus.PENDING : OrderStatus.NEGOTIATING, timestamp: new Date(), note: 'Custom errand created and awaiting negotiation' },
+          { status: (data.isBarter && data.isNegotiating !== false) ? OrderStatus.NEGOTIATING : ((data.isBarter || paymentVerified || data.paymentMethod === 'cash') ? OrderStatus.PENDING : OrderStatus.NEGOTIATING), timestamp: new Date(), note: 'Custom errand created and awaiting negotiation' },
         ],
       });
 
@@ -3600,41 +3605,43 @@ export class OrdersService {
     });
 
     // Trigger webhook for barter transactions
-    if (order.type === 'custom_errand' && order.customDetails?.description?.includes('[Barter Tx ID:')) {
-      const match = order.customDetails.description.match(/\[Barter Tx ID: (.+)\]/);
-      if (match) {
-        const barterTxId = match[1];
-        
-        // Find the bid ID (either updated or newly added)
-        let latestTs = 0;
-        let bidObj: any = null;
-        order.bids.forEach(b => {
-          if (b.errander.toString() === erranderId.toString()) {
-            const ts = new Date(b.timestamp).getTime();
-            if (ts > latestTs) {
-              latestTs = ts;
-              bidObj = b;
-            }
+    const barterTxId = order.barterTransactionId || (order.customDetails?.description?.match(/\[Barter Tx ID:\s*([^\]\s]+)\]/)?.[1]);
+    if (barterTxId) {
+      // Find the bid ID (either updated or newly added)
+      let latestTs = 0;
+      let bidObj: any = null;
+      order.bids.forEach(b => {
+        if (b.errander.toString() === erranderId.toString()) {
+          const ts = new Date(b.timestamp).getTime();
+          if (ts > latestTs) {
+            latestTs = ts;
+            bidObj = b;
           }
-        });
-        const bidIdStr = bidObj ? bidObj._id.toString() : '';
-
-        try {
-          const res = await fetch(`${process.env.BARTER_API_URL || 'http://localhost:3100/api/v1'}/escrow/webhook/negotiation`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.BARTER_API_KEY || '' },
-            body: JSON.stringify({
-              barterTransactionId: barterTxId,
-              orderId: order._id.toString(),
-              bidId: bidIdStr,
-              proposedFee: amount
-            })
-          });
-          const text = await res.text();
-          this.logger.log(`Barter Webhook Response: ${res.status} - ${text}`);
-        } catch (e) {
-          this.logger.error('Failed to notify barter about negotiation', e);
         }
+      });
+      const bidIdStr = bidObj ? bidObj._id.toString() : '';
+
+      const rawBase = (process.env.BARTER_API_URL || 'https://barter-backend-api.erranders.org/api/v1').trim();
+      const cleanBase = rawBase.replace(/\/+$/, '');
+      const finalBase = cleanBase.endsWith('/api/v1') ? cleanBase : `${cleanBase}/api/v1`;
+      const webhookUrl = `${finalBase}/escrow/webhook/negotiation`;
+      const apiKey = (process.env.BARTER_API_KEY || process.env.BARTER_SECRET_KEY || 'barter_secret_123').trim();
+
+      try {
+        const res = await fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+          body: JSON.stringify({
+            barterTransactionId: barterTxId.trim(),
+            orderId: order._id.toString(),
+            bidId: bidIdStr,
+            proposedFee: amount
+          })
+        });
+        const text = await res.text();
+        this.logger.log(`Barter Webhook Response: ${res.status} - ${text}`);
+      } catch (e) {
+        this.logger.error(`Failed to notify barter about negotiation at ${webhookUrl}: ${e.message}`, e.stack);
       }
     }
 

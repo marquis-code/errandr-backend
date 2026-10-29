@@ -81,6 +81,9 @@ export class Order extends Document {
   @Prop({ type: Boolean, default: false })
   isBarter: boolean;
 
+  @Prop({ type: String })
+  barterTransactionId?: string;
+
   @Prop({
     type: {
       pickupLocation: String,
