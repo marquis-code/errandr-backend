@@ -5176,6 +5176,26 @@ export class OrdersService {
     return { success: true, message: 'Substitute request sent to student' };
   }
 
+
+  /**
+   * A substitute may not cost the customer more than the item it replaces.
+   *
+   * Accepting a substitute overwrote the line price with the replacement's, so a pricier
+   * swap charged the customer extra without asking. A cheaper swap is fine — the
+   * difference simply falls away from the total.
+   */
+  private assertSubstituteNotDearer(
+    originalUnitPrice: number,
+    substituteUnitPrice: number,
+    substituteName: string,
+  ): void {
+    if (substituteUnitPrice > originalUnitPrice) {
+      throw new BadRequestException(
+        `${substituteName} costs more than the item it replaces. A substitute can only be the same price or less.`,
+      );
+    }
+  }
+
   async resolveItemSubstitute(orderId: string, itemId: string, accept: boolean, substituteItemId: string, userId: string, itemName?: string, note?: string) {
     const order = await this.orderModel.findById(orderId);
     if (!order) throw new NotFoundException('Order not found');
@@ -5220,11 +5240,14 @@ export class OrdersService {
         originalItemPrice = jsonItem.price || 0;
         quantity = jsonItem.quantity || 1;
         
+        const substitutePrice = Number((substituteObj as any).price || (substituteObj as any).pricePerPortion || 0);
+        this.assertSubstituteNotDearer(originalItemPrice, substitutePrice, substituteObj.name);
+
         docItem.status = 'substituted';
         docItem.substitutedWith = { menuItem: substituteObj._id, name: substituteObj.name, originalName: jsonItem.name, note: note || '' };
         docItem.name = substituteObj.name;
-        docItem.price = (substituteObj as any).price || (substituteObj as any).pricePerPortion;
-        docItem.subtotal = ((substituteObj as any).price || (substituteObj as any).pricePerPortion) * quantity;
+        docItem.price = substitutePrice;
+        docItem.subtotal = substitutePrice * quantity;
         
         order.set('menuItems', menuItems);
         itemFound = true;
