@@ -67,16 +67,22 @@ export class PromoCodesController {
   preview(
     @Query('code') code: string, 
     @Query('subtotal') subtotal: string, 
-    @Query('vendorId') vendorId: string, 
-    @Query('isGroupOrder') isGroupOrder: string,
-    @Query('locationType') locationType: string,
-    @Query('isCustomErrand') isCustomErrand: string,
-    @Req() req: any
+    @Query('vendorId') vendorId?: string, 
+    @Query('isGroupOrder') isGroupOrder?: string,
+    @Query('locationType') locationType?: string,
+    @Query('isCustomErrand') isCustomErrand?: string,
+    @Query('isScheduled') isScheduled?: string,
+    @Query('isPreOrder') isPreOrder?: string,
+    @Query('orderType') orderType?: string,
+    @Req() req?: any
   ) {
     const orderContext = {
       isGroupOrder: isGroupOrder === 'true',
       locationType: locationType,
-      isCustomErrand: isCustomErrand === 'true'
+      isCustomErrand: isCustomErrand === 'true',
+      isScheduled: isScheduled === 'true' || isPreOrder === 'true',
+      isPreOrder: isPreOrder === 'true',
+      orderType: orderType,
     };
     return this.promoCodesService.previewCode(code, Number(subtotal) || 0, req.user?._id?.toString(), vendorId, undefined, orderContext);
   }
@@ -88,18 +94,43 @@ export class PromoCodesController {
   validate(
     @Query('code') code: string, 
     @Query('subtotal') subtotal: string, 
-    @Query('vendorId') vendorId: string, 
-    @Query('isGroupOrder') isGroupOrder: string,
-    @Query('locationType') locationType: string,
-    @Query('isCustomErrand') isCustomErrand: string,
-    @Req() req: any
+    @Query('vendorId') vendorId?: string, 
+    @Query('isGroupOrder') isGroupOrder?: string,
+    @Query('locationType') locationType?: string,
+    @Query('isCustomErrand') isCustomErrand?: string,
+    @Query('isScheduled') isScheduled?: string,
+    @Query('isPreOrder') isPreOrder?: string,
+    @Query('orderType') orderType?: string,
+    @Req() req?: any
   ) {
     const orderContext = {
       isGroupOrder: isGroupOrder === 'true',
       locationType: locationType,
-      isCustomErrand: isCustomErrand === 'true'
+      isCustomErrand: isCustomErrand === 'true',
+      isScheduled: isScheduled === 'true' || isPreOrder === 'true',
+      isPreOrder: isPreOrder === 'true',
+      orderType: orderType,
     };
     return this.promoCodesService.validateCode(code, Number(subtotal) || 0, req.user?._id?.toString(), vendorId, undefined, orderContext);
+  }
+
+  @Get('validate/:code')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Validate a promo code via path parameter' })
+  validateByParam(
+    @Param('code') code: string,
+    @Query('subtotal') subtotal: string, 
+    @Query('vendorId') vendorId?: string, 
+    @Query('isGroupOrder') isGroupOrder?: string,
+    @Query('locationType') locationType?: string,
+    @Query('isCustomErrand') isCustomErrand?: string,
+    @Query('isScheduled') isScheduled?: string,
+    @Query('isPreOrder') isPreOrder?: string,
+    @Query('orderType') orderType?: string,
+    @Req() req?: any
+  ) {
+    return this.validate(code, subtotal, vendorId, isGroupOrder, locationType, isCustomErrand, isScheduled, isPreOrder, orderType, req);
   }
 
   @Get(':id/redemptions')

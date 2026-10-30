@@ -7,6 +7,7 @@ import { PromoRedemption, PromoRedemptionSchema } from './schemas/promo-redempti
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { Facilitator, FacilitatorSchema } from '../referrals/schemas/facilitator.schema';
 import { Referral, ReferralSchema } from '../referrals/schemas/referral.schema';
+import { Order, OrderSchema } from '../orders/schemas/order.schema';
 import { EmailModule } from '../email/email.module';
 import { WalletsModule } from '../wallets/wallets.module';
 
@@ -18,6 +19,7 @@ import { WalletsModule } from '../wallets/wallets.module';
       { name: User.name, schema: UserSchema },
       { name: Facilitator.name, schema: FacilitatorSchema },
       { name: Referral.name, schema: ReferralSchema },
+      { name: Order.name, schema: OrderSchema },
     ]),
     EmailModule,
     forwardRef(() => WalletsModule),

@@ -503,8 +503,53 @@ export class OrdersService {
       // Platform share is the customer fixed fee PLUS the ninja commission
       const platformShare = customerFixedFee + ninjaCommission;
 
-      // Total is item cost + runner fee + customer fixed service fee
-      const total = itemCost + itemCostBuffer + runnerFee + customerFixedFee;
+      // Promo Code Logic for Custom Errands
+      let customErrandDiscount = 0;
+      let appliedPromoCode = '';
+      let promoDiscount = 0;
+
+      if (data.promoCode) {
+        try {
+          const userOrdersCount = await this.orderModel.countDocuments({
+            customer: new Types.ObjectId(customerId),
+            status: { $nin: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] }
+          });
+          const orderContext = {
+            isGroupOrder: false,
+            locationType: 'inside_campus',
+            isCustomErrand: true,
+            isScheduled: false,
+            orderType: 'custom_errand',
+          };
+          const promo = await this.promoCodesService.validateCode(
+            data.promoCode,
+            runnerFee + itemCost,
+            customerId,
+            undefined,
+            userOrdersCount,
+            orderContext
+          );
+          let pDiscount = 0;
+          const discountTarget = promo.appliesToDeliveryFeeOnly ? runnerFee : (runnerFee + itemCost);
+          if (promo.discountType === 'percentage') {
+            pDiscount = Math.round(discountTarget * (promo.value / 100));
+            if (promo.maxDiscountAmount && pDiscount > promo.maxDiscountAmount) {
+              pDiscount = promo.maxDiscountAmount;
+            }
+          } else {
+            pDiscount = promo.value;
+          }
+          if (pDiscount > discountTarget) pDiscount = discountTarget;
+          customErrandDiscount = pDiscount;
+          promoDiscount = pDiscount;
+          appliedPromoCode = promo.code;
+        } catch (e) {
+          this.logger.warn(`Promo code invalid on custom errand: ${data.promoCode} - ${e.message}`);
+        }
+      }
+
+      // Total is item cost + runner fee + customer fixed service fee - customErrandDiscount
+      const total = Math.max(0, itemCost + itemCostBuffer + runnerFee + customerFixedFee - customErrandDiscount);
 
       // Optional Paystack verification
       let paymentVerified = false;
@@ -557,6 +602,9 @@ export class OrdersService {
         erranderShare,
         erranderPayout: erranderShare,
         platformShare,
+        discount: customErrandDiscount,
+        promoCode: appliedPromoCode,
+        promoDiscount,
         total,
         paymentStatus: data.isBarter ? PaymentStatus.PAID : (data.paymentReference ? (paymentVerified ? PaymentStatus.PAID : PaymentStatus.PENDING) : PaymentStatus.PENDING),
         paymentReference: data.paymentReference || undefined,
@@ -567,6 +615,17 @@ export class OrdersService {
           { status: (data.isBarter && data.isNegotiating !== false) ? OrderStatus.NEGOTIATING : ((data.isBarter || paymentVerified || data.paymentMethod === 'cash') ? OrderStatus.PENDING : OrderStatus.NEGOTIATING), timestamp: new Date(), note: 'Custom errand created and awaiting negotiation' },
         ],
       });
+
+      // Record promo redemption for custom errand
+      if (appliedPromoCode) {
+        this.promoCodesService.recordRedemption({
+          code: appliedPromoCode,
+          orderId: order._id.toString(),
+          customerId: customerId,
+          orderTotal: order.total,
+          discountAmount: promoDiscount,
+        }).catch(e => this.logger.error(`Failed to record promo redemption for custom errand ${order._id}: ${e.message}`));
+      }
 
       // Broadcast immediately if negotiating or paid
       if (paymentVerified || data.paymentMethod === 'cash' || order.status === OrderStatus.NEGOTIATING) {
@@ -892,15 +951,30 @@ export class OrdersService {
     // Promo Code Logic
     if (data.promoCode) {
       try {
-        const userOrdersCount = await this.orderModel.countDocuments({ customer: customerId });
+        const userOrdersCount = await this.orderModel.countDocuments({
+          customer: new Types.ObjectId(customerId),
+          status: { $nin: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] },
+        });
 
         const orderContext = {
-          isGroupOrder: data.isGroupOrder || !!data.groupId,
+          isGroupOrder: Boolean(data.isGroupOrder || !!data.groupId),
           locationType: data.locationType || 'inside_campus',
-          isCustomErrand: data.type === 'custom_errand' || data.orderType === 'custom_errand'
+          isCustomErrand: Boolean(data.type === 'custom_errand' || data.orderType === 'custom_errand'),
+          isScheduled: Boolean(data.isPreOrder || !!data.scheduledDate || !!data.scheduledTime),
+          isPreOrder: Boolean(data.isPreOrder),
+          orderType: data.orderType || (data.type === 'custom_errand' ? 'custom_errand' : 'marketplace'),
         };
 
-        const promo = await this.promoCodesService.validateCode(data.promoCode, subtotal, customerId, data.vendor?.toString(), userOrdersCount, orderContext);
+        const resolvedVendorId = vendor?._id?.toString() || data.vendorId?.toString() || data.vendor?.toString();
+
+        const promo = await this.promoCodesService.validateCode(
+          data.promoCode,
+          subtotal,
+          customerId,
+          resolvedVendorId,
+          userOrdersCount,
+          orderContext
+        );
 
         let pDiscount = 0;
         const discountTarget = promo.appliesToDeliveryFeeOnly ? deliveryFee : subtotal;
@@ -922,18 +996,12 @@ export class OrdersService {
         if (promo.appliesToDeliveryFeeOnly) {
           deliveryFee -= pDiscount;
           promoDiscount = pDiscount; // Only track for display
-          // The discount variable in this method usually deducts from total, 
-          // since deliveryFee is added to total later, we just reduced deliveryFee directly.
-          // Wait, let's check how total is calculated.
         } else {
           discount += pDiscount;
           promoDiscount = pDiscount;
         }
 
         appliedPromoCode = promo.code;
-
-        // Increment usage
-        await this.promoCodesService.incrementUsage(promo.code);
       } catch (e) {
         // Ignore invalid promo codes or handle error
         this.logger.warn(`Invalid promo code applied: ${data.promoCode} - ${e.message}`);

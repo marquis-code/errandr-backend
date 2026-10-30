@@ -6,6 +6,7 @@ import { PromoRedemption } from './schemas/promo-redemption.schema';
 import { User, UserRole } from '../users/schemas/user.schema';
 import { Facilitator, FacilitatorTier } from '../referrals/schemas/facilitator.schema';
 import { Referral, ReferralStatus, ReferrerType, ReferredType } from '../referrals/schemas/referral.schema';
+import { Order, OrderStatus } from '../orders/schemas/order.schema';
 import { WalletsService } from '../wallets/wallets.service';
 import { EmailService } from '../email/email.service';
 
@@ -19,6 +20,7 @@ export class PromoCodesService {
     @InjectModel(User.name) private readonly userModel: Model<User>,
     @InjectModel(Facilitator.name) private readonly facilitatorModel: Model<Facilitator>,
     @InjectModel(Referral.name) private readonly referralModel: Model<Referral>,
+    @InjectModel(Order.name) private readonly orderModel: Model<Order>,
     @Inject(forwardRef(() => WalletsService)) private readonly walletsService: WalletsService,
     private readonly emailService: EmailService,
   ) {}
@@ -307,44 +309,37 @@ export class PromoCodesService {
     userId?: string, 
     vendorId?: string, 
     userOrdersCount?: number,
-    orderContext?: { isGroupOrder?: boolean; locationType?: string; isCustomErrand?: boolean }
+    orderContext?: { 
+      isGroupOrder?: boolean; 
+      locationType?: string; 
+      isCustomErrand?: boolean;
+      isScheduled?: boolean;
+      isPreOrder?: boolean;
+      orderType?: string;
+    }
   ): Promise<PromoCode> {
-    const promo = await this.promoCodeModel.findOne({ code: code.trim().toUpperCase() });
+    if (!code || !code.trim()) {
+      throw new BadRequestException('Promo code is required');
+    }
+    const cleanCode = code.trim().toUpperCase();
+    const promo = await this.promoCodeModel.findOne({ code: cleanCode });
     if (!promo) {
       throw new BadRequestException('Invalid promo code');
     }
     if (!promo.isActive) {
-      throw new BadRequestException('Promo code is not active');
+      throw new BadRequestException('This promo code is currently disabled or inactive');
     }
-    if (promo.expiresAt && promo.expiresAt < new Date()) {
-      throw new BadRequestException('Promo code has expired');
+    if (promo.expiresAt && new Date(promo.expiresAt) < new Date()) {
+      throw new BadRequestException('This promo code has expired');
     }
     if (promo.minOrderAmount && subtotal < promo.minOrderAmount) {
-      throw new BadRequestException(`Order amount must be at least ₦${promo.minOrderAmount} to use this code`);
+      throw new BadRequestException(`Order amount must be at least ₦${promo.minOrderAmount.toLocaleString()} to use this code`);
     }
-    if (promo.maxUsageCount && promo.usageCount >= promo.maxUsageCount) {
-      throw new BadRequestException('Promo code usage limit reached');
+    if (promo.maxUsageCount && promo.maxUsageCount > 0 && promo.usageCount >= promo.maxUsageCount) {
+      throw new BadRequestException('This promo code has reached its maximum global usage limit');
     }
     
-    // Robust restrictions
-    if (promo.applicableVendors && promo.applicableVendors.length > 0 && vendorId) {
-      const vendorStringIds = promo.applicableVendors.map(v => v.toString());
-      if (!vendorStringIds.includes(vendorId.toString())) {
-        throw new BadRequestException('Promo code is not applicable to this vendor');
-      }
-    }
-
-    if (promo.applicableUsers && promo.applicableUsers.length > 0 && userId) {
-      const userStringIds = promo.applicableUsers.map(u => u.toString());
-      if (!userStringIds.includes(userId.toString())) {
-        throw new BadRequestException('Promo code is not applicable to your account');
-      }
-    }
-
-    if (promo.onlyForNewUsers && userOrdersCount !== undefined && userOrdersCount > 0) {
-      throw new BadRequestException('Promo code is only valid for new users on their first order');
-    }
-
+    // Per-User redemption limit check
     if (promo.maxUsagePerUser && promo.maxUsagePerUser > 0 && userId) {
       const userRedemptions = await this.promoRedemptionModel.countDocuments({
         promoId: promo._id,
@@ -355,18 +350,58 @@ export class PromoCodesService {
       }
     }
 
-    // Order Type Restrictions
+    // Specific vendor restriction check
+    if (promo.applicableVendors && promo.applicableVendors.length > 0) {
+      if (!vendorId) {
+        throw new BadRequestException('This promo code is restricted to specific vendors only');
+      }
+      const vendorStringIds = promo.applicableVendors.map(v => v.toString());
+      if (!vendorStringIds.includes(vendorId.toString())) {
+        throw new BadRequestException('This promo code is not valid for this vendor store');
+      }
+    }
+
+    // Specific user account restriction check
+    if (promo.applicableUsers && promo.applicableUsers.length > 0) {
+      if (!userId) {
+        throw new BadRequestException('This promo code is restricted to specific accounts only');
+      }
+      const userStringIds = promo.applicableUsers.map(u => u.toString());
+      if (!userStringIds.includes(userId.toString())) {
+        throw new BadRequestException('This promo code is exclusive and not applicable to your account');
+      }
+    }
+
+    // New customers only check
+    if (promo.onlyForNewUsers) {
+      let count = userOrdersCount;
+      if (count === undefined && userId) {
+        count = await this.orderModel.countDocuments({
+          customer: new Types.ObjectId(userId),
+          status: { $nin: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] }
+        });
+      }
+      if (count !== undefined && count > 0) {
+        throw new BadRequestException('This promo code is only valid for new customers on their first order');
+      }
+    }
+
+    // Order Fulfillment & Order Type Restrictions check
     if (promo.applicableOrderTypes && promo.applicableOrderTypes.length > 0 && orderContext) {
-      const { isGroupOrder, locationType, isCustomErrand } = orderContext;
+      const { isGroupOrder, locationType, isCustomErrand, isScheduled, isPreOrder, orderType } = orderContext;
       const currentTypes: string[] = [];
+
       if (isGroupOrder) currentTypes.push('group_order');
-      if (isCustomErrand) currentTypes.push('custom_errand');
-      if (locationType === 'outside_campus') currentTypes.push('outside_campus');
-      if (locationType === 'inside_campus') currentTypes.push('inside_campus');
+      if (isCustomErrand || orderType === 'custom_errand') currentTypes.push('custom_errand');
+      if (isScheduled || isPreOrder) currentTypes.push('scheduled');
+      if (!isScheduled && !isPreOrder && !isCustomErrand && orderType !== 'custom_errand') currentTypes.push('on_demand');
+      if (orderType === 'marketplace' || (!isCustomErrand && orderType !== 'custom_errand')) currentTypes.push('marketplace');
+      if (locationType === 'outside_campus' || locationType === 'campus_environs') currentTypes.push('outside_campus');
+      if (locationType === 'inside_campus' || !locationType) currentTypes.push('inside_campus');
 
       const isAllowed = promo.applicableOrderTypes.some(allowedType => currentTypes.includes(allowedType));
       if (!isAllowed) {
-        throw new BadRequestException('Promo code is not applicable for this type of order');
+        throw new BadRequestException('This promo code is not applicable for this fulfillment or order type');
       }
     }
 
@@ -379,9 +414,20 @@ export class PromoCodesService {
     userId?: string, 
     vendorId?: string, 
     userOrdersCount?: number,
-    orderContext?: { isGroupOrder?: boolean; locationType?: string; isCustomErrand?: boolean }
+    orderContext?: { 
+      isGroupOrder?: boolean; 
+      locationType?: string; 
+      isCustomErrand?: boolean;
+      isScheduled?: boolean;
+      isPreOrder?: boolean;
+      orderType?: string;
+    }
   ): Promise<any> {
-    const promo = await this.promoCodeModel.findOne({ code: code.trim().toUpperCase() });
+    if (!code || !code.trim()) {
+      return { found: false, promo: null, eligibility: null };
+    }
+    const cleanCode = code.trim().toUpperCase();
+    const promo = await this.promoCodeModel.findOne({ code: cleanCode });
     
     if (!promo) {
       return { found: false, promo: null, eligibility: null };
@@ -389,9 +435,10 @@ export class PromoCodesService {
 
     const eligibility = {
       isActive: promo.isActive,
-      isExpired: promo.expiresAt ? promo.expiresAt < new Date() : false,
+      isExpired: promo.expiresAt ? new Date(promo.expiresAt) < new Date() : false,
       minAmountMet: !promo.minOrderAmount || subtotal >= promo.minOrderAmount,
       usageLimitReached: promo.maxUsageCount ? promo.usageCount >= promo.maxUsageCount : false,
+      userRedemptionsMet: true,
       vendorAllowed: true,
       userAllowed: true,
       newUsersOnlyMet: true,
@@ -399,36 +446,56 @@ export class PromoCodesService {
       isEligible: false
     };
 
-    if (promo.applicableVendors && promo.applicableVendors.length > 0 && vendorId) {
-      const vendorStringIds = promo.applicableVendors.map(v => v.toString());
-      eligibility.vendorAllowed = vendorStringIds.includes(vendorId.toString());
-    }
-
-    if (promo.applicableUsers && promo.applicableUsers.length > 0 && userId) {
-      const userStringIds = promo.applicableUsers.map(u => u.toString());
-      eligibility.userAllowed = userStringIds.includes(userId.toString());
-    }
-
-    if (promo.onlyForNewUsers && userOrdersCount !== undefined) {
-      eligibility.newUsersOnlyMet = userOrdersCount === 0;
-    }
-
-    let userRedemptionsMet = true;
     if (promo.maxUsagePerUser && promo.maxUsagePerUser > 0 && userId) {
       const userRedemptions = await this.promoRedemptionModel.countDocuments({
         promoId: promo._id,
         customer: new Types.ObjectId(userId),
       });
-      userRedemptionsMet = userRedemptions < promo.maxUsagePerUser;
+      eligibility.userRedemptionsMet = userRedemptions < promo.maxUsagePerUser;
+    }
+
+    if (promo.applicableVendors && promo.applicableVendors.length > 0) {
+      if (vendorId) {
+        const vendorStringIds = promo.applicableVendors.map(v => v.toString());
+        eligibility.vendorAllowed = vendorStringIds.includes(vendorId.toString());
+      } else {
+        eligibility.vendorAllowed = false;
+      }
+    }
+
+    if (promo.applicableUsers && promo.applicableUsers.length > 0) {
+      if (userId) {
+        const userStringIds = promo.applicableUsers.map(u => u.toString());
+        eligibility.userAllowed = userStringIds.includes(userId.toString());
+      } else {
+        eligibility.userAllowed = false;
+      }
+    }
+
+    if (promo.onlyForNewUsers) {
+      let count = userOrdersCount;
+      if (count === undefined && userId) {
+        count = await this.orderModel.countDocuments({
+          customer: new Types.ObjectId(userId),
+          status: { $nin: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] }
+        });
+      }
+      if (count !== undefined) {
+        eligibility.newUsersOnlyMet = count === 0;
+      }
     }
 
     if (promo.applicableOrderTypes && promo.applicableOrderTypes.length > 0 && orderContext) {
-      const { isGroupOrder, locationType, isCustomErrand } = orderContext;
+      const { isGroupOrder, locationType, isCustomErrand, isScheduled, isPreOrder, orderType } = orderContext;
       const currentTypes: string[] = [];
+
       if (isGroupOrder) currentTypes.push('group_order');
-      if (isCustomErrand) currentTypes.push('custom_errand');
-      if (locationType === 'outside_campus') currentTypes.push('outside_campus');
-      if (locationType === 'inside_campus') currentTypes.push('inside_campus');
+      if (isCustomErrand || orderType === 'custom_errand') currentTypes.push('custom_errand');
+      if (isScheduled || isPreOrder) currentTypes.push('scheduled');
+      if (!isScheduled && !isPreOrder && !isCustomErrand && orderType !== 'custom_errand') currentTypes.push('on_demand');
+      if (orderType === 'marketplace' || (!isCustomErrand && orderType !== 'custom_errand')) currentTypes.push('marketplace');
+      if (locationType === 'outside_campus' || locationType === 'campus_environs') currentTypes.push('outside_campus');
+      if (locationType === 'inside_campus' || !locationType) currentTypes.push('inside_campus');
 
       eligibility.orderTypeAllowed = promo.applicableOrderTypes.some(allowedType => currentTypes.includes(allowedType));
     }
@@ -438,13 +505,33 @@ export class PromoCodesService {
       !eligibility.isExpired &&
       eligibility.minAmountMet &&
       !eligibility.usageLimitReached &&
+      eligibility.userRedemptionsMet &&
       eligibility.vendorAllowed &&
       eligibility.userAllowed &&
       eligibility.newUsersOnlyMet &&
-      userRedemptionsMet &&
       eligibility.orderTypeAllowed;
 
-    return { found: true, promo, eligibility };
+    let calculatedDiscount = 0;
+    if (eligibility.isEligible) {
+      if (promo.discountType === 'percentage') {
+        calculatedDiscount = Math.round(subtotal * (promo.value / 100));
+        if (promo.maxDiscountAmount && calculatedDiscount > promo.maxDiscountAmount) {
+          calculatedDiscount = promo.maxDiscountAmount;
+        }
+      } else {
+        calculatedDiscount = promo.value;
+      }
+      if (calculatedDiscount > subtotal) {
+        calculatedDiscount = subtotal;
+      }
+    }
+
+    return { 
+      found: true, 
+      promo, 
+      eligibility, 
+      estimatedDiscount: calculatedDiscount 
+    };
   }
 
   async incrementUsage(code: string) {
@@ -488,10 +575,25 @@ export class PromoCodesService {
       if (promo.referrerType === 'facilitator' && promo.referrerFacilitator) {
         const fac = await this.facilitatorModel.findById(promo.referrerFacilitator);
         if (fac) {
-          fac.pointsEarned = (fac.pointsEarned || 0) + rewardAwarded;
+          if (promo.rewardType === 'wallet_credit' && rewardAwarded > 0 && fac.linkedUserId) {
+            try {
+              await this.walletsService.creditWallet(
+                fac.linkedUserId.toString(),
+                rewardAwarded,
+                `Ambassador referral commission for promo ${cleanCode}`,
+                data.orderId,
+                `PROMO-AMB-${cleanCode}-${data.orderId}`
+              );
+            } catch (wErr) {
+              this.logger.error(`Failed to credit wallet for facilitator user ${fac.linkedUserId}: ${wErr.message}`);
+              fac.pointsEarned = (fac.pointsEarned || 0) + rewardAwarded;
+            }
+          } else {
+            fac.pointsEarned = (fac.pointsEarned || 0) + rewardAwarded;
+          }
           fac.totalReferrals = (fac.totalReferrals || 0) + 1;
           await fac.save();
-          this.logger.log(`Awarded ${rewardAwarded} points to Ambassador ${fac.name} for promo code redemption`);
+          this.logger.log(`Awarded ${rewardAwarded} ${promo.rewardType || 'points'} to Ambassador ${fac.name} for promo code redemption`);
         }
       }
       // 2. Errand Ninja, Customer, or Vendor
@@ -522,12 +624,18 @@ export class PromoCodesService {
       }
     }
 
-    // Update promo stats
-    promo.usageCount = (promo.usageCount || 0) + 1;
-    promo.totalRevenueGenerated = (promo.totalRevenueGenerated || 0) + orderTotal;
-    promo.totalDiscountGiven = (promo.totalDiscountGiven || 0) + discountAmount;
-    promo.totalEarnings = (promo.totalEarnings || 0) + rewardAwarded;
-    await promo.save();
+    // Atomically increment promo stats
+    await this.promoCodeModel.updateOne(
+      { _id: promo._id },
+      {
+        $inc: {
+          usageCount: 1,
+          totalRevenueGenerated: orderTotal,
+          totalDiscountGiven: discountAmount,
+          totalEarnings: rewardAwarded,
+        }
+      }
+    );
 
     // Create redemption record
     await this.promoRedemptionModel.create({
