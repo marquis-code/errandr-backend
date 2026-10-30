@@ -4820,6 +4820,51 @@ export class OrdersService {
       throw new BadRequestException('No item cost to disburse');
     }
     
+    // The typed account name is a claim; Paystack knows the truth.
+    //
+    // Without this, the self-transfer check above only catches a rider entering their own
+    // saved account exactly. A friend's account, or their own at another bank, passes that
+    // check — and the platform wires the business's money to it. Resolving the account
+    // forces the name to come from Paystack, so a rider cannot substitute an account.
+    let resolvedAccountName = '';
+    try {
+      const resolved: any = await this.paystackService.resolveAccount(
+        vendorBankDetails.accountNumber,
+        vendorBankDetails.bankCode,
+      );
+      resolvedAccountName = String(resolved?.account_name || '').trim();
+    } catch {
+      throw new BadRequestException(
+        'Could not verify that account. Check the account number and bank.',
+      );
+    }
+
+    if (!resolvedAccountName) {
+      throw new BadRequestException(
+        'Could not verify that account. Check the account number and bank.',
+      );
+    }
+
+    const typedName = String(vendorBankDetails.accountName || '').trim();
+    if (typedName && typedName.toLowerCase() !== resolvedAccountName.toLowerCase()) {
+      throw new BadRequestException(
+        `That account name does not match the account number. The account belongs to ${resolvedAccountName}.`,
+      );
+    }
+
+    // A rider's own name on the receiving account is the same fraud by another route.
+    const erranderUser = await this.userModel.findById(orderErranderId).select('firstName lastName').lean().exec();
+    if (erranderUser) {
+      const erranderName = `${(erranderUser as any).firstName || ''} ${(erranderUser as any).lastName || ''}`
+        .trim()
+        .toLowerCase();
+      if (erranderName && resolvedAccountName.toLowerCase() === erranderName) {
+        throw new BadRequestException(
+          'This account belongs to the rider, not to the vendor.',
+        );
+      }
+    }
+
     const transferAmount = Number(amount);
     
     if (!transferAmount || isNaN(transferAmount) || transferAmount <= 0) {
@@ -4843,7 +4888,7 @@ export class OrdersService {
 
     try {
       const recipient = await this.paystackService.createTransferRecipient({
-        name: vendorBankDetails.accountName,
+        name: resolvedAccountName || vendorBankDetails.accountName,
         account_number: vendorBankDetails.accountNumber,
         bank_code: vendorBankDetails.bankCode,
       });
