@@ -38,6 +38,7 @@ import { OrderSchedulerService } from './cron/order-scheduler.service';
 import { RecurringOrder, RecurringOrderSchema } from './schemas/recurring-order.schema';
 import { RecurringOrdersService } from './recurring-orders.service';
 import { RecurringOrdersController } from './recurring-orders.controller';
+import { SubstituteTimeoutService } from './substitute-timeout.service';
 import { RecurringOrdersCronService } from './recurring-orders-cron.service';
 
 
@@ -71,7 +72,7 @@ import { RecurringOrdersCronService } from './recurring-orders-cron.service';
     InstitutionsModule,
   ],
   controllers: [OrdersController, SimulationController, RecurringOrdersController],
-  providers: [OrdersService, BatchDeliveryService, OrderSchedulerService, NegotiationService, NegotiationGateway, RecurringOrdersService, RecurringOrdersCronService],
+  providers: [OrdersService, BatchDeliveryService, OrderSchedulerService, NegotiationService, NegotiationGateway, RecurringOrdersService, RecurringOrdersCronService, SubstituteTimeoutService],
   exports: [OrdersService, BatchDeliveryService, NegotiationService, RecurringOrdersService, MongooseModule],
 })
 export class OrdersModule {}
