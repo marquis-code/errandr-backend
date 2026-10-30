@@ -345,6 +345,16 @@ export class PromoCodesService {
       throw new BadRequestException('Promo code is only valid for new users on their first order');
     }
 
+    if (promo.maxUsagePerUser && promo.maxUsagePerUser > 0 && userId) {
+      const userRedemptions = await this.promoRedemptionModel.countDocuments({
+        promoId: promo._id,
+        customer: new Types.ObjectId(userId),
+      });
+      if (userRedemptions >= promo.maxUsagePerUser) {
+        throw new BadRequestException(`You have reached the maximum allowed redemption limit (${promo.maxUsagePerUser}) for this promo code`);
+      }
+    }
+
     // Order Type Restrictions
     if (promo.applicableOrderTypes && promo.applicableOrderTypes.length > 0 && orderContext) {
       const { isGroupOrder, locationType, isCustomErrand } = orderContext;
@@ -403,6 +413,15 @@ export class PromoCodesService {
       eligibility.newUsersOnlyMet = userOrdersCount === 0;
     }
 
+    let userRedemptionsMet = true;
+    if (promo.maxUsagePerUser && promo.maxUsagePerUser > 0 && userId) {
+      const userRedemptions = await this.promoRedemptionModel.countDocuments({
+        promoId: promo._id,
+        customer: new Types.ObjectId(userId),
+      });
+      userRedemptionsMet = userRedemptions < promo.maxUsagePerUser;
+    }
+
     if (promo.applicableOrderTypes && promo.applicableOrderTypes.length > 0 && orderContext) {
       const { isGroupOrder, locationType, isCustomErrand } = orderContext;
       const currentTypes: string[] = [];
@@ -422,6 +441,7 @@ export class PromoCodesService {
       eligibility.vendorAllowed &&
       eligibility.userAllowed &&
       eligibility.newUsersOnlyMet &&
+      userRedemptionsMet &&
       eligibility.orderTypeAllowed;
 
     return { found: true, promo, eligibility };

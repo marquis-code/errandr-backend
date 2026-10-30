@@ -35,6 +35,9 @@ export class PromoCode extends Document {
   @Prop()
   maxUsageCount: number; // Optional limit on how many times the code can be used globally
 
+  @Prop({ default: 0 })
+  maxUsagePerUser: number; // Optional limit on how many times an individual user can redeem this code (0 = unlimited)
+
   @Prop({ type: [{ type: Types.ObjectId, ref: 'Vendor' }] })
   applicableVendors: Types.ObjectId[]; // If empty, applies to all vendors
 
