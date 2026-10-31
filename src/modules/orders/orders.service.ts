@@ -291,22 +291,24 @@ export class OrdersService {
     await this.notificationsService.broadcastNewOrder(orderData);
     this.logger.log(`Broadcasted order ${populated.orderNumber} to all erranders via Redis`);
 
-    // Aggressively send loud push notifications to erranders based on gender preference
+    // Broadcast exclusively to Errand Ninjas who currently have the status of 'busy'
     try {
-      const availableErranders = await this.erranderModel.find({ status: ErranderStatus.AVAILABLE }).populate('user', 'fcmToken phone gender');
+      const busyErranders = await this.erranderModel.find({
+        status: { $in: [ErranderStatus.BUSY, 'busy', 'Busy'] },
+      }).populate('user', 'fcmToken phone gender');
 
       const preference = (populated.customer as any)?.erranderGenderPreference || 'Both';
-      let filteredErranders = availableErranders;
+      let filteredErranders = busyErranders;
 
       if (preference !== 'Both' && preference !== 'Any') {
-        filteredErranders = availableErranders.filter(e => {
+        filteredErranders = busyErranders.filter(e => {
           const gender = (e.user as any)?.gender;
           return gender && gender.toLowerCase() === preference.toLowerCase();
         });
 
         if (filteredErranders.length === 0) {
-          this.logger.warn(`No available erranders matching gender preference '${preference}', falling back to all available erranders.`);
-          filteredErranders = availableErranders;
+          this.logger.warn(`No busy erranders matching gender preference '${preference}', falling back to all busy erranders.`);
+          filteredErranders = busyErranders;
         }
       }
 
