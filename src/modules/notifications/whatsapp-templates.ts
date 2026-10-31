@@ -274,17 +274,51 @@ ${this.DIVIDER}
 
   /**
    * 12. Broadcast to Errand Ninja: New Errand Available
+   * Dynamic, highly engaging, and time-aware to motivate Errand Ninjas on campus
    */
   static errandAvailableForNinja(data: { storeName: string; orderNumber: string; deliveryFee: number }): string {
-    return `🚨 *NEW ERRAND ON CAMPUS!* 🛵
+    // Current hour in Nigeria (WAT = UTC+1)
+    const currentHourWAT = (new Date().getUTCHours() + 1) % 24;
+
+    let timeGreetingHeader = '🚨 *NEW ERRAND MISSION!* 🛵⚡';
+    let motivationalHook = 'A student on campus needs their order delivered right now!';
+    let hypeKicker = 'Fatigue is temporary, cash in your wallet is forever! 💸 Keep the momentum going!';
+
+    if (currentHourWAT >= 5 && currentHourWAT < 12) {
+      // Morning (5:00 AM - 11:59 AM)
+      timeGreetingHeader = '🌅 *MORNING BAG ALERT!* 💸 🛵';
+      motivationalHook = 'Start your morning with guaranteed cash! While others are still waking up, secure your daily bag early.';
+      hypeKicker = 'Rise, grind, and stack those delivery fees before noon! 🚀';
+    } else if (currentHourWAT >= 12 && currentHourWAT < 17) {
+      // Afternoon (12:00 PM - 4:59 PM)
+      timeGreetingHeader = '☀️ *AFTERNOON RUSH — QUICK CASH!* ⚡ 🛵';
+      motivationalHook = 'Lunchtime rush is hot! We know you’ve been moving, but this quick drop is calling your name.';
+      hypeKicker = 'Push through the afternoon fatigue — another easy win in the bag! 🏆';
+    } else if (currentHourWAT >= 17 && currentHourWAT < 22) {
+      // Evening (5:00 PM - 9:59 PM)
+      timeGreetingHeader = '🌆 *EVENING BAG UNLOCKED!* 💰 🛵';
+      motivationalHook = 'Dinner orders are flying in! Knock out this fast campus delivery before you wrap up your day.';
+      hypeKicker = 'Finish today’s shift strong and boost tonight’s total earnings! ✨';
+    } else {
+      // Late Night / Early Hours (10:00 PM - 4:59 AM)
+      timeGreetingHeader = '🌙 *NIGHT OWL NINJA MISSION!* 🦉 🛵';
+      motivationalHook = 'Late-night campus cravings! Fast pickup, clear roads, and zero campus foot traffic.';
+      hypeKicker = 'Easy money for the dedicated Errand Ninja on duty! 🌟';
+    }
+
+    const feeFormatted = (data.deliveryFee || 300).toLocaleString();
+
+    return `${timeGreetingHeader}
 ${this.DIVIDER}
-A new order is ready for pickup and needs a runner!
+${motivationalHook}
 
-🏪 *Store:* ${data.storeName}
+🏪 *Pickup Store:* ${data.storeName}
 🧾 *Order:* #${data.orderNumber}
-💰 *Your Fee:* ₦${data.deliveryFee.toLocaleString()}
+💰 *Your Earning:* ₦${feeFormatted}
 
-⚡ Open the Errand Ninja app now to claim this order before another rider takes it!`;
+💡 _${hypeKicker}_
+
+⚡ *Open your Errand Ninja app now to claim this order before another Errand Ninja takes it!*`;
   }
 
   /**

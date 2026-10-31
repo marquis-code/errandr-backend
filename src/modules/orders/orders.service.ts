@@ -320,12 +320,12 @@ export class OrdersService {
           if (userObj.fcmToken) {
             this.notificationsService.sendPushNotification(userObj.fcmToken, {
               title: '🚨 NEW ERRAND AVAILABLE!',
-              body: `An order from ${vendorName} needs a runner right now! ₦${feeDisplay} fee`,
+              body: `An order from ${vendorName} needs an Errand Ninja right now! 💰 ₦${feeDisplay} instant fee`,
               data: { type: 'NEW_ORDER', orderId: orderData.orderId.toString() },
             }).catch(e => this.logger.error(`Push failed: ${e.message}`));
           }
           if (userObj.phone) {
-            this.notificationsService.sendSMS(userObj.phone, `🚨 NEW ERRAND AVAILABLE! An order from ${vendorName} needs a runner right now! ₦${feeDisplay} fee`)
+            this.notificationsService.sendSMS(userObj.phone, `🚨 NEW ERRAND AVAILABLE! An order from ${vendorName} needs an Errand Ninja right now! ₦${feeDisplay} fee`)
               .catch(e => this.logger.error(`SMS failed: ${e.message}`));
 
             this.notificationsService.notifyNinjaNewErrand(userObj.phone, {
