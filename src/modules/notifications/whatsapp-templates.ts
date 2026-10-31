@@ -271,4 +271,46 @@ A customer sent a reply via WhatsApp:
 ${this.DIVIDER}
 ⚡ *Action:* Respond to customer or review their active order.`;
   }
+
+  /**
+   * 12. Broadcast to Errand Ninja: New Errand Available
+   */
+  static errandAvailableForNinja(data: { storeName: string; orderNumber: string; deliveryFee: number }): string {
+    return `🚨 *NEW ERRAND ON CAMPUS!* 🛵
+${this.DIVIDER}
+A new order is ready for pickup and needs a runner!
+
+🏪 *Store:* ${data.storeName}
+🧾 *Order:* #${data.orderNumber}
+💰 *Your Fee:* ₦${data.deliveryFee.toLocaleString()}
+
+⚡ Open the Errand Ninja app now to claim this order before another rider takes it!`;
+  }
+
+  /**
+   * 13. Order Assigned to Errand Ninja
+   */
+  static orderAssignedToNinja(data: {
+    ninjaName?: string;
+    orderNumber: string;
+    storeName: string;
+    deliveryAddress: string;
+    deliveryFee: number;
+    itemsCount?: number;
+  }): string {
+    const name = data.ninjaName || 'Ninja';
+    return `🛵 *ERRAND NINJA: ORDER ASSIGNED!* 📦
+${this.DIVIDER}
+👋 Hi *${name}*, you have claimed order *#${data.orderNumber}*!
+
+🏪 *Pickup Store:* ${data.storeName}
+📍 *Deliver To:* ${data.deliveryAddress}
+🛍️ *Items:* ${data.itemsCount || 1} item(s)
+💰 *Your Earnings:* ₦${data.deliveryFee.toLocaleString()}
+
+⚡ *Next Steps:*
+1. Head to the store to collect the package.
+2. Deliver to the customer's hostel/location.
+3. Ask the customer for their *4-digit Delivery PIN* to complete delivery.`;
+  }
 }

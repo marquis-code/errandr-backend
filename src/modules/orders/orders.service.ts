@@ -325,6 +325,12 @@ export class OrdersService {
           if (userObj.phone) {
             this.notificationsService.sendSMS(userObj.phone, `🚨 NEW ERRAND AVAILABLE! An order from ${vendorName} needs a runner right now! ₦${feeDisplay} fee`)
               .catch(e => this.logger.error(`SMS failed: ${e.message}`));
+
+            this.notificationsService.notifyNinjaNewErrand(userObj.phone, {
+              storeName: vendorName,
+              orderNumber: orderData.orderNumber || String(orderData.orderId || '').slice(-6),
+              deliveryFee: feeDisplay,
+            }).catch(e => this.logger.warn(`Ninja WhatsApp broadcast failed: ${e.message}`));
           }
         }
       }
@@ -1778,6 +1784,23 @@ export class OrdersService {
       });
     }
 
+    // Send order assignment confirmation to errander via WhatsApp
+    if (erranderUser?.phone) {
+      const vendorName = (order.vendor as any)?.storeName || 'Campus Store';
+      const dest = typeof order.deliveryAddress === 'string' ? order.deliveryAddress : ((order.deliveryAddress as any)?.address || 'Hostel address provided');
+      const itemsCount = order.items?.length || 1;
+      const fee = order.deliveryFee || 300;
+
+      this.notificationsService.notifyNinjaOrderAssigned(erranderUser.phone, {
+        ninjaName: erranderUser.firstName,
+        orderNumber: order.orderNumber,
+        storeName: vendorName,
+        deliveryAddress: dest,
+        deliveryFee: fee,
+        itemsCount,
+      }).catch(e => this.logger.warn(`Failed to dispatch WhatsApp to Errand Ninja: ${e.message}`));
+    }
+
     // Auto-create initial chat message for the order
     try {
       await this.chatService.createMessage({
@@ -1896,6 +1919,28 @@ export class OrdersService {
       data: { orderId: orderId, winningUserId: newErranderId }
     }));
     await this.notifyOrderStatusUpdate(updatedOrder, newStatus as OrderStatus, 'Order has been reassigned to a new dispatcher');
+
+    // Notify newly assigned Errand Ninja via WhatsApp
+    try {
+      const newErranderUser = await this.userModel.findById(newErranderId).select('firstName phone');
+      if (newErranderUser?.phone) {
+        const vendorName = (updatedOrder.vendor as any)?.storeName || 'Campus Store';
+        const dest = typeof updatedOrder.deliveryAddress === 'string' ? updatedOrder.deliveryAddress : ((updatedOrder.deliveryAddress as any)?.address || 'Hostel address provided');
+        const itemsCount = updatedOrder.items?.length || 1;
+        const fee = updatedOrder.deliveryFee || 300;
+
+        this.notificationsService.notifyNinjaOrderAssigned(newErranderUser.phone, {
+          ninjaName: newErranderUser.firstName,
+          orderNumber: updatedOrder.orderNumber,
+          storeName: vendorName,
+          deliveryAddress: dest,
+          deliveryFee: fee,
+          itemsCount,
+        }).catch(e => this.logger.warn(`Failed to dispatch WhatsApp to reassigned Errand Ninja: ${e.message}`));
+      }
+    } catch (e: any) {
+      this.logger.warn(`Failed to notify reassigned ninja on WhatsApp: ${e.message}`);
+    }
 
     return updatedOrder.populate([
       { path: 'customer', select: 'firstName lastName phone avatar' },

@@ -567,6 +567,27 @@ export class NotificationsService {
     }
   }
 
+  // ─── Errand Ninja WhatsApp Notifications ────────────────
+  async notifyNinjaNewErrand(phone: string, data: { storeName: string; orderNumber: string; deliveryFee: number }): Promise<boolean> {
+    try {
+      const message = WhatsAppTemplates.errandAvailableForNinja(data);
+      return await this.sendWhatsApp(phone, message);
+    } catch (e: any) {
+      this.logger.warn(`Failed to send new errand WhatsApp to Ninja ${phone}: ${e.message}`);
+      return false;
+    }
+  }
+
+  async notifyNinjaOrderAssigned(phone: string, data: { ninjaName?: string; orderNumber: string; storeName: string; deliveryAddress: string; deliveryFee: number; itemsCount?: number }): Promise<boolean> {
+    try {
+      const message = WhatsAppTemplates.orderAssignedToNinja(data);
+      return await this.sendWhatsApp(phone, message);
+    } catch (e: any) {
+      this.logger.warn(`Failed to send order assigned WhatsApp to Ninja ${phone}: ${e.message}`);
+      return false;
+    }
+  }
+
   // ─── Evolution API Inbound Webhook Processor ────────────────
   async handleEvolutionWebhook(payload: any, headers?: any): Promise<{ success: boolean; event?: string }> {
     this.logger.log(`Received Evolution Webhook: ${JSON.stringify(payload)}`);
