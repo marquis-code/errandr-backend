@@ -182,7 +182,7 @@ export class OrdersService {
         title, body, ...statusData,
       });
 
-      // Aggressive WhatsApp Updates for Customer via Zavu
+      // WhatsApp Updates for Customer via Evolution API
       this.notificationsService.sendOrderWhatsApp(order, status).catch(e => {
         this.logger.warn(`Failed to dispatch order status WhatsApp for #${order.orderNumber}: ${e.message}`);
       });
@@ -191,7 +191,7 @@ export class OrdersService {
       if ((status === OrderStatus.PICKED_UP || status === OrderStatus.IN_TRANSIT) && order.deliveryPin) {
         this.userModel.findById(customerId).select('phone').then(customerUser => {
           if (customerUser?.phone) {
-            this.notificationsService.sendZavuSMS(
+            this.notificationsService.sendSMS(
               customerUser.phone,
               `Erranders: Your Errand Ninja has picked up order #${order.orderNumber}! Your 4-digit Delivery PIN is: ${order.deliveryPin}. Share this PIN with the rider upon arrival to collect your order.`,
               { forceSms: true }
@@ -323,7 +323,7 @@ export class OrdersService {
             }).catch(e => this.logger.error(`Push failed: ${e.message}`));
           }
           if (userObj.phone) {
-            this.notificationsService.sendZavuSMS(userObj.phone, `🚨 NEW ERRAND AVAILABLE! An order from ${vendorName} needs a runner right now! ₦${feeDisplay} fee`)
+            this.notificationsService.sendSMS(userObj.phone, `🚨 NEW ERRAND AVAILABLE! An order from ${vendorName} needs a runner right now! ₦${feeDisplay} fee`)
               .catch(e => this.logger.error(`SMS failed: ${e.message}`));
           }
         }
@@ -1259,7 +1259,7 @@ export class OrdersService {
       }
     }
 
-    // ─── Aggressive Zavu WhatsApp Order Dispatch ────────────────
+    // ─── WhatsApp Order Dispatch via Evolution API ────────────────
     if (order.paymentStatus === PaymentStatus.PAID || order.status === OrderStatus.PENDING || order.status === OrderStatus.CONFIRMED) {
       // 1. Notify Customer on WhatsApp with Order Placed Template
       this.notificationsService.sendOrderWhatsApp(order, 'ORDER_PLACED').catch(e => {
@@ -1277,7 +1277,7 @@ export class OrdersService {
       try {
         const itemsList = order.items.map(i => `${i.quantity} ${i.name}`);
         const message = `Hello, this is Erranders. You have a new order #${order.orderNumber} for ${order.total} Naira. Items: ${itemsList.join(', ')}. Please prepare it.`;
-        this.notificationsService.sendZavuSMS(populatedVendor.phone, message)
+        this.notificationsService.sendSMS(populatedVendor.phone, message)
           .catch(e => this.logger.error(`Failed to trigger dispatch call: ${e.message}`));
         this.logger.log(`Triggered automated order dispatch SMS for order ${order.orderNumber} to ${populatedVendor.phone}`);
       } catch (e) {
@@ -3117,7 +3117,7 @@ export class OrdersService {
 
     const customer = order.customer as any;
     if (customer && customer.phone) {
-      await this.notificationsService.sendZavuSMS(
+      await this.notificationsService.sendSMS(
         customer.phone,
         `Your Erranders Delivery PIN for Order #${order.orderNumber} is: ${order.deliveryPin}. Please share this 4-digit code with your Errand Ninja to receive your delivery.`,
         { forceSms: true }
@@ -3168,13 +3168,13 @@ export class OrdersService {
       const vendor = await this.vendorModel.findById(order.vendor).populate('owner');
       if (vendor && (vendor.owner as any)?.phone) {
         const phone = (vendor.owner as any).phone;
-        await this.notificationsService.sendZavuSMS(phone, `Erranders Pickup Code for #${order.orderNumber}: ${otp}`, { forceSms: true });
+        await this.notificationsService.sendSMS(phone, `Erranders Pickup Code for #${order.orderNumber}: ${otp}`, { forceSms: true });
       }
     } else {
       order.deliveryOtpHash = hash;
       const customer = order.customer as any;
       if (customer && customer.phone) {
-        await this.notificationsService.sendZavuSMS(customer.phone, `Your Erranders Delivery Code for #${order.orderNumber} is: ${otp}. Do not share until delivery is complete.`, { forceSms: true });
+        await this.notificationsService.sendSMS(customer.phone, `Your Erranders Delivery Code for #${order.orderNumber} is: ${otp}. Do not share until delivery is complete.`, { forceSms: true });
       }
     }
 
@@ -3216,7 +3216,7 @@ export class OrdersService {
       ? `Erranders Pickup Code for #${order.orderNumber}: ${otp}`
       : `Your Erranders Delivery Code for #${order.orderNumber} is: ${otp}. Do not share until delivery is complete.`;
 
-    await this.notificationsService.sendZavuSMS(phone, msg);
+    await this.notificationsService.sendSMS(phone, msg);
 
     return {
       success: true,

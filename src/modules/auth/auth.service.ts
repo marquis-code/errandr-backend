@@ -252,7 +252,7 @@ export class AuthService {
 
     if (method === 'sms' && user.phone) {
       const message = `Your Erranders verification code is ${otp}. It expires in 10 minutes.`;
-      await this.notificationsService.sendZavuSMS(user.phone, message, { forceSms: true });
+      await this.notificationsService.sendSMS(user.phone, message, { forceSms: true });
       return { success: true, message: 'OTP sent via SMS' };
     }
 

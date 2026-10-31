@@ -7,12 +7,21 @@ import { NotificationsService } from './notifications.service';
 export class WebhooksController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
-  @Post('zavu')
-  @ApiOperation({ summary: 'Zavu Inbound & Delivery Webhook Endpoint' })
-  async handleZavuWebhook(
+  @Post('evolution')
+  @ApiOperation({ summary: 'Evolution API Inbound & Delivery Webhook Endpoint' })
+  async handleEvolutionWebhook(
     @Body() body: any,
-    @Headers('x-zavu-signature') signature?: string,
+    @Headers() headers?: any,
   ) {
-    return this.notificationsService.handleZavuWebhook(body, signature);
+    return this.notificationsService.handleEvolutionWebhook(body, headers);
+  }
+
+  @Post('whatsapp')
+  @ApiOperation({ summary: 'Generic WhatsApp Inbound Webhook Endpoint' })
+  async handleWhatsAppWebhook(
+    @Body() body: any,
+    @Headers() headers?: any,
+  ) {
+    return this.notificationsService.handleEvolutionWebhook(body, headers);
   }
 }

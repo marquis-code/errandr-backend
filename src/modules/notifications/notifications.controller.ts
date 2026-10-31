@@ -54,13 +54,22 @@ export class NotificationsController {
     return { success: true };
   }
 
-  @Post('zavu/webhook')
-  @ApiOperation({ summary: 'Handle Zavu Inbound & Status Webhooks' })
-  async handleZavuWebhook(
+  @Post('evolution/webhook')
+  @ApiOperation({ summary: 'Handle Evolution Inbound & Status Webhooks' })
+  async handleEvolutionWebhook(
     @Body() body: any,
-    @Headers('x-zavu-signature') signature?: string,
+    @Headers() headers?: any,
   ) {
-    return this.notificationsService.handleZavuWebhook(body, signature);
+    return this.notificationsService.handleEvolutionWebhook(body, headers);
+  }
+
+  @Post('whatsapp/webhook')
+  @ApiOperation({ summary: 'Handle WhatsApp Inbound & Status Webhooks' })
+  async handleWhatsAppWebhook(
+    @Body() body: any,
+    @Headers() headers?: any,
+  ) {
+    return this.notificationsService.handleEvolutionWebhook(body, headers);
   }
 }
 

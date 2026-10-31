@@ -18,7 +18,7 @@ export interface OrderTemplateData {
   vendorPhone?: string;
 }
 
-export class ZavuWhatsAppTemplates {
+export class WhatsAppTemplates {
   private static readonly DIVIDER = '━━━━━━━━━━━━━━━━━━━━━━';
   private static readonly SUPPORT_LINE = '💬 *Questions or updates?* Reply directly to this WhatsApp message or call Erranders Support.';
 
