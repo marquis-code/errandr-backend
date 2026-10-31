@@ -216,14 +216,14 @@ ${this.SUPPORT_LINE}`;
     const itemsList = this.formatItems(data.items);
     const total = (data.total || 0).toLocaleString();
     const custPhone = data.customerPhone || 'N/A';
-    const vendPhone = data.vendorPhone || 'N/A';
+    const vendPhone = data.vendorPhone ? ` (${data.vendorPhone})` : '';
     const pay = data.paymentMethod || 'Paid (Online)';
 
     return `🚨 *NEW CAMPUS ORDER — CS DESK ALERT*
 ${this.DIVIDER}
 Order *#${data.orderNumber}* has been placed and requires operational monitoring!
 
-🏪 *Vendor:* ${data.storeName || 'Vendor'} (${vendPhone})
+🏪 *Vendor:* ${data.storeName || 'Vendor'}${vendPhone}
 👤 *Customer:* ${data.customerName || 'Customer'} (${custPhone})
 📍 *Destination:* ${data.deliveryAddress || 'Hostel'}
 💰 *Amount:* ₦${total} [${pay}]

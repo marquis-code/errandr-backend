@@ -466,6 +466,18 @@ export class NotificationsService {
   // ─── Customer Service Agent Real-Time Order Alerts ────────────────
   async notifySupportNewOrder(order: any): Promise<void> {
     try {
+      const orderKey = order._id?.toString() || order.orderNumber;
+      if (!orderKey) return;
+
+      // ─── Deduplication Guard: Never notify CS twice for the same order ───
+      const dedupeKey = `notif:cs_new_order:${orderKey}`;
+      const alreadySent = await this.redisService.get(dedupeKey);
+      if (alreadySent) {
+        this.logger.log(`CS Desk alert already dispatched for order #${order.orderNumber}, skipping duplicate.`);
+        return;
+      }
+      await this.redisService.set(dedupeKey, 'sent', 86400); // 24-hour TTL
+
       // Resolve Customer Details
       let customerPhone = order.customer?.phone;
       let customerName = order.customer?.firstName;

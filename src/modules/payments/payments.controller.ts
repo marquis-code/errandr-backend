@@ -136,6 +136,11 @@ export class PaymentsController {
                 this.logger.error(`Vendor notification cascade failed from verify: ${e.message}`);
               });
             }
+
+            // Notify CS Desk on WhatsApp
+            (this.ordersService as any).notificationsService.notifySupportNewOrder(updatedOrder).catch((e: any) => {
+              this.logger.warn(`Failed to notify CS desk via WhatsApp from verify: ${e.message}`);
+            });
           }
         }
       }
@@ -404,6 +409,11 @@ export class PaymentsController {
                     this.logger.error(`Vendor notification cascade failed from webhook: ${e.message}`);
                   });
                 }
+
+                // Notify CS Desk on WhatsApp
+                (this.ordersService as any).notificationsService.notifySupportNewOrder(updatedOrder).catch((e: any) => {
+                  this.logger.warn(`Failed to notify CS desk via WhatsApp from webhook: ${e.message}`);
+                });
               } catch (err: any) {
                 this.logger.error(`Failed to process order ${id} from webhook: ${err.message}`);
               }
