@@ -33,7 +33,7 @@ export class ServicesService {
     // Campus tenancy: `null` means "do not scope" — keep the original query.
     const institution = req ? await this.institutionResolver.resolve(req) : null;
     if (!institution) {
-      return this.serviceModel.find(filter).sort({ createdAt: -1 });
+      return this.serviceModel.find(filter).populate('vendor', 'storeName logo banner address rating totalRatings category isOnline subdomain serviceLocation phone').sort({ createdAt: -1 });
     }
 
     // Services inherit their institution from the owning vendor. Rather than
@@ -46,11 +46,16 @@ export class ServicesService {
           from: 'vendors',
           localField: 'vendor',
           foreignField: '_id',
-          as: '__campusVendor',
+          as: 'vendorDoc',
         },
       },
-      { $match: { '__campusVendor.institution': institution } },
-      { $project: { __campusVendor: 0 } },
+      { $match: { 'vendorDoc.institution': institution } },
+      {
+        $addFields: {
+          vendor: { $arrayElemAt: ['$vendorDoc', 0] },
+        },
+      },
+      { $project: { vendorDoc: 0 } },
       { $sort: { createdAt: -1 } },
     ]);
   }
@@ -61,12 +66,12 @@ export class ServicesService {
   }
 
   async findById(id: string, req?: any) {
-    const service = await this.serviceModel.findById(id);
+    const service = await this.serviceModel.findById(id).populate('vendor', 'storeName logo banner address rating totalRatings category isOnline subdomain serviceLocation businessHours phone');
     if (!service) throw new NotFoundException('Service not found');
 
     // A campus-scoped caller must not open another campus's service by id.
     const institution = req ? await this.institutionResolver.resolve(req) : null;
-    if (institution && !(await this.vendorsService.isInInstitution(String(service.vendor), institution))) {
+    if (institution && !(await this.vendorsService.isInInstitution(String(service.vendor?._id || service.vendor), institution))) {
       throw new NotFoundException('Service not found');
     }
 

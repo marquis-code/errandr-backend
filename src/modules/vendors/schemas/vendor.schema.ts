@@ -393,6 +393,24 @@ export class Vendor extends Document {
     label: string;
     description?: string;
   };
+
+  @Prop({
+    type: [
+      {
+        id: String,
+        type: { type: String },
+        props: { type: Object, default: {} },
+        isVisible: { type: Boolean, default: true },
+      },
+    ],
+    default: [],
+  })
+  pageBlocks: {
+    id: string;
+    type: string;
+    props: Record<string, any>;
+    isVisible: boolean;
+  }[];
 }
 
 export const VendorSchema = SchemaFactory.createForClass(Vendor);
