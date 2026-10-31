@@ -240,6 +240,72 @@ export class PaymentsController {
     }
   }
 
+  /**
+   * Forward Paystack webhook events belonging to Ojaly.
+   * Since Ojaly shares Erranders' Paystack live credentials, Paystack delivers
+   * all events to Erranders' global webhook URL. We detect Ojaly transactions
+   * via metadata (app: 'ojaly', businessId) or reference prefix (ord_, dbt_, inv_, etc.)
+   * and forward them with an authentic HMAC signature to Ojaly's webhook listener.
+   */
+  private async forwardToOjaly(body: any): Promise<void> {
+    const ojalyApiUrl = this.configService.get<string>('OJALY_API_URL') || 'https://api.ojaly.org/api/v1';
+    const secret = this.configService.get<string>('PAYSTACK_SECRET_KEY') || '';
+    const payload = JSON.stringify(body);
+    const signature = crypto.createHmac('sha512', secret).update(payload).digest('hex');
+
+    try {
+      await axios.post(
+        `${ojalyApiUrl.replace(/\/$/, '')}/payments/webhook`,
+        payload,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'x-paystack-signature': signature,
+          },
+          timeout: 10000,
+        },
+      );
+      this.logger.log(`Successfully forwarded webhook event to Ojaly: ${body.event} (Ref: ${body.data?.reference || 'N/A'})`);
+    } catch (err: any) {
+      this.logger.error(
+        `Could not forward webhook event to Ojaly (${body.event}): ${err?.response?.data?.message || err?.message}`,
+      );
+    }
+  }
+
+  /**
+   * Forward Paystack webhook events belonging to Barter / Declutter (Option B).
+   * Since Declutter/Barter shares Erranders' Paystack live credentials, Paystack delivers
+   * all events to Erranders' global webhook URL. We detect Barter/Declutter transactions
+   * via metadata (app: 'declutter' | 'barter') or reference prefix (ESCROW_, BK_ESCROW_, dcl_, etc.)
+   * and forward them with an authentic HMAC signature to Barter's webhook listener.
+   */
+  private async forwardToBarterDeclutter(body: any): Promise<void> {
+    const barterApiUrl = this.configService.get<string>('BARTER_API_URL') || 'https://barter-backend-api.erranders.org/api/v1';
+    const secret = this.configService.get<string>('PAYSTACK_SECRET_KEY') || '';
+    const payload = JSON.stringify(body);
+    const signature = crypto.createHmac('sha512', secret).update(payload).digest('hex');
+
+    try {
+      await axios.post(
+        `${barterApiUrl.replace(/\/$/, '')}/webhooks/paystack`,
+        payload,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'x-paystack-signature': signature,
+          },
+          timeout: 10000,
+        },
+      );
+      this.logger.log(`Successfully forwarded webhook event to Barter/Declutter: ${body.event} (Ref: ${body.data?.reference || 'N/A'})`);
+    } catch (err: any) {
+      this.logger.error(
+        `Could not forward webhook event to Barter/Declutter (${body.event}): ${err?.response?.data?.message || err?.message}`,
+      );
+    }
+  }
+
   @Post('paystack/webhook')
   @ApiOperation({ summary: 'Paystack Webhook Handler' })
   async handleWebhook(@Body() body: any, @Headers('x-paystack-signature') signature: string) {
@@ -257,6 +323,30 @@ export class PaymentsController {
 
     this.logger.log(`Paystack Webhook Verified: ${body.event}`);
     const { event, data } = body;
+
+    // 2. Route Ojaly transactions to Ojaly Backend
+    const isOjaly =
+      data?.metadata?.app === 'ojaly' ||
+      /^(ord|dbt|inv|bkg|pkg|pbkg|pdbt|pord|pinv|sub|pln)_/.test(data?.reference || '') ||
+      Boolean(data?.metadata?.businessId);
+
+    if (isOjaly) {
+      this.logger.log(`Detected Ojaly event: ${event} (Ref: ${data?.reference || 'N/A'}). Routing to Ojaly...`);
+      await this.forwardToOjaly(body);
+      return { status: 'success', message: 'Forwarded to Ojaly' };
+    }
+
+    // 3. Route Barter / Declutter transactions to Barter Backend (Option B)
+    const isBarterOrDeclutter =
+      data?.metadata?.app === 'declutter' ||
+      data?.metadata?.app === 'barter' ||
+      /^(ESCROW|BK_ESCROW|dcl|declutter|btr|barter)_/i.test(data?.reference || '');
+
+    if (isBarterOrDeclutter) {
+      this.logger.log(`Detected Barter/Declutter event: ${event} (Ref: ${data?.reference || 'N/A'}). Routing to Barter/Declutter...`);
+      await this.forwardToBarterDeclutter(body);
+      return { status: 'success', message: 'Forwarded to Barter/Declutter' };
+    }
 
     try {
       switch (event) {
