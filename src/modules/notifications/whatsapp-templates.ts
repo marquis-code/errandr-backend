@@ -62,6 +62,33 @@ ${this.SUPPORT_LINE}`;
   }
 
   /**
+   * 1b. Custom Errand Received
+   */
+  static customErrandReceived(data: OrderTemplateData): string {
+    const name = data.customerName || 'Valued Customer';
+    const store = data.storeName || 'Custom Pickup Location';
+    const total = (data.total || 0).toLocaleString();
+    const itemsList = this.formatItems(data.items);
+    const dest = data.deliveryAddress || 'Hostel address provided';
+
+    return `🛍️ *ERRANDERS CUSTOM ERRAND*
+${this.DIVIDER}
+👋 Hi *${name}*, your custom errand request has been received!
+
+🧾 *Order #${data.orderNumber}*
+🏪 *Pickup:* ${store}
+📍 *Delivery To:* ${dest}
+💰 *Estimated Budget:* ₦${total}
+
+📦 *Items Requested:*
+${itemsList}
+
+${this.DIVIDER}
+🛵 Our campus operations desk and nearby Errand Ninjas have been alerted. You will receive updates as a runner accepts and confirms your order.
+${this.SUPPORT_LINE}`;
+  }
+
+  /**
    * 2. Order Confirmed & In Kitchen Preparation
    */
   static orderPreparing(data: OrderTemplateData): string {

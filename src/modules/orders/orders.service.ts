@@ -1268,9 +1268,9 @@ export class OrdersService {
     }
 
     // ─── WhatsApp Order Dispatch via Evolution API ────────────────
-    if (order.paymentStatus === PaymentStatus.PAID || order.status === OrderStatus.CONFIRMED) {
-      // 1. Notify Customer on WhatsApp with Order Placed Template
-      this.notificationsService.sendOrderWhatsApp(order, 'ORDER_PLACED').catch(e => {
+    if (order.paymentStatus === PaymentStatus.PAID || order.status === OrderStatus.CONFIRMED || order.type === 'custom_errand') {
+      // 1. Notify Customer on WhatsApp with Order Placed / Received Template
+      this.notificationsService.sendOrderWhatsApp(order, order.type === 'custom_errand' ? 'CUSTOM_ERRAND_RECEIVED' : 'ORDER_PLACED').catch(e => {
         this.logger.warn(`Failed to dispatch Order Placed WhatsApp for #${order.orderNumber}: ${e.message}`);
       });
 

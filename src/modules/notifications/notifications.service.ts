@@ -215,7 +215,7 @@ export class NotificationsService {
 
     const evoUrl = this.configService.get<string>('WHATSAPP_EVOLUTION_API_URL')?.replace(/\/$/, '');
     const evoKey = this.configService.get<string>('WHATSAPP_EVOLUTION_API_KEY');
-    const evoInstance = this.configService.get<string>('WHATSAPP_EVOLUTION_INSTANCE') || 'ojaly';
+    const evoInstance = this.configService.get<string>('WHATSAPP_EVOLUTION_INSTANCE') || 'Erranders';
 
     try {
       if (!evoUrl || !evoKey) {
@@ -352,7 +352,7 @@ export class NotificationsService {
       }
 
       // 2. Resolve Vendor Details
-      const storeName = order.vendor?.storeName || 'Campus Store';
+      let storeName = order.vendor?.storeName || 'Campus Store';
       const vendorPhone = order.vendor?.phone || order.vendor?.owner?.phone;
 
       // 3. Resolve Errand Ninja Details
@@ -377,12 +377,27 @@ export class NotificationsService {
         }
       }
 
+      if (order.type === 'custom_errand') {
+        storeName = order.customDetails?.pickupLocation || storeName || 'Custom Pickup Location';
+        if (order.customDetails?.dropoffLocation) {
+          dest = order.customDetails.dropoffLocation;
+        }
+      }
+
       // 5. Build Order Items
       const items = (order.items || []).map((i: any) => ({
         name: i.name || i.product?.name || i.title,
         quantity: i.quantity || 1,
         price: i.price,
       }));
+
+      if (items.length === 0 && order.customDetails?.description) {
+        items.push({
+          name: order.customDetails.description,
+          quantity: 1,
+          price: order.customDetails.estimatedItemCost || order.total,
+        });
+      }
 
       const templateData: OrderTemplateData = {
         orderNumber: order.orderNumber,
@@ -409,10 +424,15 @@ export class NotificationsService {
       const event = statusOrEvent.toUpperCase();
 
       switch (event) {
+        case 'CUSTOM_ERRAND_RECEIVED':
+          message = WhatsAppTemplates.customErrandReceived(templateData);
+          break;
         case 'ORDER_PLACED':
         case 'CREATED':
         case 'PENDING':
-          message = WhatsAppTemplates.orderPlaced(templateData);
+          message = order.type === 'custom_errand'
+            ? WhatsAppTemplates.customErrandReceived(templateData)
+            : WhatsAppTemplates.orderPlaced(templateData);
           break;
         case 'CONFIRMED':
         case 'PREPARING':
@@ -517,10 +537,24 @@ export class NotificationsService {
         }
       }
 
+      if (order.type === 'custom_errand') {
+        storeName = order.customDetails?.pickupLocation || storeName || 'Custom Pickup Location';
+        if (order.customDetails?.dropoffLocation) {
+          dest = order.customDetails.dropoffLocation;
+        }
+      }
+
       const items = (order.items || []).map((i: any) => ({
         name: i.name || i.product?.name,
         quantity: i.quantity || 1,
       }));
+
+      if (items.length === 0 && order.customDetails?.description) {
+        items.push({
+          name: order.customDetails.description,
+          quantity: 1,
+        });
+      }
 
       const templateData: OrderTemplateData = {
         orderNumber: order.orderNumber,
