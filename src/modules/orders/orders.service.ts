@@ -3037,6 +3037,11 @@ export class OrdersService {
           });
         }
       }
+
+      // Notify CS desk on WhatsApp
+      this.notificationsService.notifySupportNewOrder(order).catch(e => {
+        this.logger.warn(`Failed to notify CS desk via WhatsApp from payWithWallet: ${e.message}`);
+      });
     }
 
     return order.populate([

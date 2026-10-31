@@ -479,8 +479,21 @@ export class NotificationsService {
       }
 
       // Resolve Vendor Details
-      const storeName = order.vendor?.storeName || 'Campus Vendor';
-      const vendorPhone = order.vendor?.phone || order.vendor?.owner?.phone;
+      let storeName = order.vendor?.storeName;
+      let vendorPhone = order.vendor?.phone || order.vendor?.owner?.phone;
+      if ((!storeName || !vendorPhone) && order.vendor) {
+        try {
+          const vendorId = order.vendor?._id || order.vendor;
+          const vendDoc = await this.vendorModel.findById(vendorId).populate('owner', 'phone');
+          if (vendDoc) {
+            storeName = storeName || vendDoc.storeName;
+            vendorPhone = vendorPhone || vendDoc.phone || (vendDoc.owner as any)?.phone;
+          }
+        } catch (e: any) {
+          this.logger.warn(`Failed to resolve vendor for CS notification: ${e.message}`);
+        }
+      }
+      storeName = storeName || 'Campus Vendor';
 
       // Resolve Destination
       let dest = 'Campus Hostel';
