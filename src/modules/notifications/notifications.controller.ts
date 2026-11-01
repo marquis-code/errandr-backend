@@ -1,13 +1,18 @@
 import { Controller, Get, Put, Post, Body, Headers, Param, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { NotificationsService } from './notifications.service';
+import { CronService } from './cron.service';
+import { DailyLoveMessages } from './daily-love-messages';
 import { JwtAuthGuard, CurrentUser } from '../../common/decorators';
 import { User } from '../users/schemas/user.schema';
 
 @ApiTags('Notifications')
 @Controller('notifications')
 export class NotificationsController {
-  constructor(private readonly notificationsService: NotificationsService) {}
+  constructor(
+    private readonly notificationsService: NotificationsService,
+    private readonly cronService: CronService,
+  ) {}
 
   @Get()
   @UseGuards(JwtAuthGuard)
@@ -70,6 +75,22 @@ export class NotificationsController {
     @Headers() headers?: any,
   ) {
     return this.notificationsService.handleEvolutionWebhook(body, headers);
+  }
+
+  @Post('morning-love/trigger')
+  @ApiOperation({ summary: 'Trigger daily morning love message to girlfriend' })
+  async triggerMorningLove() {
+    return this.cronService.sendDailyMorningLoveMessage();
+  }
+
+  @Get('morning-love/preview')
+  @ApiOperation({ summary: 'Preview today\'s scheduled love message' })
+  async previewMorningLove() {
+    return {
+      recipient: '+2347057188970',
+      scheduledTime: 'Every morning at 07:00 AM WAT',
+      message: DailyLoveMessages.getTodayLoveMessage(),
+    };
   }
 }
 

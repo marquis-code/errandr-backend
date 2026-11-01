@@ -5,6 +5,7 @@ import { Model, Types } from 'mongoose';
 import { Order, OrderStatus } from '../orders/schemas/order.schema';
 import { Vendor } from '../vendors/schemas/vendor.schema';
 import { NotificationsService } from './notifications.service';
+import { DailyLoveMessages } from './daily-love-messages';
 
 @Injectable()
 export class CronService {
@@ -93,5 +94,37 @@ export class CronService {
     }
 
     this.logger.log('Daily Earnings Summary Cron Job Completed.');
+  }
+
+  /**
+   * Run every morning at 7:00 AM WAT (6:00 AM UTC) to send a unique,
+   * emotional, tear-jerking love message exclusively to Marquis's girlfriend (+234 705 718 8970).
+   */
+  @Cron('0 7 * * *')
+  async sendDailyMorningLoveMessage(): Promise<{ success: boolean; message: string; recipient: string }> {
+    this.logger.log('💌 [Morning Love Cron] Starting daily morning love dispatch...');
+    try {
+      const message = DailyLoveMessages.getTodayLoveMessage();
+      const success = await this.notificationsService.sendWhatsApp(DailyLoveMessages.RECIPIENT_PHONE, message);
+
+      if (success) {
+        this.logger.log(`💖 [Morning Love Cron] Successfully delivered daily love message to ${DailyLoveMessages.RECIPIENT_PHONE}`);
+      } else {
+        this.logger.warn(`⚠️ [Morning Love Cron] Evolution API returned unsuccessful status for ${DailyLoveMessages.RECIPIENT_PHONE}`);
+      }
+
+      return {
+        success,
+        recipient: DailyLoveMessages.RECIPIENT_PHONE,
+        message,
+      };
+    } catch (error: any) {
+      this.logger.error(`❌ [Morning Love Cron] Error sending daily morning love message: ${error.message}`, error.stack);
+      return {
+        success: false,
+        recipient: DailyLoveMessages.RECIPIENT_PHONE,
+        message: error.message,
+      };
+    }
   }
 }
