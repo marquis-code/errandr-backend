@@ -138,11 +138,12 @@ export class NegotiationService {
 
     if (order.type === 'custom_errand') {
       const itemCost = Number(order.customDetails?.estimatedItemCost || order.subtotal || 0);
+      const itemCostBuffer = Number(order.customDetails?.itemCostBuffer || 0);
       order.serviceFee = customerFixedFee;
       order.erranderPayout = erranderPayout;
       order.erranderShare = erranderPayout;
       order.platformShare = customerFixedFee + ninjaCommission;
-      order.total = itemCost + bid.bidAmount + customerFixedFee;
+      order.total = itemCost + itemCostBuffer + bid.bidAmount + customerFixedFee;
     } else {
       if (order.proposedDeliveryFee) {
         order.total = order.total - order.proposedDeliveryFee + bid.bidAmount;

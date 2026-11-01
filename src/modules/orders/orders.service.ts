@@ -490,14 +490,18 @@ export class OrdersService {
       const minCustomErrandFee = Number(errandSetting?.value?.minCustomErrandFee ?? 300);
       const commissionPercent = Number(errandSetting?.value?.customErrandCommissionPercentage ?? 20);
       const customerFixedFee = Number(errandSetting?.value?.customErrandCustomerFee ?? errandSetting?.value?.convenienceFee ?? 100);
-      const safetyBufferPercent = Number(errandSetting?.value?.customErrandSafetyBufferPercentage ?? 0);
+      const safetyBufferPercent = Number(errandSetting?.value?.customErrandSafetyBufferPercentage ?? 10);
+      const minSafetyBuffer = Number(errandSetting?.value?.customErrandMinSafetyBuffer ?? 300);
 
       if (!runnerFee || runnerFee < minCustomErrandFee) {
         throw new BadRequestException(`Runner fee must be at least ₦${minCustomErrandFee}`);
       }
 
       const itemCost = Number(data.estimatedItemCost) || 0;
-      const itemCostBuffer = 0; // Buffer disabled per request
+      // Option 2: Smart Escrow Buffer (default 10%, min ₦300) to absorb stall price fluctuations
+      const itemCostBuffer = data.itemCostBuffer !== undefined && data.itemCostBuffer !== null
+        ? Number(data.itemCostBuffer)
+        : (itemCost > 0 ? Math.max(minSafetyBuffer, Math.round(itemCost * (safetyBufferPercent / 100))) : 0);
 
       // Customer pays a fixed platform service fee specially for custom errands
       const serviceFee = customerFixedFee;
@@ -603,7 +607,7 @@ export class OrdersService {
         },
         intendedPoolId: data.intendedPoolId,
         intendsToCreatePool: data.intendsToCreatePool || false,
-        subtotal: itemCost,
+        subtotal: itemCost + itemCostBuffer,
         deliveryFee: runnerFee,
         serviceFee,
         transferFee,
@@ -2069,6 +2073,17 @@ export class OrdersService {
 
     await order.save();
 
+    // Auto-approve custom errand reconciliation and process refund upon delivery confirmation
+    if (order.type === OrderType.CUSTOM_ERRAND && order.reconciliationStatus === 'submitted') {
+      try {
+        const custId = (order.customer?._id || order.customer)?.toString();
+        await this.approveReconciliation(order._id.toString(), custId);
+        this.logger.log(`Auto-approved reconciliation for delivered custom errand #${order.orderNumber}`);
+      } catch (e: any) {
+        this.logger.warn(`Failed to auto-approve custom errand reconciliation on delivery for #${order.orderNumber}: ${e.message}`);
+      }
+    }
+
     // Notify all
     await this.notifyOrderStatusUpdate(order, OrderStatus.DELIVERED, 'Order delivered successfully');
 
@@ -2185,6 +2200,18 @@ export class OrdersService {
     await this.rewardsService.addPoints(erranderId, 20, `Successful delivery of order #${order.orderNumber}`);
 
     await order.save();
+
+    // Auto-approve custom errand reconciliation and process refund upon delivery confirmation
+    if (order.type === OrderType.CUSTOM_ERRAND && order.reconciliationStatus === 'submitted') {
+      try {
+        const custId = (order.customer?._id || order.customer)?.toString();
+        await this.approveReconciliation(order._id.toString(), custId);
+        this.logger.log(`Auto-approved reconciliation for contactless delivered custom errand #${order.orderNumber}`);
+      } catch (e: any) {
+        this.logger.warn(`Failed to auto-approve custom errand reconciliation on contactless delivery for #${order.orderNumber}: ${e.message}`);
+      }
+    }
+
     await this.notifyOrderStatusUpdate(order, OrderStatus.DELIVERED, 'Order delivered via Contactless Drop-off');
     return this.findById(orderId);
   }
@@ -3357,6 +3384,19 @@ export class OrdersService {
       data: { orderId: order._id, amount }
     });
 
+    // Notify customer via WhatsApp (Option 2: Single-trip top-up alert)
+    try {
+      const custDoc = await this.userModel.findById(customerId).select('firstName phone');
+      if (custDoc?.phone) {
+        const topupMsg = `⚠️ *ERRANDERS TOP-UP NOTICE* 🛵\n━━━━━━━━━━━━━━━━━━━━━━\n👋 Hi *${custDoc.firstName || 'Customer'}*, your Errand Ninja is at the stall for order *#${order.orderNumber}*!\n\n📝 The vendor's actual total is slightly higher than your estimate + buffer by *₦${amount.toLocaleString()}*.\n\n⚡ *Action Required:* Please open the link below to authorize the extra funds so your Ninja can complete the purchase immediately without delays:\n🔗 https://www.erranders.org/dashboard/orders/${order._id}\n━━━━━━━━━━━━━━━━━━━━━━\n💬 Reply to this message if you have questions!`;
+        this.notificationsService.sendWhatsApp(custDoc.phone, topupMsg).catch(e => {
+          this.logger.warn(`Failed to dispatch topup WhatsApp for #${order.orderNumber}: ${e.message}`);
+        });
+      }
+    } catch (e: any) {
+      this.logger.warn(`Error dispatching topup WhatsApp for #${order.orderNumber}: ${e.message}`);
+    }
+
     return order;
   }
 
@@ -3394,6 +3434,19 @@ export class OrdersService {
         body: `The customer paid the extra ₦${amount.toLocaleString()}. You can now buy the item.`,
         data: { orderId: order._id }
       });
+
+      // Notify errander via WhatsApp
+      try {
+        const riderDoc = await this.userModel.findById(erranderProfile.user).select('firstName phone');
+        if (riderDoc?.phone) {
+          const riderMsg = `✅ *TOP-UP RECEIVED!* 💰\n━━━━━━━━━━━━━━━━━━━━━━\nOrder *#${order.orderNumber}*: The customer authorized and paid the extra *₦${amount.toLocaleString()}*!\n\nYou now have the funds to buy the item and complete delivery. 🛵💨`;
+          this.notificationsService.sendWhatsApp(riderDoc.phone, riderMsg).catch(e => {
+            this.logger.warn(`Failed to notify rider via WhatsApp for #${order.orderNumber}: ${e.message}`);
+          });
+        }
+      } catch (e: any) {
+        this.logger.warn(`Error notifying rider via WhatsApp for #${order.orderNumber}: ${e.message}`);
+      }
     }
 
     return order;
@@ -4482,6 +4535,19 @@ export class OrdersService {
           });
         } catch (e) {
           this.logger.warn(`Failed to notify customer about refund: ${e}`);
+        }
+
+        // WhatsApp Notification to Customer for Auto-Refund
+        try {
+          const custDoc = await this.userModel.findById(customerId).select('firstName phone');
+          if (custDoc?.phone) {
+            const refundMsg = `💰 *ERRANDERS REFUND CREDITED* 🎉\n━━━━━━━━━━━━━━━━━━━━━━\n👋 Hi *${custDoc.firstName || 'Customer'}*, your custom errand *#${order.orderNumber}* has been reconciled!\n\n🧾 *Actual Item Cost:* ₦${(order.actualItemCost || 0).toLocaleString()}\n💵 *Unspent Buffer Refunded:* ₦${order.refundAmount.toLocaleString()}\n\n✅ The excess change has been credited directly to your Erranders wallet.\n━━━━━━━━━━━━━━━━━━━━━━\n💬 Thank you for using Erranders!`;
+            this.notificationsService.sendWhatsApp(custDoc.phone, refundMsg).catch(err => {
+              this.logger.warn(`Failed to dispatch WhatsApp refund alert for #${order.orderNumber}: ${err.message}`);
+            });
+          }
+        } catch (e: any) {
+          this.logger.warn(`Error dispatching refund WhatsApp for #${order.orderNumber}: ${e.message}`);
         }
 
         // Debit errander's wallet to retrieve unspent cash
