@@ -680,6 +680,13 @@ export class NotificationsService {
         if (fromNumber && inboundText) {
           this.logger.log(`Inbound Evolution WhatsApp from ${fromNumber}: "${inboundText}"`);
 
+          // Special VIP recognition for Marquis's girlfriend (+234 705 718 8970)
+          const normalized = fromNumber.replace(/\D/g, '');
+          if (normalized.endsWith('7057188970')) {
+            const girlfriendLoveReply = `Hey gorgeous! ❤️ Always a joy hearing from you. Marquis asked me to take extra special care of you! 🥰✨ You're our #1 VIP. Marquis sends you all his love! 💕`;
+            await this.sendWhatsApp(fromNumber, girlfriendLoveReply);
+          }
+
           // Forward customer/vendor reply directly to Customer Support team on WhatsApp
           const forwardNotice = WhatsAppTemplates.customerInboundMessageToSupport(fromNumber, inboundText);
           const supportPhones = this.getSupportPhones();
