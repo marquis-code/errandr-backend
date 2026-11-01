@@ -227,6 +227,18 @@ export class ChatService {
           }).catch(err => console.error(`Failed to send chat notification to ${r}`, err));
         }
       }
+    } else if (msg.roomType === 'direct' && data.receiverId) {
+      const senderObj = await this.chatModel.findById(msg._id).populate('sender', 'firstName lastName');
+      const senderName = senderObj?.sender 
+        ? `${(senderObj.sender as any).firstName || ''} ${(senderObj.sender as any).lastName || ''}`.trim() 
+        : (data.senderName || 'New message');
+
+      await this.notificationsService.sendNotification(data.receiverId.toString(), {
+        title: `New message from ${senderName}`,
+        body: data.messageType === 'image' ? '📸 Sent an image' : (data.messageType === 'voice' ? '🎤 Sent a voice message' : (data.message.length > 50 ? data.message.substring(0, 50) + '...' : data.message)),
+        type: 'NEW_CHAT_MESSAGE',
+        data: { serviceId: data.serviceId, messageId: msg._id, senderId: data.senderId.toString(), type: 'NEW_CHAT_MESSAGE' }
+      }).catch(err => console.error(`Failed to send direct chat notification to ${data.receiverId}`, err));
     }
   }
 
@@ -397,10 +409,12 @@ export class ChatService {
       ]
     };
     
-    if (serviceId) {
-      query.service = new Types.ObjectId(serviceId);
-    } else {
-      query.service = { $exists: false };
+    if (serviceId && serviceId !== 'all') {
+      if (serviceId === 'general') {
+        query.service = { $in: [null, undefined] };
+      } else if (/^[0-9a-fA-F]{24}$/.test(serviceId)) {
+        query.service = new Types.ObjectId(serviceId);
+      }
     }
 
     return this.chatModel

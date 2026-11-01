@@ -123,7 +123,7 @@ export class ChatGateway
     if (!cookieHeader) return null;
     for (const part of cookieHeader.split(';')) {
       const [name, ...rest] = part.trim().split('=');
-      if (['token', 'access_token', 'errandr_token', 'jwt'].includes(name)) {
+      if (['token', 'access_token', 'errandr_token', 'errandr_vendor_token', 'errandr_dispatch_token', 'errandr_admin_token', 'jwt'].includes(name)) {
         const value = decodeURIComponent(rest.join('='));
         if (value) return value;
       }
@@ -154,10 +154,11 @@ export class ChatGateway
 
   private registerConnection(client: Socket, userId: string) {
     this.connectedUsers.set(userId, client.id);
+    client.join(`user:${userId}`);
     void this.redisService
       .hset('online:users', userId, client.id)
       .catch(() => undefined);
-    this.logger.log(`User ${userId} connected to chat`);
+    this.logger.log(`User ${userId} connected to chat (socketId: ${client.id})`);
   }
 
   handleDisconnect(client: Socket) {
@@ -260,9 +261,13 @@ export class ChatGateway
       client.join(orderRoom);
       console.log(`[ChatGateway] Client joined room: ${orderRoom}`);
     } else if (data.appointmentId || (data.roomId && data.roomType === 'direct' && !data.roomId.includes('_'))) {
-      client.join(`appointment:${id}`);
+      const apptId = String(id).replace(/^appointment:/, '');
+      client.join(`appointment:${apptId}`);
+      console.log(`[ChatGateway] Client joined appointment room: appointment:${apptId}`);
     } else if (data.roomType === 'direct') {
-      client.join(`direct:${id}`);
+      const cleanDirectId = String(id).replace(/^direct:/, '');
+      client.join(`direct:${cleanDirectId}`);
+      console.log(`[ChatGateway] Client joined direct room: direct:${cleanDirectId}`);
     } else {
       client.join(`support:${id}`);
       client.join('admin:support');
@@ -342,7 +347,12 @@ export class ChatGateway
         targetRoom = this.orderRoom(orderId);
       }
       if (roomType === 'direct') {
-        targetRoom = appointmentId ? `appointment:${appointmentId}` : `direct:${data.roomId || `${Math.min(data.senderId as any, data.receiverId as any)}_${Math.max(data.senderId as any, data.receiverId as any)}`}`;
+        const cleanRoomId = data.roomId ? String(data.roomId).replace(/^direct:/, '') : '';
+        const pair = [String(data.senderId), String(data.receiverId)].sort().join('_');
+        const servicePart = data.serviceId ? `_${data.serviceId}` : '_general';
+        targetRoom = appointmentId 
+          ? `appointment:${String(appointmentId).replace(/^appointment:/, '')}` 
+          : `direct:${cleanRoomId || `${pair}${servicePart}`}`;
       }
 
       // Build optimistic message for IMMEDIATE emit (no DB round-trip)
@@ -374,20 +384,25 @@ export class ChatGateway
         }
         broadcast.emit('chat:new-message', optimisticMessage);
       } else {
-        this.server.to(targetRoom).emit('chat:new-message', optimisticMessage);
-        this.server.to(targetRoom).emit('newMessage', optimisticMessage);
+        let broadcast = this.server.to(targetRoom);
+        if (data.receiverId) {
+          // Multicast directly to receiver's user room so all active client tabs get it
+          broadcast = broadcast.to(`user:${data.receiverId}`);
+        }
+        broadcast.emit('chat:new-message', optimisticMessage);
+        broadcast.emit('newMessage', optimisticMessage);
       }
 
-      // Also emit directly to receiverId's socket if connected
+      // Also emit notification event to receiver's user room and individual socket
       if (data.receiverId) {
+        this.server.to(`user:${data.receiverId}`).emit('newMessageNotification', optimisticMessage);
         const receiverSocketId = this.connectedUsers.get(data.receiverId);
         if (receiverSocketId) {
-          this.server.to(receiverSocketId).emit('newMessage', optimisticMessage);
           this.server.to(receiverSocketId).emit('newMessageNotification', optimisticMessage);
         }
       }
 
-      console.log(`[ChatGateway] INSTANT broadcast tempId=${tempId} from ${data.senderId} to room ${targetRoom}`);
+      console.log(`[ChatGateway] INSTANT broadcast tempId=${tempId} from ${data.senderId} to room ${targetRoom} and receiver ${data.receiverId}`);
 
       // NOW save to DB (this can take time with remote MongoDB, but the UI already updated)
       const savedMessage = await this.chatService.createMessage({ 
@@ -422,7 +437,11 @@ export class ChatGateway
 
       // Emit the confirmed message with real _id so frontends can upgrade the temp message
       if (roomType !== 'support') {
-        this.server.to(targetRoom).emit('messageConfirmed', confirmedMessage);
+        let confirmedBroadcast = this.server.to(targetRoom);
+        if (data.receiverId) {
+          confirmedBroadcast = confirmedBroadcast.to(`user:${data.receiverId}`);
+        }
+        confirmedBroadcast.emit('messageConfirmed', confirmedMessage);
       }
 
       // Bot logic for support (fire-and-forget)
