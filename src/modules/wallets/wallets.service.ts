@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Inject, forwardRef } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Wallet, WalletDocument, PayoutPreference } from './schemas/wallet.schema';
@@ -292,9 +292,53 @@ export class WalletsService {
       throw new Error(`Minimum payout amount for this settlement frequency is ₦${minPayout}`);
     }
 
-    if (wallet.balance < amount) {
-      throw new Error('Insufficient balance in wallet');
+    // Claim a short lock first. Two requests arriving together both pass any check before
+    // either writes, so the only reliable guard is an atomic claim on the wallet itself.
+    const claimed = await this.walletModel.findOneAndUpdate(
+      {
+        _id: wallet._id,
+        $or: [
+          { withdrawalLockAt: null },
+          { withdrawalLockAt: { $exists: false } },
+          { withdrawalLockAt: { $lt: new Date(Date.now() - 30 * 1000) } },
+        ],
+      },
+      { $set: { withdrawalLockAt: new Date() } },
+      { new: true },
+    );
+    if (!claimed) {
+      throw new BadRequestException('A withdrawal is already being processed. Please wait a moment.');
     }
+
+    // Two protections, both learned from the same incident.
+    //
+    // 1. A repeated request. Two identical withdrawals once arrived two milliseconds apart
+    //    from a double tap, and both were later approved. A pending request of the same
+    //    amount from the last few minutes means this is a retry, not a second intent.
+    const recentDuplicate = await this.transactionModel.findOne({
+      wallet: wallet._id,
+      'metadata.isPayoutRequest': true,
+      amount: { $gte: amount - processingFee },
+      status: TransactionStatus.PENDING,
+      createdAt: { $gte: new Date(Date.now() - 2 * 60 * 1000) },
+    });
+    if (recentDuplicate) {
+      throw new BadRequestException('A withdrawal of this amount was just requested. Please wait for it to be reviewed.');
+    }
+
+    // 2. The balance check and the debit used to be a read followed by a write, so two
+    //    requests arriving together both saw the old balance and one debit was lost — the
+    //    transaction was recorded but the money never left. Deducting atomically means only
+    //    one of them can succeed.
+    const debited = await this.walletModel.findOneAndUpdate(
+      { _id: wallet._id, balance: { $gte: amount } },
+      { $inc: { balance: -amount } },
+      { new: true },
+    );
+    if (!debited) {
+      throw new BadRequestException('Insufficient balance in wallet');
+    }
+    wallet.balance = debited.balance;
 
     const transferAmount = amount - processingFee;
     if (transferAmount <= 0) {
@@ -311,9 +355,7 @@ export class WalletsService {
     // Generate a reference
     const reference = `WD-${uuidv4().slice(0, 8).toUpperCase()}`;
 
-    // Debit Wallet to lock full amount (transfer + fee)
-    wallet.balance -= amount;
-    await wallet.save();
+    // Already deducted atomically above; only the user mirror is adjusted here.
     await this.userModel.findByIdAndUpdate(userId, { $inc: { walletBalance: -amount } });
 
     // Log the fee transaction if applicable
@@ -365,6 +407,12 @@ export class WalletsService {
         ].join('\n'),
       )
       .catch((e) => console.warn(`Withdrawal WhatsApp alert failed: ${e?.message || e}`));
+
+    // Released as soon as the request is recorded; a failure elsewhere should not lock the
+    // wallet out for the full 30 seconds.
+    await this.walletModel
+      .updateOne({ _id: wallet._id }, { $set: { withdrawalLockAt: null } })
+      .catch(() => {});
 
     if (userEmail) {
       await this.emailService.sendWithdrawalRequested(userEmail, transferAmount, reference).catch(e => console.warn(`Failed to send withdrawal requested email: ${e.message}`));

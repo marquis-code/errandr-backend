@@ -26,6 +26,14 @@ export class Wallet {
   @Prop({ type: String, enum: PayoutPreference, default: PayoutPreference.MANUAL })
   payoutPreference: PayoutPreference;
 
+  /**
+   * Set while a withdrawal is being created. A check-then-act guard cannot stop two
+   * concurrent requests, because both pass the check before either writes; claiming this
+   * field atomically can.
+   */
+  @Prop({ type: Date, default: null })
+  withdrawalLockAt: Date | null;
+
   @Prop({ type: String, required: false })
   paystackCustomerId?: string;
 
