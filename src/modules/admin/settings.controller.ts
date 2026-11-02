@@ -111,6 +111,9 @@ export class SettingsController {
     expressFee: number;
     roomDeliveryFee?: number;
     dropoffServiceFee?: number;
+    hostelDeliveryFee?: number;
+    withinSchoolFee?: number;
+    outsideSchoolFee?: number;
     platformFee?: number;
     convenienceFee?: number;
     customErrandCustomerFee?: number;
@@ -161,6 +164,11 @@ export class SettingsController {
       expressFee: Number(body.expressFee ?? 850),
       roomDeliveryFee: Number(body.roomDeliveryFee ?? 300),
       dropoffServiceFee: Number(body.dropoffServiceFee ?? 300),
+      // Priced by distance from the hostel. Without these the save silently dropped the
+      // three tier values and the admin inputs came back empty.
+      hostelDeliveryFee: Number(body.hostelDeliveryFee ?? 300),
+      withinSchoolFee: Number(body.withinSchoolFee ?? 450),
+      outsideSchoolFee: Number(body.outsideSchoolFee ?? 700),
       platformFee: targetServiceFee,
       convenienceFee: targetServiceFee,
       customErrandCustomerFee: resolvedCustomCustomerFee,
