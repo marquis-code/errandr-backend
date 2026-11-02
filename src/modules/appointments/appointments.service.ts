@@ -70,9 +70,18 @@ export class AppointmentsService {
       const bookingVendor: any = await this.vendorsService
         .findById(String(bookingVendorId))
         .catch(() => null);
-      if (bookingVendor?.bookingPaymentMode === 'full') {
-        bookingPaymentMode = 'full';
-      }
+
+      // A deposit is a service-booking idea and belongs to service providers alone. Any
+      // other vendor taking a booking is charged in full, whatever the stored preference
+      // says, so the rule holds even if the data or a client disagrees.
+      const isServiceProvider =
+        bookingVendor?.businessType === 'service_provider' ||
+        bookingVendor?.vendorType === 'service_provider';
+
+      bookingPaymentMode =
+        isServiceProvider && bookingVendor?.bookingPaymentMode === 'commitment'
+          ? 'commitment'
+          : 'full';
     }
 
     const commitmentFee =
