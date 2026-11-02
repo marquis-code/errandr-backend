@@ -7,6 +7,7 @@ import { Transaction, TransactionSchema } from './schemas/transaction.schema';
 import { forwardRef } from '@nestjs/common';
 import { PaymentsModule } from '../payments/payments.module';
 import { EmailModule } from '../email/email.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { WalletsCronService } from './wallets.cron';
 import { Order, OrderSchema } from '../orders/schemas/order.schema';
@@ -25,6 +26,7 @@ import { SystemSetting, SystemSettingSchema } from '../admin/schemas/system-sett
     ]),
     forwardRef(() => PaymentsModule),
     EmailModule,
+    forwardRef(() => NotificationsModule),
   ],
   providers: [WalletsService, WalletsCronService],
   controllers: [WalletsController],

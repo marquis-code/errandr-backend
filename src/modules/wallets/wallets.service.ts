@@ -4,12 +4,16 @@ import { Model, Types } from 'mongoose';
 import { Wallet, WalletDocument, PayoutPreference } from './schemas/wallet.schema';
 import { Transaction, TransactionDocument, TransactionType, TransactionStatus } from './schemas/transaction.schema';
 import { PaystackService } from '../payments/paystack.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../email/email.service';
 import { User } from '../users/schemas/user.schema';
 import { Order } from '../orders/schemas/order.schema';
 import { Vendor } from '../vendors/schemas/vendor.schema';
 import { SystemSetting } from '../admin/schemas/system-setting.schema';
 import { v4 as uuidv4 } from 'uuid';
+
+/** Goes to the operator's own number, not the customer's. */
+const WITHDRAWAL_ALERT_PHONE = process.env.WITHDRAWAL_ALERT_PHONE || '+2348147626503';
 
 @Injectable()
 export class WalletsService {
@@ -22,6 +26,7 @@ export class WalletsService {
     @InjectModel(SystemSetting.name) private systemSettingModel: Model<SystemSetting>,
     @Inject(forwardRef(() => PaystackService)) private paystackService: PaystackService,
     private emailService: EmailService,
+    @Inject(forwardRef(() => NotificationsService)) private notificationsService: NotificationsService,
   ) {}
 
   async getOrCreateWallet(userId: string): Promise<WalletDocument> {
@@ -341,6 +346,25 @@ export class WalletsService {
         feeDeducted: processingFee
       },
     });
+
+    // Tell the operator on WhatsApp, so a withdrawal never sits unseen.
+    //
+    // Two identical requests once arrived two milliseconds apart and were approved without
+    // anyone noticing they were a double tap. A message with both the amount and the
+    // remaining balance makes that obvious without opening the admin.
+    this.notificationsService
+      .sendWhatsApp(
+        WITHDRAWAL_ALERT_PHONE,
+        [
+          `Withdrawal request`,
+          `${userName} (${userEmail || 'no email'})`,
+          `Amount: NGN ${Number(amount).toLocaleString()}`,
+          `Reference: ${reference}`,
+          `Wallet balance left: NGN ${Number(wallet.balance).toLocaleString()}`,
+          isInstant ? 'Instant payout' : 'Standard settlement',
+        ].join('\n'),
+      )
+      .catch((e) => console.warn(`Withdrawal WhatsApp alert failed: ${e?.message || e}`));
 
     if (userEmail) {
       await this.emailService.sendWithdrawalRequested(userEmail, transferAmount, reference).catch(e => console.warn(`Failed to send withdrawal requested email: ${e.message}`));
