@@ -577,6 +577,9 @@ export class OrdersService {
           appliedPromoCode = promo.code;
         } catch (e) {
           this.logger.warn(`Promo code invalid on custom errand: ${data.promoCode} - ${e.message}`);
+          throw new BadRequestException(
+            e?.message || 'That promo code could not be applied. Remove it and try again.',
+          );
         }
       }
 
@@ -1035,8 +1038,14 @@ export class OrdersService {
 
         appliedPromoCode = promo.code;
       } catch (e) {
-        // Ignore invalid promo codes or handle error
+        // Tell the customer instead of quietly charging full price.
+        //
+        // This used to swallow the reason, so someone whose code had expired saw the order
+        // go through at full price with no explanation — and reported the promo as broken.
         this.logger.warn(`Invalid promo code applied: ${data.promoCode} - ${e.message}`);
+        throw new BadRequestException(
+          e?.message || 'That promo code could not be applied. Remove it and try again.',
+        );
       }
     }
 
