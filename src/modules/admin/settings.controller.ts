@@ -26,6 +26,10 @@ export class SettingsController {
           expressFee: 850,
           roomDeliveryFee: 350,
           dropoffServiceFee: 300,
+          // Priced by distance from the hostel, not by how it is handed over.
+          hostelDeliveryFee: 300,
+          withinSchoolFee: 450,
+          outsideSchoolFee: 700,
           platformFee: 100,
           convenienceFee: 100,
           customErrandCustomerFee: 100,
@@ -78,6 +82,16 @@ export class SettingsController {
     val.roomDeliveryFee = (val.roomDeliveryFee !== undefined && val.roomDeliveryFee !== null && !isNaN(Number(val.roomDeliveryFee)))
       ? Number(val.roomDeliveryFee)
       : 300;
+    // Where the delivery is going decides the price. How it is handed over does not.
+    val.hostelDeliveryFee = (val.hostelDeliveryFee !== undefined && val.hostelDeliveryFee !== null && !isNaN(Number(val.hostelDeliveryFee)))
+      ? Number(val.hostelDeliveryFee)
+      : 300;
+    val.withinSchoolFee = (val.withinSchoolFee !== undefined && val.withinSchoolFee !== null && !isNaN(Number(val.withinSchoolFee)))
+      ? Number(val.withinSchoolFee)
+      : 450;
+    val.outsideSchoolFee = (val.outsideSchoolFee !== undefined && val.outsideSchoolFee !== null && !isNaN(Number(val.outsideSchoolFee)))
+      ? Number(val.outsideSchoolFee)
+      : 700;
     val.dropoffServiceFee = (val.dropoffServiceFee !== undefined && val.dropoffServiceFee !== null && !isNaN(Number(val.dropoffServiceFee)))
       ? Number(val.dropoffServiceFee)
       : 300;
