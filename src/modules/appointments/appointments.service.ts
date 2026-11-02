@@ -60,7 +60,25 @@ export class AppointmentsService {
     const minServiceFee = Number(servicePricing.minServiceFee ?? 100);
     const vendorCommissionPercentage = Number(servicePricing.vendorCommissionPercentage ?? 10);
 
-    const commitmentFee = Math.round(totalAmount * (commitmentFeePercentage / 100));
+    // How this provider wants to be paid decides what the student pays online now.
+    //
+    // 'commitment' takes a deposit and leaves the balance for the day; 'full' takes the
+    // whole booking amount online, so the provider never collects cash in person.
+    const bookingVendorId = data.vendor || data.vendorId;
+    let bookingPaymentMode: 'commitment' | 'full' = 'commitment';
+    if (bookingVendorId) {
+      const bookingVendor: any = await this.vendorsService
+        .findById(String(bookingVendorId))
+        .catch(() => null);
+      if (bookingVendor?.bookingPaymentMode === 'full') {
+        bookingPaymentMode = 'full';
+      }
+    }
+
+    const commitmentFee =
+      bookingPaymentMode === 'full'
+        ? totalAmount
+        : Math.round(totalAmount * (commitmentFeePercentage / 100));
 
     let serviceCharge = 0;
     if (servicePricing.isEnabled !== false) {
@@ -98,6 +116,7 @@ export class AppointmentsService {
       serviceCharge,
       commitmentFee,
       totalOnlineFee,
+      bookingPaymentMode,
       vendorCommission,
       pendingBalance,
       notes: data.notes,

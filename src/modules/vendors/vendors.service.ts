@@ -459,6 +459,17 @@ export class VendorsService implements OnApplicationBootstrap {
     delete (data as any).updatedAt;
     delete data.owner;
 
+    // The update runs with runValidators off, so the enum is not enforced by mongoose.
+    // A provider choosing how they get paid is a money decision — accept only the two
+    // known modes rather than storing whatever arrives.
+    if ((data as any).bookingPaymentMode !== undefined) {
+      const mode = String((data as any).bookingPaymentMode);
+      if (mode !== 'commitment' && mode !== 'full') {
+        throw new BadRequestException('bookingPaymentMode must be either commitment or full');
+      }
+      (data as any).bookingPaymentMode = mode;
+    }
+
     await this.vendorModel.updateOne({ _id: vendor._id }, { $set: data }, { runValidators: false });
     
     // Fetch updated vendor to return

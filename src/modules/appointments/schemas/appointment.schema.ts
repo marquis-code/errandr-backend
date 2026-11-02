@@ -73,6 +73,9 @@ export class Appointment extends Document {
   @Prop({ required: true, default: 0 })
   totalOnlineFee: number; // Total paid upfront online (commitmentFee + serviceCharge)
 
+  @Prop({ type: String, enum: ['commitment', 'full'], default: 'commitment' })
+  bookingPaymentMode: 'commitment' | 'full'; // how this provider chose to be paid
+
   @Prop({ required: false, default: 0 })
   vendorCommission: number; // Commission deducted from vendor commitment fee
 

@@ -303,6 +303,18 @@ export class Vendor extends Document {
   @Prop({ type: [String], default: ['Default / General'] })
   accountPurposes: string[];
 
+  /**
+   * How a service provider wants to be paid for a booking.
+   *
+   * 'commitment' takes a deposit online now (the balance on the day), which is the
+   * platform default. 'full' takes the whole booking amount online, so the provider never
+   * has to collect cash in person.
+   *
+   * Only meaningful for service providers; product vendors ignore it.
+   */
+  @Prop({ type: String, enum: ['commitment', 'full'], default: 'commitment' })
+  bookingPaymentMode: 'commitment' | 'full';
+
   // Social media
   @Prop({
     type: {
