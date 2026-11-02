@@ -232,7 +232,10 @@ export class SettingsController {
   }
 
   @Get('services')
-  @ApiOperation({ summary: 'Get service booking and service charge settings' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get service booking and service charge settings (admin only)' })
   async getServiceSettings() {
     let setting = await this.settingModel.findOne({ key: 'service_pricing' }).exec();
     if (!setting) {

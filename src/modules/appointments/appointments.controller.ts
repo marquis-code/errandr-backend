@@ -19,6 +19,8 @@ export class AppointmentsController {
 
   @Get('settings')
   @ApiOperation({ summary: 'Get appointment and service fee system settings' })
+  // Student-facing. Deliberately omits the provider's commission: the student is told what
+  // they pay, never what the provider is charged. Admins read /settings/services instead.
   async getSettings() {
     const servicePricing = await this.adminService.getSetting('service_pricing') || {};
     const legacyCommitmentFee = await this.adminService.getSetting('APPOINTMENT_COMMITMENT_FEE_PERCENTAGE');
@@ -29,7 +31,6 @@ export class AppointmentsController {
       serviceFee: servicePricing.serviceFee !== undefined ? Number(servicePricing.serviceFee) : 150,
       serviceFeePercentage: servicePricing.serviceFeePercentage !== undefined ? Number(servicePricing.serviceFeePercentage) : 0,
       commitmentFeePercentage,
-      vendorCommissionPercentage: servicePricing.vendorCommissionPercentage !== undefined ? Number(servicePricing.vendorCommissionPercentage) : 10,
       minServiceFee: servicePricing.minServiceFee !== undefined ? Number(servicePricing.minServiceFee) : 100,
       isEnabled: servicePricing.isEnabled !== false,
     };
