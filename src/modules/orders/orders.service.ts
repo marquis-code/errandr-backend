@@ -5341,22 +5341,30 @@ export class OrdersService {
 
 
   /**
-   * A substitute may not cost the customer more than the item it replaces.
+   * A substitute is judged on the total, never on the portion count.
    *
-   * Accepting a substitute overwrote the line price with the replacement's, so a pricier
-   * swap charged the customer extra without asking. A cheaper swap is fine — the
-   * difference simply falls away from the total.
+   * Two portions of gizzard at 300 each is a 600 line. One portion of fish at 600 is also a
+   * 600 line, so it is a fair swap — but comparing unit prices calls the fish "twice as
+   * expensive", and comparing nothing but multiplying the fish's unit price by the
+   * gizzard's quantity bills 1,200. Both are wrong for the same reason: the thing being
+   * replaced is the money, not the number of portions.
    */
-  private assertSubstituteNotDearer(
-    originalUnitPrice: number,
-    substituteUnitPrice: number,
+  private assertSubstituteTotalNotHigher(
+    originalTotal: number,
+    substituteTotal: number,
     substituteName: string,
   ): void {
-    if (substituteUnitPrice > originalUnitPrice) {
+    if (substituteTotal > originalTotal) {
       throw new BadRequestException(
-        `${substituteName} costs more than the item it replaces. A substitute can only be the same price or less.`,
+        `${substituteName} costs ₦${substituteTotal} but the item being replaced is ₦${originalTotal}. A substitute must not cost more than the original.`,
       );
     }
+  }
+
+  /** A replacement replaces the whole line, so it is one portion unless stated otherwise. */
+  private substituteQuantity(requested?: any): number {
+    const qty = Number(requested);
+    return Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1;
   }
 
   async resolveItemSubstitute(orderId: string, itemId: string, accept: boolean, substituteItemId: string, userId: string, itemName?: string, note?: string) {
@@ -5402,15 +5410,20 @@ export class OrdersService {
         }
         originalItemPrice = jsonItem.price || 0;
         quantity = jsonItem.quantity || 1;
-        
+
         const substitutePrice = Number((substituteObj as any).price || (substituteObj as any).pricePerPortion || 0);
-        this.assertSubstituteNotDearer(originalItemPrice, substitutePrice, substituteObj.name);
+        const substituteQty = this.substituteQuantity(undefined);
+        const originalTotal = originalItemPrice * quantity;
+        const substituteTotal = substitutePrice * substituteQty;
+        this.assertSubstituteTotalNotHigher(originalTotal, substituteTotal, substituteObj.name);
 
         docItem.status = 'substituted';
         docItem.substitutedWith = { menuItem: substituteObj._id, name: substituteObj.name, originalName: jsonItem.name, note: note || '' };
         docItem.name = substituteObj.name;
         docItem.price = substitutePrice;
-        docItem.subtotal = substitutePrice * quantity;
+        // Charge for what they actually get: one portion, not the gizzard's count.
+        docItem.quantity = substituteQty;
+        docItem.subtotal = substituteTotal;
         
         order.set('menuItems', menuItems);
         itemFound = true;
@@ -5428,12 +5441,18 @@ export class OrdersService {
         }
         originalItemPrice = jsonItem.price || 0;
         quantity = jsonItem.quantity || 1;
-        
+
+        const substitutePrice = Number((substituteObj as any).price || (substituteObj as any).pricePerPortion || 0);
+        const substituteQty = this.substituteQuantity(undefined);
+        const substituteTotal = substitutePrice * substituteQty;
+        this.assertSubstituteTotalNotHigher(originalItemPrice * quantity, substituteTotal, substituteObj.name);
+
         docItem.status = 'substituted';
         docItem.substitutedWith = { product: substituteObj._id, name: substituteObj.name, originalName: jsonItem.name, note: note || '' };
         docItem.name = substituteObj.name;
-        docItem.price = (substituteObj as any).price || (substituteObj as any).pricePerPortion;
-        docItem.subtotal = ((substituteObj as any).price || (substituteObj as any).pricePerPortion) * quantity;
+        docItem.price = substitutePrice;
+        docItem.quantity = substituteQty;
+        docItem.subtotal = substituteTotal;
         
         order.set('items', items);
         itemFound = true;
@@ -5456,12 +5475,18 @@ export class OrdersService {
           }
           originalItemPrice = jsonItem.price || 0;
           quantity = jsonItem.quantity || 1;
-          
+
+          const substitutePrice = Number((substituteObj as any).price || (substituteObj as any).pricePerPortion || 0);
+          const substituteQty = this.substituteQuantity(undefined);
+          const substituteTotal = substitutePrice * substituteQty;
+          this.assertSubstituteTotalNotHigher(originalItemPrice * quantity, substituteTotal, substituteObj.name);
+
           docItem.status = 'substituted';
           docItem.substitutedWith = { product: substituteObj._id, name: substituteObj.name, originalName: jsonItem.name, note: note || '' };
           docItem.name = substituteObj.name;
-          docItem.price = (substituteObj as any).price || (substituteObj as any).pricePerPortion;
-          docItem.subtotal = ((substituteObj as any).price || (substituteObj as any).pricePerPortion) * quantity;
+          docItem.price = substitutePrice;
+          docItem.quantity = substituteQty;
+          docItem.subtotal = substituteTotal;
           
           // Re-calculate pack subtotal
           const packItems = packs[pIdx].items;
