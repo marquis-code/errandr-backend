@@ -291,11 +291,11 @@ export class OrdersService {
     await this.notificationsService.broadcastNewOrder(orderData);
     this.logger.log(`Broadcasted order ${populated.orderNumber} to all erranders via Redis`);
 
-    // Broadcast exclusively to Errand Ninjas who currently have the status of 'busy'
+    // Notify Pro riders (tier 3) and riders who are busy, and nobody else.
     try {
-      const busyErranders = await this.erranderModel.find({
-        status: { $in: [ErranderStatus.BUSY, 'busy', 'Busy'] },
-      }).populate('user', 'fcmToken phone gender');
+      const busyErranders = await this.erranderModel
+        .find(this.notifiableErranderFilter())
+        .populate('user', 'fcmToken phone gender');
 
       const preference = (populated.customer as any)?.erranderGenderPreference || 'Both';
       let filteredErranders = busyErranders;
@@ -341,6 +341,26 @@ export class OrdersService {
     }
   }
 
+
+
+  /**
+   * Who should be told about a new errand.
+   *
+   * Tier 3 is a Pro rider, fully verified. Busy means they are already on a delivery but
+   * still want to see what is coming. Offline riders and tier 1-2 riders are not notified.
+   *
+   * The two broadcast paths used to disagree — one pushed to busy riders only, the other to
+   * available riders only — so a verified Pro who was online during one path and idle
+   * during the other fell through both and never heard anything.
+   */
+  private notifiableErranderFilter(): Record<string, any> {
+    return {
+      $or: [
+        { verificationLevel: 3 },
+        { status: { $in: [ErranderStatus.BUSY, 'busy', 'Busy'] } },
+      ],
+    };
+  }
 
   async createFromBarter(data: any): Promise<Order> {
     this.logger.log(`createFromBarter() payload: ${JSON.stringify(data)}`);
@@ -1348,7 +1368,7 @@ export class OrdersService {
     if (order.type === 'custom_errand') {
       // Broadcast custom errands based on pickup location coordinates if available
       // For now, broadcast to all since we don't have coords for arbitrary strings yet
-      const erranders = await this.erranderModel.find({ status: ErranderStatus.AVAILABLE });
+      const erranders = await this.erranderModel.find(this.notifiableErranderFilter());
       if (erranders.length > 0) {
         await this.redisService.publish('order:new', {
           orderId: order._id,
