@@ -430,7 +430,13 @@ export class PromoCodesService {
     const promo = await this.promoCodeModel.findOne({ code: cleanCode });
     
     if (!promo) {
-      return { found: false, promo: null, eligibility: null };
+      return {
+        found: false,
+        promo: null,
+        eligibility: null,
+        reasons: [`We could not find a code called ${cleanCode}.`],
+        estimatedDiscount: 0,
+      };
     }
 
     const eligibility = {
@@ -511,6 +517,42 @@ export class PromoCodesService {
       eligibility.newUsersOnlyMet &&
       eligibility.orderTypeAllowed;
 
+    // Say why, in the customer's words.
+    //
+    // The flags above are precise but unreadable, so the app could only offer "this code
+    // cannot be applied" — which tells a student nothing about what to do next.
+    const reasons: string[] = [];
+    if (!eligibility.isActive) {
+      reasons.push('This code has been switched off by Erranders.');
+    }
+    if (eligibility.isExpired) {
+      const when = promo.expiresAt ? new Date(promo.expiresAt).toLocaleDateString('en-GB') : '';
+      reasons.push(when ? `This code expired on ${when}.` : 'This code has expired.');
+    }
+    if (!eligibility.minAmountMet) {
+      reasons.push(
+        `This code needs a minimum order of ₦${Number(promo.minOrderAmount).toLocaleString()}. Yours is ₦${subtotal.toLocaleString()}.`,
+      );
+    }
+    if (eligibility.usageLimitReached) {
+      reasons.push('This code has been fully claimed.');
+    }
+    if (!eligibility.userRedemptionsMet) {
+      reasons.push('You have already used this code.');
+    }
+    if (!eligibility.vendorAllowed) {
+      reasons.push('This code only works at certain vendors.');
+    }
+    if (!eligibility.userAllowed) {
+      reasons.push('This code is reserved for specific accounts.');
+    }
+    if (!eligibility.newUsersOnlyMet) {
+      reasons.push('This code is for first orders only, and you have ordered before.');
+    }
+    if (!eligibility.orderTypeAllowed) {
+      reasons.push('This code does not apply to this kind of order or delivery location.');
+    }
+
     let calculatedDiscount = 0;
     if (eligibility.isEligible) {
       if (promo.discountType === 'percentage') {
@@ -530,6 +572,7 @@ export class PromoCodesService {
       found: true, 
       promo, 
       eligibility, 
+      reasons,
       estimatedDiscount: calculatedDiscount 
     };
   }
