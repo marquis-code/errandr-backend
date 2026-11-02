@@ -25,8 +25,16 @@ export class AppointmentsService {
   ) {}
 
   async create(userId: string | null, data: any) {
+    const rawItems = Array.isArray(data.items) && data.items.length > 0 
+      ? data.items 
+      : (data.serviceId ? [{
+          service: data.serviceId,
+          price: data.amount || 0,
+          durationInMinutes: data.durationInMinutes || 30
+        }] : []);
+
     // We map over items to ensure ObjectIds are correctly instanced
-    const mappedItems = data.items.map((item: any) => ({
+    const mappedItems = rawItems.map((item: any) => ({
       ...item,
       service: new Types.ObjectId(item.service)
     }));
@@ -42,19 +50,47 @@ export class AppointmentsService {
       return acc + itemTotal;
     }, 0);
 
-    // Calculate commitment fee based on global setting
-    const commitmentFeePercentage = await this.adminService.getSetting('APPOINTMENT_COMMITMENT_FEE_PERCENTAGE') || 30;
+    // Calculate commitment fee & platform service charge for Erranders benefit
+    const servicePricing = await this.adminService.getSetting('service_pricing') || {};
+    const legacyCommitmentFee = await this.adminService.getSetting('APPOINTMENT_COMMITMENT_FEE_PERCENTAGE');
+    const commitmentFeePercentage = Number(servicePricing.commitmentFeePercentage ?? (legacyCommitmentFee || 30));
+    const serviceFeeType = servicePricing.serviceFeeType || 'flat';
+    const rawServiceFee = Number(servicePricing.serviceFee ?? 150);
+    const serviceFeePercentage = Number(servicePricing.serviceFeePercentage ?? 0);
+    const minServiceFee = Number(servicePricing.minServiceFee ?? 100);
+    const vendorCommissionPercentage = Number(servicePricing.vendorCommissionPercentage ?? 10);
+
     const commitmentFee = Math.round(totalAmount * (commitmentFeePercentage / 100));
+
+    let serviceCharge = 0;
+    if (servicePricing.isEnabled !== false) {
+      if (serviceFeeType === 'percentage') {
+        serviceCharge = Math.round(totalAmount * (serviceFeePercentage / 100));
+      } else if (serviceFeeType === 'both') {
+        serviceCharge = rawServiceFee + Math.round(totalAmount * (serviceFeePercentage / 100));
+      } else {
+        serviceCharge = rawServiceFee;
+      }
+      serviceCharge = Math.max(minServiceFee, serviceCharge);
+    }
+
+    const totalOnlineFee = commitmentFee + serviceCharge;
     const pendingBalance = totalAmount - commitmentFee;
+    const vendorCommission = Math.round(commitmentFee * (vendorCommissionPercentage / 100));
+
+    const vendorId = data.vendor || data.vendorId;
 
     const appointmentPayload: any = { 
-      vendor: new Types.ObjectId(data.vendor),
+      vendor: new Types.ObjectId(vendorId),
       items: mappedItems,
       scheduledDate: data.scheduledDate,
       startTime: data.startTime,
       endTime: data.endTime,
       price: totalAmount,
+      serviceCharge,
       commitmentFee,
+      totalOnlineFee,
+      vendorCommission,
       pendingBalance,
       notes: data.notes,
       status: AppointmentStatus.PENDING,
@@ -105,12 +141,15 @@ export class AppointmentsService {
       
       const payload = {
         email: data.userEmail || data.guestInfo?.email || 'user@erranders.org', // Pass user email from controller or frontend
-        amount: Math.round(commitmentFee * 100), // Paystack accepts kobo (Charge only commitment fee)
+        amount: Math.round(totalOnlineFee * 100), // Paystack accepts kobo (Charge commitment fee + platform service charge)
         reference: reference,
         metadata: {
           appointmentId: appointment._id.toString(),
           vendorId: data.vendor,
           userId: userId || 'guest',
+          serviceCharge,
+          commitmentFee,
+          totalOnlineFee
         }
       };
 
@@ -325,7 +364,8 @@ export class AppointmentsService {
         if (status === AppointmentStatus.COMPLETED || status === AppointmentStatus.NO_SHOW) {
           if (vendorOwnerId) {
             try {
-              await this.walletsService.creditWallet(vendorOwnerId, appointment.commitmentFee, `Commitment fee for appointment ${appointment._id}`, undefined, appointment.paymentReference);
+              const vendorPayout = Math.max(0, appointment.commitmentFee - (appointment.vendorCommission || 0));
+              await this.walletsService.creditWallet(vendorOwnerId, vendorPayout, `Commitment fee for appointment ${appointment._id}`, undefined, appointment.paymentReference);
             } catch (e) {
               this.logger.error(`Failed to credit vendor wallet for appointment ${appointment._id}: ${e.message}`);
             }
@@ -567,5 +607,305 @@ export class AppointmentsService {
         endTime: app.endTime
       })) 
     };
+  }
+
+  async findAllForAdmin(query: any) {
+    const page = Math.max(1, parseInt(query.page || '1', 10));
+    const limit = Math.max(1, Math.min(100, parseInt(query.limit || '10', 10)));
+    const skip = (page - 1) * limit;
+
+    const filter: any = {};
+
+    if (query.status && query.status !== 'all') {
+      filter.status = query.status;
+    }
+
+    if (query.paymentStatus && query.paymentStatus !== 'all') {
+      filter.paymentStatus = query.paymentStatus;
+    }
+
+    if (query.paymentMethod && query.paymentMethod !== 'all') {
+      filter.paymentMethod = query.paymentMethod;
+    }
+
+    if (query.vendorId) {
+      filter.vendor = new Types.ObjectId(query.vendorId);
+    }
+
+    if (query.customerId) {
+      filter.user = new Types.ObjectId(query.customerId);
+    }
+
+    if (query.startDate && query.endDate) {
+      const startStr = typeof query.startDate === 'string' ? query.startDate.split('T')[0] : new Date(query.startDate).toISOString().split('T')[0];
+      const endStr = typeof query.endDate === 'string' ? query.endDate.split('T')[0] : new Date(query.endDate).toISOString().split('T')[0];
+      filter.scheduledDate = {
+        $gte: new Date(`${startStr}T00:00:00.000Z`),
+        $lte: new Date(`${endStr}T23:59:59.999Z`),
+      };
+    } else if (query.startDate) {
+      const startStr = typeof query.startDate === 'string' ? query.startDate.split('T')[0] : new Date(query.startDate).toISOString().split('T')[0];
+      filter.scheduledDate = { $gte: new Date(`${startStr}T00:00:00.000Z`) };
+    } else if (query.endDate) {
+      const endStr = typeof query.endDate === 'string' ? query.endDate.split('T')[0] : new Date(query.endDate).toISOString().split('T')[0];
+      filter.scheduledDate = { $lte: new Date(`${endStr}T23:59:59.999Z`) };
+    }
+
+    // Keyword search across reference, guest contact, and notes
+    if (query.search && query.search.trim()) {
+      const s = query.search.trim();
+      const searchRegex = new RegExp(s, 'i');
+      filter.$or = [
+        { paymentReference: searchRegex },
+        { 'guestInfo.firstName': searchRegex },
+        { 'guestInfo.lastName': searchRegex },
+        { 'guestInfo.email': searchRegex },
+        { 'guestInfo.phone': searchRegex },
+        { notes: searchRegex },
+      ];
+    }
+
+    const [appointments, total, statsAgg] = await Promise.all([
+      this.appointmentModel.find(filter)
+        .populate('user', 'firstName lastName email phoneNumber avatar')
+        .populate({
+          path: 'vendor',
+          select: 'storeName address logo email phone owner businessType',
+          populate: { path: 'owner', select: 'firstName lastName email phone avatar' }
+        })
+        .populate('items.service', 'name durationInMinutes image price category')
+        .sort({ scheduledDate: -1, createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .exec(),
+      this.appointmentModel.countDocuments(filter),
+      this.appointmentModel.aggregate([
+        {
+          $group: {
+            _id: null,
+            totalBookings: { $sum: 1 },
+            pending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } },
+            confirmed: { $sum: { $cond: [{ $eq: ['$status', 'confirmed'] }, 1, 0] } },
+            completed: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
+            cancelled: { $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0] } },
+            noShow: { $sum: { $cond: [{ $eq: ['$status', 'no_show'] }, 1, 0] } },
+            pendingVerifications: { $sum: { $cond: [{ $eq: ['$paymentStatus', 'pending_verification'] }, 1, 0] } },
+            totalRevenue: { $sum: { $ifNull: ['$price', 0] } },
+            totalServiceCharge: { $sum: { $ifNull: ['$serviceCharge', 0] } },
+            totalOnlinePaid: {
+              $sum: {
+                $cond: [
+                  { $eq: ['$paymentStatus', 'success'] },
+                  { $ifNull: ['$totalOnlineFee', '$commitmentFee'] },
+                  0
+                ]
+              }
+            }
+          }
+        }
+      ])
+    ]);
+
+    const stats = statsAgg[0] || {
+      totalBookings: 0,
+      pending: 0,
+      confirmed: 0,
+      completed: 0,
+      cancelled: 0,
+      noShow: 0,
+      pendingVerifications: 0,
+      totalRevenue: 0,
+      totalServiceCharge: 0,
+      totalOnlinePaid: 0,
+    };
+
+    return {
+      data: appointments,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1
+      },
+      stats
+    };
+  }
+
+  async findByIdForAdmin(id: string) {
+    const appointment = await this.appointmentModel.findById(id)
+      .populate('user', 'firstName lastName email phoneNumber avatar')
+      .populate({
+        path: 'vendor',
+        select: 'storeName address logo email phone businessType owner',
+        populate: { path: 'owner', select: 'firstName lastName email phone avatar' }
+      })
+      .populate('items.service', 'name durationInMinutes image price category')
+      .exec();
+
+    if (!appointment) throw new NotFoundException('Appointment not found');
+    return appointment;
+  }
+
+  async updateStatusByAdmin(id: string, status: AppointmentStatus, note?: string) {
+    const appointment = await this.appointmentModel.findById(id)
+      .populate('vendor', 'storeName owner email')
+      .populate('user', 'email firstName lastName');
+
+    if (!appointment) throw new NotFoundException('Appointment not found');
+
+    const previousStatus = appointment.status;
+    appointment.status = status;
+    if (note) {
+      appointment.adminNotes = note;
+    }
+    await appointment.save();
+
+    if (previousStatus !== status) {
+      const vendorObj: any = appointment.vendor;
+      const studentId = appointment.user?._id?.toString() || appointment.user?.toString();
+      const vendorOwnerId = vendorObj?.owner?._id?.toString() || vendorObj?.owner?.toString();
+
+      if (appointment.commitmentFee > 0 && appointment.paymentStatus === 'success') {
+        if (status === AppointmentStatus.COMPLETED || status === AppointmentStatus.NO_SHOW) {
+          if (vendorOwnerId) {
+            try {
+              const vendorPayout = Math.max(0, appointment.commitmentFee - (appointment.vendorCommission || 0));
+              await this.walletsService.creditWallet(
+                vendorOwnerId,
+                vendorPayout,
+                `Commitment fee for appointment ${appointment._id} (Admin update)`,
+                undefined,
+                appointment.paymentReference
+              );
+            } catch (e) {
+              this.logger.error(`Admin status update: failed to credit vendor wallet: ${e.message}`);
+            }
+          }
+        } else if (status === AppointmentStatus.CANCELLED) {
+          if (studentId) {
+            try {
+              await this.walletsService.creditWallet(
+                studentId,
+                appointment.commitmentFee,
+                `Refund for cancelled appointment ${appointment._id} (Admin update)`,
+                undefined,
+                appointment.paymentReference
+              );
+            } catch (e) {
+              this.logger.error(`Admin status update: failed to refund student wallet: ${e.message}`);
+            }
+          }
+        }
+      }
+
+      // Notify User & Vendor
+      const userEmail = (appointment.user as any)?.email || appointment.guestInfo?.email;
+      const vendorName = (appointment.vendor as any)?.storeName || 'Vendor';
+
+      if (userEmail) {
+        try {
+          await this.emailService.sendAppointmentStatusUpdate(userEmail, status, 'Your Service', vendorName);
+        } catch (_) {}
+      }
+
+      if (studentId) {
+        await this.notificationsService.sendNotification(studentId, {
+          title: status === AppointmentStatus.CANCELLED ? 'Booking Cancelled ❌' : `Booking ${status}`,
+          body: `Your booking with ${vendorName} was marked as ${status} by admin.`,
+          type: status === AppointmentStatus.CANCELLED ? 'BOOKING_CANCELLED' : 'BOOKING_UPDATE',
+          data: { appointmentId: appointment._id }
+        });
+      }
+
+      if (vendorOwnerId) {
+        await this.notificationsService.sendNotification(vendorOwnerId, {
+          title: `Booking Status: ${status}`,
+          body: `Booking ${appointment.paymentReference || appointment._id} was marked as ${status} by Admin.`,
+          type: 'BOOKING_UPDATE',
+          data: { appointmentId: appointment._id }
+        });
+      }
+    }
+
+    return appointment;
+  }
+
+  async verifyDirectTransferPaymentByAdmin(id: string) {
+    const appointment = await this.appointmentModel.findById(id)
+      .populate('user', 'firstName lastName email')
+      .populate('vendor', 'storeName email owner');
+
+    if (!appointment) throw new NotFoundException('Appointment not found');
+
+    appointment.paymentStatus = 'success';
+    appointment.status = AppointmentStatus.CONFIRMED;
+    await appointment.save();
+
+    const email = (appointment.user as any)?.email || appointment.guestInfo?.email;
+    const firstName = (appointment.user as any)?.firstName || appointment.guestInfo?.firstName || 'User';
+    const lastName = (appointment.user as any)?.lastName || appointment.guestInfo?.lastName || '';
+    const studentName = `${firstName} ${lastName}`.trim();
+
+    if (email) {
+      try {
+        await this.emailService.sendBookingReceipt(
+          email,
+          appointment.price,
+          appointment.paymentReference,
+          appointment,
+          studentName
+        );
+      } catch (_) {}
+    }
+
+    const userId = appointment.user?._id?.toString() || appointment.user?.toString();
+    if (userId) {
+      await this.notificationsService.sendNotification(userId, {
+        title: 'Booking Confirmed! 🎉',
+        body: `Your direct transfer payment was verified by Admin and your booking with ${(appointment.vendor as any)?.storeName || 'the vendor'} is confirmed.`,
+        type: 'BOOKING_CONFIRMED',
+        data: { appointmentId: appointment._id }
+      });
+    }
+
+    return { success: true, message: 'Direct transfer verified successfully by Admin', appointment };
+  }
+
+  async rescheduleByAdmin(id: string, body: { scheduledDate: string; startTime: string; endTime: string }) {
+    const appointment = await this.appointmentModel.findById(id)
+      .populate('vendor', 'storeName owner email')
+      .populate('user', 'firstName lastName email');
+
+    if (!appointment) throw new NotFoundException('Appointment not found');
+
+    appointment.scheduledDate = new Date(body.scheduledDate);
+    appointment.startTime = body.startTime;
+    appointment.endTime = body.endTime;
+    appointment.status = AppointmentStatus.CONFIRMED;
+    await appointment.save();
+
+    const studentName = (appointment.user as any)?.firstName || appointment.guestInfo?.firstName || 'Client';
+    const vendorOwnerId = (appointment.vendor as any)?.owner?._id?.toString() || (appointment.vendor as any)?.owner?.toString();
+    const userId = appointment.user?._id?.toString() || appointment.user?.toString();
+
+    if (userId) {
+      await this.notificationsService.sendNotification(userId, {
+        title: 'Booking Rescheduled 📅',
+        body: `Your booking with ${(appointment.vendor as any)?.storeName || 'the vendor'} has been rescheduled to ${body.scheduledDate} at ${body.startTime}.`,
+        type: 'BOOKING_RESCHEDULED',
+        data: { appointmentId: appointment._id }
+      });
+    }
+
+    if (vendorOwnerId) {
+      await this.notificationsService.sendNotification(vendorOwnerId, {
+        title: 'Booking Rescheduled 📅',
+        body: `Booking for ${studentName} was rescheduled to ${body.scheduledDate} at ${body.startTime} by Admin.`,
+        type: 'BOOKING_RESCHEDULED',
+        data: { appointmentId: appointment._id }
+      });
+    }
+
+    return appointment;
   }
 }

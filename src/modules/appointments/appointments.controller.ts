@@ -1,11 +1,12 @@
 import { Controller, Get, Post, Put, Patch, Body, Param, Query, UseGuards, Res } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AppointmentsService } from './appointments.service';
-import { JwtAuthGuard, CurrentUser } from '../../common/decorators';
+import { JwtAuthGuard, CurrentUser, Roles, RolesGuard } from '../../common/decorators';
 import { AppointmentStatus } from './schemas/appointment.schema';
 import { VendorsService } from '../vendors/vendors.service';
 import { NotFoundException } from '@nestjs/common';
 import { AdminService } from '../admin/admin.service';
+import { UserRole } from '../users/schemas/user.schema';
 
 @ApiTags('Appointments')
 @Controller('appointments')
@@ -17,12 +18,73 @@ export class AppointmentsController {
   ) {}
 
   @Get('settings')
-  @ApiOperation({ summary: 'Get appointment system settings' })
+  @ApiOperation({ summary: 'Get appointment and service fee system settings' })
   async getSettings() {
-    const feePercentage = await this.adminService.getSetting('APPOINTMENT_COMMITMENT_FEE_PERCENTAGE') || 30;
+    const servicePricing = await this.adminService.getSetting('service_pricing') || {};
+    const legacyCommitmentFee = await this.adminService.getSetting('APPOINTMENT_COMMITMENT_FEE_PERCENTAGE');
+    const commitmentFeePercentage = Number(servicePricing.commitmentFeePercentage ?? (legacyCommitmentFee || 30));
+
     return {
-      commitmentFeePercentage: feePercentage,
+      serviceFeeType: servicePricing.serviceFeeType || 'flat',
+      serviceFee: servicePricing.serviceFee !== undefined ? Number(servicePricing.serviceFee) : 150,
+      serviceFeePercentage: servicePricing.serviceFeePercentage !== undefined ? Number(servicePricing.serviceFeePercentage) : 0,
+      commitmentFeePercentage,
+      vendorCommissionPercentage: servicePricing.vendorCommissionPercentage !== undefined ? Number(servicePricing.vendorCommissionPercentage) : 10,
+      minServiceFee: servicePricing.minServiceFee !== undefined ? Number(servicePricing.minServiceFee) : 100,
+      isEnabled: servicePricing.isEnabled !== false,
     };
+  }
+
+  @Get('admin')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'List all appointments across vendors for admin monitoring' })
+  findForAdmin(@Query() query: any) {
+    return this.appointmentsService.findAllForAdmin(query);
+  }
+
+  @Get('admin/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get full appointment details by ID (Admin)' })
+  findByIdForAdmin(@Param('id') id: string) {
+    return this.appointmentsService.findByIdForAdmin(id);
+  }
+
+  @Put('admin/:id/status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update appointment status (Admin)' })
+  updateStatusByAdmin(
+    @Param('id') id: string,
+    @Body('status') status: AppointmentStatus,
+    @Body('note') note?: string,
+  ) {
+    return this.appointmentsService.updateStatusByAdmin(id, status, note);
+  }
+
+  @Patch('admin/:id/verify-payment')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Verify direct transfer payment proof (Admin)' })
+  verifyDirectTransferByAdmin(@Param('id') id: string) {
+    return this.appointmentsService.verifyDirectTransferPaymentByAdmin(id);
+  }
+
+  @Put('admin/:id/reschedule')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Reschedule appointment (Admin)' })
+  rescheduleByAdmin(
+    @Param('id') id: string,
+    @Body() body: { scheduledDate: string; startTime: string; endTime: string }
+  ) {
+    return this.appointmentsService.rescheduleByAdmin(id, body);
   }
 
   @Post()

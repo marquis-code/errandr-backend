@@ -231,6 +231,78 @@ export class SettingsController {
     return setting.value;
   }
 
+  @Get('services')
+  @ApiOperation({ summary: 'Get service booking and service charge settings' })
+  async getServiceSettings() {
+    let setting = await this.settingModel.findOne({ key: 'service_pricing' }).exec();
+    if (!setting) {
+      setting = await this.settingModel.create({
+        key: 'service_pricing',
+        value: {
+          serviceFeeType: 'flat',
+          serviceFee: 150,
+          serviceFeePercentage: 0,
+          commitmentFeePercentage: 30,
+          vendorCommissionPercentage: 10,
+          minServiceFee: 100,
+          isEnabled: true,
+        },
+      });
+    }
+    const val = { ...(setting.value || {}) };
+    return {
+      serviceFeeType: val.serviceFeeType || 'flat',
+      serviceFee: val.serviceFee !== undefined && val.serviceFee !== null ? Number(val.serviceFee) : 150,
+      serviceFeePercentage: val.serviceFeePercentage !== undefined && val.serviceFeePercentage !== null ? Number(val.serviceFeePercentage) : 0,
+      commitmentFeePercentage: val.commitmentFeePercentage !== undefined && val.commitmentFeePercentage !== null ? Number(val.commitmentFeePercentage) : 30,
+      vendorCommissionPercentage: val.vendorCommissionPercentage !== undefined && val.vendorCommissionPercentage !== null ? Number(val.vendorCommissionPercentage) : 10,
+      minServiceFee: val.minServiceFee !== undefined && val.minServiceFee !== null ? Number(val.minServiceFee) : 100,
+      isEnabled: val.isEnabled !== false,
+    };
+  }
+
+  @Put('services')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update service booking and service charge settings (admin only)' })
+  async updateServiceSettings(@Body() body: {
+    serviceFeeType?: 'flat' | 'percentage' | 'both';
+    serviceFee?: number;
+    serviceFeePercentage?: number;
+    commitmentFeePercentage?: number;
+    vendorCommissionPercentage?: number;
+    minServiceFee?: number;
+    isEnabled?: boolean;
+  }) {
+    let setting = await this.settingModel.findOne({ key: 'service_pricing' }).exec();
+    if (!setting) {
+      setting = new this.settingModel({ key: 'service_pricing', value: {} });
+    }
+
+    const prev = setting.value || {};
+    const updatedValue = {
+      serviceFeeType: body.serviceFeeType || prev.serviceFeeType || 'flat',
+      serviceFee: body.serviceFee !== undefined ? Number(body.serviceFee) : (prev.serviceFee ?? 150),
+      serviceFeePercentage: body.serviceFeePercentage !== undefined ? Number(body.serviceFeePercentage) : (prev.serviceFeePercentage ?? 0),
+      commitmentFeePercentage: body.commitmentFeePercentage !== undefined ? Number(body.commitmentFeePercentage) : (prev.commitmentFeePercentage ?? 30),
+      vendorCommissionPercentage: body.vendorCommissionPercentage !== undefined ? Number(body.vendorCommissionPercentage) : (prev.vendorCommissionPercentage ?? 10),
+      minServiceFee: body.minServiceFee !== undefined ? Number(body.minServiceFee) : (prev.minServiceFee ?? 100),
+      isEnabled: body.isEnabled !== undefined ? Boolean(body.isEnabled) : (prev.isEnabled ?? true),
+    };
+
+    setting.value = updatedValue;
+    await setting.save();
+
+    await this.settingModel.findOneAndUpdate(
+      { key: 'APPOINTMENT_COMMITMENT_FEE_PERCENTAGE' },
+      { $set: { value: updatedValue.commitmentFeePercentage } },
+      { upsert: true }
+    );
+
+    return setting.value;
+  }
+
   @Get('negotiation')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

@@ -62,19 +62,34 @@ export class Appointment extends Document {
   endTime: string; // e.g., '15:00'
 
   @Prop({ required: true })
-  price: number; // Total price
+  price: number; // Total service subtotal
 
   @Prop({ required: true, default: 0 })
-  commitmentFee: number; // Amount paid upfront
+  serviceCharge: number; // Erranders platform service charge
 
   @Prop({ required: true, default: 0 })
-  pendingBalance: number; // Amount to be paid in person
+  commitmentFee: number; // Amount paid upfront for vendor
+
+  @Prop({ required: true, default: 0 })
+  totalOnlineFee: number; // Total paid upfront online (commitmentFee + serviceCharge)
+
+  @Prop({ required: false, default: 0 })
+  vendorCommission: number; // Commission deducted from vendor commitment fee
+
+  @Prop({ required: true, default: 0 })
+  pendingBalance: number; // Amount to be paid in person to vendor
 
   @Prop({ type: String, enum: AppointmentStatus, default: AppointmentStatus.PENDING })
   status: AppointmentStatus;
 
   @Prop()
   notes: string;
+
+  @Prop()
+  adminNotes: string;
+
+  @Prop()
+  cancellationReason: string;
 
   // Optional: tracking team member assigned
   @Prop({ type: Types.ObjectId, ref: 'User' })
