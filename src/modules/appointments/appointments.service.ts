@@ -76,7 +76,15 @@ export class AppointmentsService {
 
     const totalOnlineFee = commitmentFee + serviceCharge;
     const pendingBalance = totalAmount - commitmentFee;
-    const vendorCommission = Math.round(commitmentFee * (vendorCommissionPercentage / 100));
+    // The provider's side of the fee. Erranders charges both parties: the student pays a
+    // service charge added at checkout, and the provider pays a commission out of what they
+    // earn. Either can be a percentage or a flat amount.
+    const vendorCommissionType = (servicePricing.vendorCommissionType || 'percentage') as 'percentage' | 'fixed';
+    const vendorCommissionFixed = Number(servicePricing.vendorCommissionFixed ?? 0);
+    const vendorCommission =
+      vendorCommissionType === 'fixed'
+        ? Math.min(Math.max(0, vendorCommissionFixed), commitmentFee)
+        : Math.round(commitmentFee * (vendorCommissionPercentage / 100));
 
     const vendorId = data.vendor || data.vendorId;
 

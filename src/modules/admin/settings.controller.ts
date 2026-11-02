@@ -256,6 +256,8 @@ export class SettingsController {
       serviceFeePercentage: val.serviceFeePercentage !== undefined && val.serviceFeePercentage !== null ? Number(val.serviceFeePercentage) : 0,
       commitmentFeePercentage: val.commitmentFeePercentage !== undefined && val.commitmentFeePercentage !== null ? Number(val.commitmentFeePercentage) : 30,
       vendorCommissionPercentage: val.vendorCommissionPercentage !== undefined && val.vendorCommissionPercentage !== null ? Number(val.vendorCommissionPercentage) : 10,
+      vendorCommissionType: val.vendorCommissionType || 'percentage',
+      vendorCommissionFixed: val.vendorCommissionFixed !== undefined && val.vendorCommissionFixed !== null ? Number(val.vendorCommissionFixed) : 0,
       minServiceFee: val.minServiceFee !== undefined && val.minServiceFee !== null ? Number(val.minServiceFee) : 100,
       isEnabled: val.isEnabled !== false,
     };
@@ -272,6 +274,8 @@ export class SettingsController {
     serviceFeePercentage?: number;
     commitmentFeePercentage?: number;
     vendorCommissionPercentage?: number;
+    vendorCommissionType?: 'percentage' | 'fixed';
+    vendorCommissionFixed?: number;
     minServiceFee?: number;
     isEnabled?: boolean;
   }) {
@@ -287,6 +291,8 @@ export class SettingsController {
       serviceFeePercentage: body.serviceFeePercentage !== undefined ? Number(body.serviceFeePercentage) : (prev.serviceFeePercentage ?? 0),
       commitmentFeePercentage: body.commitmentFeePercentage !== undefined ? Number(body.commitmentFeePercentage) : (prev.commitmentFeePercentage ?? 30),
       vendorCommissionPercentage: body.vendorCommissionPercentage !== undefined ? Number(body.vendorCommissionPercentage) : (prev.vendorCommissionPercentage ?? 10),
+      vendorCommissionType: body.vendorCommissionType || prev.vendorCommissionType || 'percentage',
+      vendorCommissionFixed: body.vendorCommissionFixed !== undefined ? Number(body.vendorCommissionFixed) : (prev.vendorCommissionFixed ?? 0),
       minServiceFee: body.minServiceFee !== undefined ? Number(body.minServiceFee) : (prev.minServiceFee ?? 100),
       isEnabled: body.isEnabled !== undefined ? Boolean(body.isEnabled) : (prev.isEnabled ?? true),
     };
