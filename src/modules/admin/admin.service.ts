@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { User, UserRole } from '../users/schemas/user.schema';
@@ -6,6 +6,7 @@ import { Vendor, VendorStatus } from '../vendors/schemas/vendor.schema';
 import { Order, OrderStatus } from '../orders/schemas/order.schema';
 import { Errander } from '../erranders/schemas/errander.schema';
 import { Report } from '../reports/schemas/report.schema';
+import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../email/email.service';
 import { SystemSetting } from './schemas/system-setting.schema';
 import { Appointment, AppointmentStatus } from '../appointments/schemas/appointment.schema';
@@ -21,6 +22,7 @@ export class AdminService {
     @InjectModel(SystemSetting.name) private systemSettingModel: Model<SystemSetting>,
     @InjectModel(Appointment.name) private appointmentModel: Model<Appointment>,
     private emailService: EmailService,
+    @Inject(forwardRef(() => NotificationsService)) private notificationsService: NotificationsService,
   ) {}
 
   async getDashboardStats() {
@@ -846,6 +848,50 @@ export class AdminService {
     console.log("Got dispatchers!", dispatchers.length); return { dispatchers, total };
   }
 
+
+  /**
+   * WhatsApp from Erranders Bot when a rider's KYC changes.
+   *
+   * The email already exists, but riders live on WhatsApp — it is the channel they actually
+   * read, and the whole point is that they come back and finish the next step. Short, warm,
+   * and it tells them exactly what to do next.
+   */
+  private async sendKycWhatsApp(
+    phone: string | undefined,
+    firstName: string,
+    outcome: 'approved' | 'rejected',
+    detail: { level?: number; reason?: string },
+  ): Promise<void> {
+    if (!phone) return;
+
+    const loginUrl = 'https://dispatch.erranders.org/auth/login';
+    const name = firstName || 'there';
+
+    const body =
+      outcome === 'approved'
+        ? [
+            `Hi ${name}, Erranders Bot here.`,
+            '',
+            detail.level
+              ? `Good news — your KYC is approved and you are now Tier ${detail.level}.`
+              : 'Good news — your KYC is approved.',
+            'You can open the app and start accepting errands.',
+            '',
+            `Log in here: ${loginUrl}`,
+          ]
+        : [
+            `Hi ${name}, Erranders Bot here.`,
+            '',
+            'We could not approve your KYC this time.',
+            detail.reason ? `Reason: ${detail.reason}` : 'A detail on your documents needs another look.',
+            'Open the app, fix that step and resubmit — it usually takes a minute.',
+            '',
+            `Log in here: ${loginUrl}`,
+          ];
+
+    await this.notificationsService.sendWhatsApp(phone, body.join('\n')).catch(() => {});
+  }
+
   async approveDispatcher(id: string, explicitLevel?: number) {
     const errander = await this.erranderModel.findById(id).populate('user');
     if (!errander) return null;
@@ -873,6 +919,7 @@ export class AdminService {
     if (updated?.user) {
       const user: any = updated.user;
       this.emailService.sendDispatcherVerificationApproved(user.email, user.firstName);
+      this.sendKycWhatsApp(user.phone, user.firstName, 'approved', { level: finalLevel });
     }
 
     return updated;
@@ -903,6 +950,7 @@ export class AdminService {
     if (updated?.user) {
       const user: any = updated.user;
       this.emailService.sendDispatcherVerificationRejected(user.email, user.firstName, reason);
+      this.sendKycWhatsApp(user.phone, user.firstName, 'rejected', { reason });
     }
 
     return updated;

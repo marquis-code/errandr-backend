@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AdminService } from './admin.service';
 import { AdminController } from './admin.controller';
@@ -11,6 +11,7 @@ import { Report, ReportSchema } from '../reports/schemas/report.schema';
 import { SystemSetting, SystemSettingSchema } from './schemas/system-setting.schema';
 import { Appointment, AppointmentSchema } from '../appointments/schemas/appointment.schema';
 import { EmailModule } from '../email/email.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { EmailModule } from '../email/email.module';
       { name: SystemSetting.name, schema: SystemSettingSchema },
       { name: Appointment.name, schema: AppointmentSchema },
     ]),
+    forwardRef(() => NotificationsModule),
     EmailModule,
   ],
   controllers: [AdminController, SettingsController],
