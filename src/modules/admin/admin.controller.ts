@@ -221,6 +221,21 @@ export class AdminController {
     return this.adminService.debitDispatcherEarnings(id, body.amount, body.description);
   }
 
+  @Post('dispatchers/:id/credit-earnings')
+  @ApiOperation({ summary: 'Manually credit dispatcher earnings' })
+  creditDispatcherEarnings(
+    @Param('id') id: string,
+    @Body() body: { amount: number, description?: string },
+  ) {
+    return this.adminService.creditDispatcherEarnings(id, body.amount, body.description);
+  }
+
+  @Get('dispatchers/:id/wallet')
+  @ApiOperation({ summary: 'Wallet and recent transactions for a dispatcher' })
+  getDispatcherWallet(@Param('id') id: string) {
+    return this.adminService.getDispatcherWallet(id);
+  }
+
   @Put('dispatchers/:id/activate')
   @ApiOperation({ summary: 'Activate a dispatcher' })
   activateDispatcher(@Param('id') id: string) {

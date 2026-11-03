@@ -7,6 +7,8 @@ import { Order, OrderStatus } from '../orders/schemas/order.schema';
 import { Errander } from '../erranders/schemas/errander.schema';
 import { Report } from '../reports/schemas/report.schema';
 import { NotificationsService } from '../notifications/notifications.service';
+import { Wallet } from '../wallets/schemas/wallet.schema';
+import { Transaction } from '../wallets/schemas/transaction.schema';
 import { EmailService } from '../email/email.service';
 import { SystemSetting } from './schemas/system-setting.schema';
 import { Appointment, AppointmentStatus } from '../appointments/schemas/appointment.schema';
@@ -21,6 +23,8 @@ export class AdminService {
     @InjectModel(Report.name) private reportModel: Model<Report>,
     @InjectModel(SystemSetting.name) private systemSettingModel: Model<SystemSetting>,
     @InjectModel(Appointment.name) private appointmentModel: Model<Appointment>,
+    @InjectModel(Wallet.name) private walletModel: Model<any>,
+    @InjectModel(Transaction.name) private transactionModel: Model<any>,
     private emailService: EmailService,
     @Inject(forwardRef(() => NotificationsService)) private notificationsService: NotificationsService,
   ) {}
@@ -1035,6 +1039,80 @@ export class AdminService {
     );
     
     return updated;
+  }
+
+  /**
+   * Credit a rider's earnings by hand.
+   *
+   * The mirror of debitDispatcherEarnings, with the same guard rail: an amount is required
+   * and must be positive, so a fat-fingered minus sign cannot turn a credit into a debit.
+   */
+  async creditDispatcherEarnings(id: string, amount: number, description?: string) {
+    const dispatcher = await this.erranderModel.findById(id);
+    if (!dispatcher) throw new NotFoundException('Dispatcher not found');
+
+    const value = Number(amount);
+    if (!Number.isFinite(value) || value <= 0) {
+      throw new BadRequestException('Enter an amount greater than zero');
+    }
+
+    const updated = await this.erranderModel.findByIdAndUpdate(
+      id,
+      { $inc: { totalEarnings: value } },
+      { new: true },
+    );
+
+    if (updated?.user) {
+      const user: any = updated.user;
+      this.notificationsService
+        .sendWhatsApp(
+          user.phone,
+          [
+            `Hi ${user.firstName || 'there'}, Erranders Bot here 👋`,
+            '',
+            `We added ₦${value.toLocaleString()} to your earnings.`,
+            description ? `Note: ${description}` : 'This is an adjustment from the Erranders team.',
+            '',
+            '— Erranders Bot',
+          ].join('\n'),
+        )
+        .catch(() => {});
+    }
+
+    return updated;
+  }
+
+  /** What an admin needs before adjusting a balance: the wallet and its recent history. */
+  async getDispatcherWallet(id: string) {
+    const dispatcher: any = await this.erranderModel.findById(id).populate('user', 'firstName lastName email phone');
+    if (!dispatcher) throw new NotFoundException('Dispatcher not found');
+
+    const userId = dispatcher.user?._id || dispatcher.user;
+    const wallet: any = await this.walletModel.findOne({ owner: userId }).lean().exec();
+    const transactions = wallet
+      ? await this.transactionModel
+          .find({ wallet: wallet._id })
+          .sort({ createdAt: -1 })
+          .limit(20)
+          .lean()
+          .exec()
+      : [];
+
+    return {
+      dispatcherId: String(id),
+      totalEarnings: dispatcher.totalEarnings || 0,
+      walletBalance: wallet?.balance ?? 0,
+      bankDetails: wallet?.bankDetails ?? null,
+      transactions: transactions.map((t: any) => ({
+        id: String(t._id),
+        amount: t.amount,
+        type: t.type,
+        status: t.status,
+        description: t.description,
+        reference: t.reference,
+        createdAt: t.createdAt,
+      })),
+    };
   }
 
   async activateDispatcher(id: string) {

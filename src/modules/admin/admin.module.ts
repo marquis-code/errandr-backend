@@ -10,6 +10,8 @@ import { Errander, ErranderSchema } from '../erranders/schemas/errander.schema';
 import { Report, ReportSchema } from '../reports/schemas/report.schema';
 import { SystemSetting, SystemSettingSchema } from './schemas/system-setting.schema';
 import { Appointment, AppointmentSchema } from '../appointments/schemas/appointment.schema';
+import { Wallet, WalletSchema } from '../wallets/schemas/wallet.schema';
+import { Transaction, TransactionSchema } from '../wallets/schemas/transaction.schema';
 import { EmailModule } from '../email/email.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 
@@ -23,6 +25,8 @@ import { NotificationsModule } from '../notifications/notifications.module';
       { name: Report.name, schema: ReportSchema },
       { name: SystemSetting.name, schema: SystemSettingSchema },
       { name: Appointment.name, schema: AppointmentSchema },
+      { name: Wallet.name, schema: WalletSchema },
+      { name: Transaction.name, schema: TransactionSchema },
     ]),
     forwardRef(() => NotificationsModule),
     EmailModule,
