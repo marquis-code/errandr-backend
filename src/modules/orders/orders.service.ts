@@ -3417,7 +3417,17 @@ export class OrdersService {
     try {
       const custDoc = await this.userModel.findById(customerId).select('firstName phone');
       if (custDoc?.phone) {
-        const topupMsg = `⚠️ *ERRANDERS TOP-UP NOTICE* 🛵\n━━━━━━━━━━━━━━━━━━━━━━\n👋 Hi *${custDoc.firstName || 'Customer'}*, your Errand Ninja is at the stall for order *#${order.orderNumber}*!\n\n📝 The vendor's actual total is slightly higher than your estimate + buffer by *₦${amount.toLocaleString()}*.\n\n⚡ *Action Required:* Please open the link below to authorize the extra funds so your Ninja can complete the purchase immediately without delays:\n🔗 https://www.erranders.org/dashboard/orders/${order._id}\n━━━━━━━━━━━━━━━━━━━━━━\n💬 Reply to this message if you have questions!`;
+        const topupMsg = [
+          `Hi ${custDoc.firstName || 'there'}, Erranders Bot here 👋`,
+          '',
+          `Your Errand Ninja is at the stall for order #${order.orderNumber}, and the real total came to ₦${amount.toLocaleString()} more than your estimate.`,
+          '',
+          'Tap below to approve the top-up so they can buy it now:',
+          `https://www.erranders.org/dashboard/orders/${order._id}`,
+          '',
+          'Reply here if anything looks off 💬',
+          '— Erranders Bot',
+        ].join('\n');
         this.notificationsService.sendWhatsApp(custDoc.phone, topupMsg).catch(e => {
           this.logger.warn(`Failed to dispatch topup WhatsApp for #${order.orderNumber}: ${e.message}`);
         });
@@ -3468,7 +3478,14 @@ export class OrdersService {
       try {
         const riderDoc = await this.userModel.findById(erranderProfile.user).select('firstName phone');
         if (riderDoc?.phone) {
-          const riderMsg = `✅ *TOP-UP RECEIVED!* 💰\n━━━━━━━━━━━━━━━━━━━━━━\nOrder *#${order.orderNumber}*: The customer authorized and paid the extra *₦${amount.toLocaleString()}*!\n\nYou now have the funds to buy the item and complete delivery. 🛵💨`;
+          const riderMsg = [
+            `Hi ${riderDoc.firstName || 'there'}, Erranders Bot here 👋`,
+            '',
+            `The customer approved the extra ₦${amount.toLocaleString()} on order #${order.orderNumber}.`,
+            'You are good to buy the item and head off 🛵',
+            '',
+            '— Erranders Bot',
+          ].join('\n');
           this.notificationsService.sendWhatsApp(riderDoc.phone, riderMsg).catch(e => {
             this.logger.warn(`Failed to notify rider via WhatsApp for #${order.orderNumber}: ${e.message}`);
           });
@@ -4570,7 +4587,14 @@ export class OrdersService {
         try {
           const custDoc = await this.userModel.findById(customerId).select('firstName phone');
           if (custDoc?.phone) {
-            const refundMsg = `💰 *ERRANDERS REFUND CREDITED* 🎉\n━━━━━━━━━━━━━━━━━━━━━━\n👋 Hi *${custDoc.firstName || 'Customer'}*, your custom errand *#${order.orderNumber}* has been reconciled!\n\n🧾 *Actual Item Cost:* ₦${(order.actualItemCost || 0).toLocaleString()}\n💵 *Unspent Buffer Refunded:* ₦${order.refundAmount.toLocaleString()}\n\n✅ The excess change has been credited directly to your Erranders wallet.\n━━━━━━━━━━━━━━━━━━━━━━\n💬 Thank you for using Erranders!`;
+            const refundMsg = [
+              `Hi ${custDoc.firstName || 'there'}, Erranders Bot here 👋`,
+              '',
+              `Order #${order.orderNumber} is all settled. Your items came to ₦${(order.actualItemCost || 0).toLocaleString()}, so ₦${order.refundAmount.toLocaleString()} of change has gone back into your Erranders wallet.`,
+              '',
+              'Nothing else needed from you 💛',
+              '— Erranders Bot',
+            ].join('\n');
             this.notificationsService.sendWhatsApp(custDoc.phone, refundMsg).catch(err => {
               this.logger.warn(`Failed to dispatch WhatsApp refund alert for #${order.orderNumber}: ${err.message}`);
             });

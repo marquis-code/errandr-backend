@@ -20,7 +20,7 @@ export interface OrderTemplateData {
 
 export class WhatsAppTemplates {
   private static readonly DIVIDER = '━━━━━━━━━━━━━━━━━━━━━━';
-  private static readonly SUPPORT_LINE = '💬 *Questions or updates?* Reply directly to this WhatsApp message or call Erranders Support.';
+  private static readonly SUPPORT_LINE = '💛 Erranders Bot — just reply here if you need anything.';
 
   /**
    * Helper to format items list concisely
@@ -42,9 +42,9 @@ export class WhatsAppTemplates {
     const itemsList = this.formatItems(data.items);
     const dest = data.deliveryAddress || 'Hostel address provided';
 
-    return `🛍️ *ERRANDERS CAMPUS DISPATCH*
+    return `🛍️ *Erranders Bot* · order confirmed
 ${this.DIVIDER}
-👋 Hi *${name}*, your order has been received and confirmed!
+👋 Hi *${name}*, Erranders Bot here — your order has been received and confirmed!
 
 🧾 *Order #${data.orderNumber}*
 🏪 *Store:* ${store}
@@ -71,9 +71,9 @@ ${this.SUPPORT_LINE}`;
     const itemsList = this.formatItems(data.items);
     const dest = data.deliveryAddress || 'Hostel address provided';
 
-    return `🛍️ *ERRANDERS CUSTOM ERRAND*
+    return `🛍️ *Erranders Bot* · errand received
 ${this.DIVIDER}
-👋 Hi *${name}*, your custom errand request has been received!
+👋 Hi *${name}*, Erranders Bot here — your custom errand request has been received!
 
 🧾 *Order #${data.orderNumber}*
 🏪 *Pickup:* ${store}
@@ -96,7 +96,7 @@ ${this.SUPPORT_LINE}`;
     const store = data.storeName || 'Vendor';
     const prep = data.prepTimeMinutes ? ` (~${data.prepTimeMinutes} mins)` : '';
 
-    return `🍳 *ERRANDERS ORDER UPDATE*
+    return `🍳 *Erranders Bot* · order update
 ${this.DIVIDER}
 Hi *${name}*, *${store}* has accepted your order and started preparing it!
 
@@ -116,7 +116,7 @@ ${this.SUPPORT_LINE}`;
     const name = data.customerName || 'Valued Customer';
     const store = data.storeName || 'Vendor';
 
-    return `📦 *ORDER READY FOR PICKUP*
+    return `📦 *Erranders Bot* · ready for pickup
 ${this.DIVIDER}
 Hi *${name}*, your package from *${store}* is ready and packed.
 
@@ -137,7 +137,7 @@ ${this.SUPPORT_LINE}`;
     const phone = data.ninjaPhone ? ` (${data.ninjaPhone})` : '';
     const pin = data.deliveryPin ? `*${data.deliveryPin}*` : 'N/A';
 
-    return `🛵 *ERRAND NINJA ON THE WAY!*
+    return `🛵 *Erranders Bot* · your ninja is moving
 ${this.DIVIDER}
 Hi *${name}*, ${ninja} has collected your order from *${store}* and is heading to your hostel!
 
@@ -163,7 +163,7 @@ ${this.SUPPORT_LINE}`;
     const phone = data.ninjaPhone ? ` at *${data.ninjaPhone}*` : '';
     const pin = data.deliveryPin ? `*${data.deliveryPin}*` : 'N/A';
 
-    return `📍 *RIDER ARRIVING SHORTLY*
+    return `📍 *Erranders Bot* · almost there
 ${this.DIVIDER}
 Hi *${name}*, ${ninja} is approaching your hostel (${data.deliveryAddress || 'Hostel'})!
 
@@ -182,17 +182,18 @@ Get ready to collect your delivery!`;
     const name = data.customerName || 'Valued Customer';
     const store = data.storeName || 'Vendor';
 
-    return `🎉 *DELIVERY COMPLETE!*
+    return `🎉 *Erranders Bot* · delivered
 ${this.DIVIDER}
-Hi *${name}*, your order *#${data.orderNumber}* from *${store}* has been successfully delivered!
+👋 Hi *${name}*, Erranders Bot here — your order *#${data.orderNumber}* from *${store}* just arrived!
 
-Enjoy your order! Thank you for choosing Erranders.
+Hope you enjoy it 💛
 
 ⭐ *Rate Your Experience:*
 Log in to the Erranders web app to review your meal and tip your student Errand Ninja.
 
 ${this.DIVIDER}
-Have an amazing day! 🚀`;
+Have a lovely day!
+— Erranders Bot`;
   }
 
   /**
@@ -203,7 +204,7 @@ Have an amazing day! 🚀`;
     const reason = data.cancellationReason || 'Requested or unfulfilled order';
     const refund = data.refundStatus || 'Processed automatically to your wallet/account';
 
-    return `❌ *ORDER CANCELLED*
+    return `❌ *Erranders Bot* · order cancelled
 ${this.DIVIDER}
 Hi *${name}*, order *#${data.orderNumber}* could not be completed and has been cancelled.
 
@@ -223,7 +224,7 @@ We apologize for any inconvenience. If you have questions, reply directly to thi
     const delay = data.delayMinutes || 10;
     const reason = data.delayReason || 'High order volume at vendor kitchen';
 
-    return `⚠️ *ERRANDERS DELIVERY NOTICE*
+    return `⚠️ *Erranders Bot* · delivery notice
 ${this.DIVIDER}
 Hi *${name}*, we noticed your order *#${data.orderNumber}* from *${store}* is experiencing a brief delay.
 
@@ -246,7 +247,7 @@ ${this.SUPPORT_LINE}`;
     const vendPhone = data.vendorPhone ? ` (${data.vendorPhone})` : '';
     const pay = data.paymentMethod || 'Paid (Online)';
 
-    return `🚨 *NEW CAMPUS ORDER — CS DESK ALERT*
+    return `🚨 *Erranders Bot* · new order for the desk
 ${this.DIVIDER}
 Order *#${data.orderNumber}* has been placed and requires operational monitoring!
 
@@ -269,7 +270,7 @@ ${this.DIVIDER}
     const delay = data.delayMinutes || 10;
     const reason = data.delayReason || 'Unattended / Prep delay';
 
-    return `⚠️ *CS ESCALATION: ORDER DELAY DETECTED*
+    return `⚠️ *Erranders Bot* · delay needs a look
 ${this.DIVIDER}
 Order *#${data.orderNumber}* is exceeding target delivery window!
 
@@ -287,7 +288,7 @@ ${this.DIVIDER}
    * 11. Inbound Customer Reply Forwarded to Support
    */
   static customerInboundMessageToSupport(customerPhone: string, text: string): string {
-    return `💬 *CUSTOMER WHATSAPP INBOUND — CS DESK*
+    return `💬 *Erranders Bot* · customer message
 ${this.DIVIDER}
 A customer sent a reply via WhatsApp:
 
@@ -360,9 +361,9 @@ ${motivationalHook}
     itemsCount?: number;
   }): string {
     const name = data.ninjaName || 'Ninja';
-    return `🛵 *ERRAND NINJA: ORDER ASSIGNED!* 📦
+    return `🛵 *Erranders Bot* · you have a new errand
 ${this.DIVIDER}
-👋 Hi *${name}*, you have claimed order *#${data.orderNumber}*!
+👋 Hi *${name}*, Erranders Bot here — you have claimed order *#${data.orderNumber}*!
 
 🏪 *Pickup Store:* ${data.storeName}
 📍 *Deliver To:* ${data.deliveryAddress}

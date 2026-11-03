@@ -621,8 +621,8 @@ export class NotificationsService {
     const supportContacts = this.getSupportPhones();
     this.logger.log(`Notifying support team: ${message}`);
     for (const phone of supportContacts) {
-      await this.sendWhatsApp(phone, `🚨 *ERRANDERS URGENT NOTICE*\n\n${message}`);
-      await this.sendSMS(phone, `🚨 ERRANDERS URGENT: ${message}`, { forceSms: true });
+      await this.sendWhatsApp(phone, `🚨 *Erranders Bot* · urgent notice\n\n${message}\n\n— Erranders Bot`);
+      await this.sendSMS(phone, `🚨 Erranders Bot: ${message}`, { forceSms: true });
     }
   }
 

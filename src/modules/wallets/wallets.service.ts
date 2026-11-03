@@ -398,12 +398,17 @@ export class WalletsService {
       .sendWhatsApp(
         WITHDRAWAL_ALERT_PHONE,
         [
-          `Withdrawal request`,
+          'Hi there, Erranders Bot here 👋',
+          '',
+          'A withdrawal was just requested.',
+          '',
           `${userName} (${userEmail || 'no email'})`,
           `Amount: NGN ${Number(amount).toLocaleString()}`,
           `Reference: ${reference}`,
           `Wallet balance left: NGN ${Number(wallet.balance).toLocaleString()}`,
           isInstant ? 'Instant payout' : 'Standard settlement',
+          '',
+          '— Erranders Bot',
         ].join('\n'),
       )
       .catch((e) => console.warn(`Withdrawal WhatsApp alert failed: ${e?.message || e}`));
