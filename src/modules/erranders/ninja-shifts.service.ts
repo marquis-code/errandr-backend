@@ -34,11 +34,18 @@ export interface NinjaRosterEntry {
   notes?: string;
 }
 
+export interface ManagerConfig {
+  name: string;
+  phone: string;
+  enabled: boolean;
+}
+
 export interface NinjaShiftSettings {
   enabled: boolean;
   timezone: string;
   offHoursFallback: 'all' | 'none';
   directWhatsAppEnabled: boolean;
+  manager?: ManagerConfig;
   shifts: NinjaShiftSlot[];
   ninjas: NinjaRosterEntry[];
   schedule: DaySchedule[];
@@ -68,21 +75,27 @@ export const DEFAULT_NINJA_SHIFTS: NinjaShiftSlot[] = [
   },
 ];
 
+export const DEFAULT_MANAGER: ManagerConfig = {
+  name: 'Kim',
+  phone: '+2348052854256',
+  enabled: true,
+};
+
 export const DEFAULT_NINJA_ROSTER: NinjaRosterEntry[] = [
-  { id: 'ninja_ife', name: 'Ife', phone: '', userId: '', userEmail: '', isActive: true, notes: 'Campus Errand Ninja' },
-  { id: 'ninja_brandy', name: 'Brandy', phone: '', userId: '', userEmail: '', isActive: true, notes: 'Campus Errand Ninja' },
-  { id: 'ninja_seun', name: 'Seun', phone: '', userId: '', userEmail: '', isActive: true, notes: 'Campus Errand Ninja' },
+  { id: 'ninja_ife', name: 'Ife', phone: '+2348179495795', userId: '6a89a7a17c25d2ef0dcfbaeb', userEmail: 'ifechukwuethel@gmail.com', isActive: true, notes: 'Campus Errand Ninja' },
+  { id: 'ninja_brandy', name: 'Brandy', phone: '+2348139908262', userId: '6a84524262af2bddc4e7a9cb', userEmail: 'ajayiatilola03@gmail.com', isActive: true, notes: 'Campus Errand Ninja' },
+  { id: 'ninja_ruth', name: 'Ruth', phone: '+2348106600919', userId: '', userEmail: '', isActive: true, notes: 'Campus Errand Ninja' },
 ];
 
 /**
  * Official Weekly Shift Schedule from Erranders Timetable:
- * Monday:    Ife (9-2)    | Brandy (2-7) | Seun (7-11)
- * Tuesday:   Brandy (9-2) | Seun (2-7)   | Ife (7-11)
- * Wednesday: Seun (9-2)   | Ife (2-7)    | Brandy (7-11)
- * Thursday:  Ife (9-2)    | Brandy (2-7) | Seun (7-11)
- * Friday:    Brandy (9-2) | Seun (2-7)   | Ife (7-11)
- * Saturday:  Seun (9-2)   | Ife (2-7)    | Brandy (7-11)
- * Sunday:    Ife (9-2)    | Brandy (2-7) | Seun (7-11)
+ * Monday:    Ife (9-2)    | Brandy (2-7) | Ruth (7-11)
+ * Tuesday:   Brandy (9-2) | Ruth (2-7)   | Ife (7-11)
+ * Wednesday: Ruth (9-2)   | Ife (2-7)    | Brandy (7-11)
+ * Thursday:  Ife (9-2)    | Brandy (2-7) | Ruth (7-11)
+ * Friday:    Brandy (9-2) | Ruth (2-7)   | Ife (7-11)
+ * Saturday:  Ruth (9-2)   | Ife (2-7)    | Brandy (7-11)
+ * Sunday:    Ife (9-2)    | Brandy (2-7) | Ruth (7-11)
  */
 export const DEFAULT_WEEKLY_SCHEDULE: DaySchedule[] = [
   {
@@ -91,7 +104,7 @@ export const DEFAULT_WEEKLY_SCHEDULE: DaySchedule[] = [
     slots: [
       { shiftId: 'shift_1', ninjaName: 'Ife' },
       { shiftId: 'shift_2', ninjaName: 'Brandy' },
-      { shiftId: 'shift_3', ninjaName: 'Seun' },
+      { shiftId: 'shift_3', ninjaName: 'Ruth' },
     ],
   },
   {
@@ -99,7 +112,7 @@ export const DEFAULT_WEEKLY_SCHEDULE: DaySchedule[] = [
     dayIndex: 2,
     slots: [
       { shiftId: 'shift_1', ninjaName: 'Brandy' },
-      { shiftId: 'shift_2', ninjaName: 'Seun' },
+      { shiftId: 'shift_2', ninjaName: 'Ruth' },
       { shiftId: 'shift_3', ninjaName: 'Ife' },
     ],
   },
@@ -107,7 +120,7 @@ export const DEFAULT_WEEKLY_SCHEDULE: DaySchedule[] = [
     day: 'Wednesday',
     dayIndex: 3,
     slots: [
-      { shiftId: 'shift_1', ninjaName: 'Seun' },
+      { shiftId: 'shift_1', ninjaName: 'Ruth' },
       { shiftId: 'shift_2', ninjaName: 'Ife' },
       { shiftId: 'shift_3', ninjaName: 'Brandy' },
     ],
@@ -118,7 +131,7 @@ export const DEFAULT_WEEKLY_SCHEDULE: DaySchedule[] = [
     slots: [
       { shiftId: 'shift_1', ninjaName: 'Ife' },
       { shiftId: 'shift_2', ninjaName: 'Brandy' },
-      { shiftId: 'shift_3', ninjaName: 'Seun' },
+      { shiftId: 'shift_3', ninjaName: 'Ruth' },
     ],
   },
   {
@@ -126,7 +139,7 @@ export const DEFAULT_WEEKLY_SCHEDULE: DaySchedule[] = [
     dayIndex: 5,
     slots: [
       { shiftId: 'shift_1', ninjaName: 'Brandy' },
-      { shiftId: 'shift_2', ninjaName: 'Seun' },
+      { shiftId: 'shift_2', ninjaName: 'Ruth' },
       { shiftId: 'shift_3', ninjaName: 'Ife' },
     ],
   },
@@ -134,7 +147,7 @@ export const DEFAULT_WEEKLY_SCHEDULE: DaySchedule[] = [
     day: 'Saturday',
     dayIndex: 6,
     slots: [
-      { shiftId: 'shift_1', ninjaName: 'Seun' },
+      { shiftId: 'shift_1', ninjaName: 'Ruth' },
       { shiftId: 'shift_2', ninjaName: 'Ife' },
       { shiftId: 'shift_3', ninjaName: 'Brandy' },
     ],
@@ -145,7 +158,7 @@ export const DEFAULT_WEEKLY_SCHEDULE: DaySchedule[] = [
     slots: [
       { shiftId: 'shift_1', ninjaName: 'Ife' },
       { shiftId: 'shift_2', ninjaName: 'Brandy' },
-      { shiftId: 'shift_3', ninjaName: 'Seun' },
+      { shiftId: 'shift_3', ninjaName: 'Ruth' },
     ],
   },
 ];
@@ -180,6 +193,7 @@ export class NinjaShiftsService {
           timezone: 'Africa/Lagos',
           offHoursFallback: 'all',
           directWhatsAppEnabled: true,
+          manager: DEFAULT_MANAGER,
           shifts: DEFAULT_NINJA_SHIFTS,
           ninjas: DEFAULT_NINJA_ROSTER,
           schedule: DEFAULT_WEEKLY_SCHEDULE,
@@ -200,6 +214,7 @@ export class NinjaShiftsService {
         timezone: val.timezone || 'Africa/Lagos',
         offHoursFallback: val.offHoursFallback || 'all',
         directWhatsAppEnabled: val.directWhatsAppEnabled ?? true,
+        manager: val.manager || DEFAULT_MANAGER,
         shifts: Array.isArray(val.shifts) && val.shifts.length ? val.shifts : DEFAULT_NINJA_SHIFTS,
         ninjas: Array.isArray(val.ninjas) && val.ninjas.length ? val.ninjas : DEFAULT_NINJA_ROSTER,
         schedule: Array.isArray(val.schedule) && val.schedule.length ? val.schedule : DEFAULT_WEEKLY_SCHEDULE,
@@ -214,6 +229,7 @@ export class NinjaShiftsService {
         timezone: 'Africa/Lagos',
         offHoursFallback: 'all',
         directWhatsAppEnabled: true,
+        manager: DEFAULT_MANAGER,
         shifts: DEFAULT_NINJA_SHIFTS,
         ninjas: DEFAULT_NINJA_ROSTER,
         schedule: DEFAULT_WEEKLY_SCHEDULE,
@@ -236,6 +252,7 @@ export class NinjaShiftsService {
       timezone: update.timezone || current.timezone || 'Africa/Lagos',
       offHoursFallback: update.offHoursFallback || current.offHoursFallback || 'all',
       directWhatsAppEnabled: update.directWhatsAppEnabled !== undefined ? update.directWhatsAppEnabled : (current.directWhatsAppEnabled ?? true),
+      manager: update.manager || current.manager || DEFAULT_MANAGER,
       shifts: update.shifts || current.shifts || DEFAULT_NINJA_SHIFTS,
       ninjas: update.ninjas || current.ninjas || DEFAULT_NINJA_ROSTER,
       schedule: update.schedule || current.schedule || DEFAULT_WEEKLY_SCHEDULE,
@@ -259,6 +276,7 @@ export class NinjaShiftsService {
       timezone: 'Africa/Lagos',
       offHoursFallback: 'all',
       directWhatsAppEnabled: true,
+      manager: DEFAULT_MANAGER,
       shifts: DEFAULT_NINJA_SHIFTS,
       ninjas: DEFAULT_NINJA_ROSTER,
       schedule: DEFAULT_WEEKLY_SCHEDULE,
@@ -407,6 +425,7 @@ export class NinjaShiftsService {
         : null,
       nextShift: nextShiftInfo,
       offHoursFallback: settings.offHoursFallback,
+      manager: settings.manager || DEFAULT_MANAGER,
     };
   }
 
@@ -415,7 +434,11 @@ export class NinjaShiftsService {
    * Returns whether shift-filtering applies and the list of on-duty recipient phones & userIds.
    */
   async getCurrentDutyRecipients() {
+    const settings = await this.getScheduleSettings();
     const status = await this.getCurrentDutyStatus();
+
+    const managerPhone = (settings.manager?.enabled !== false && settings.manager?.phone) ? settings.manager.phone : '';
+    const managerName = settings.manager?.name || 'Kim';
 
     if (!status.enabled) {
       return {
@@ -428,6 +451,9 @@ export class NinjaShiftsService {
         onDutyUserIds: [],
         onDutyNames: [],
         offHoursFallback: status.offHoursFallback,
+        manager: settings.manager || DEFAULT_MANAGER,
+        managerPhone,
+        managerName,
       };
     }
 
@@ -457,6 +483,9 @@ export class NinjaShiftsService {
       onDutyUserIds,
       onDutyNames,
       offHoursFallback: status.offHoursFallback,
+      manager: settings.manager || DEFAULT_MANAGER,
+      managerPhone,
+      managerName,
     };
   }
 

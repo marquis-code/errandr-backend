@@ -332,6 +332,16 @@ export class OrdersService {
         this.logger.warn(`[NinjaShiftSchedule] Failed to resolve duty status: ${err.message}`);
       }
 
+      // ─── Manager WhatsApp Bot Alert (Kim: Always alerted regardless of shift) ───
+      if (comms?.whatsappEnabled !== false && dutyStatus?.managerPhone) {
+        this.logger.log(`[NinjaShiftSchedule] Alerting Manager '${dutyStatus.managerName || 'Kim'}' (${dutyStatus.managerPhone}) via WhatsApp for order #${orderNumberStr}`);
+        this.notificationsService.notifyNinjaNewErrand(dutyStatus.managerPhone, {
+          storeName: vendorName,
+          orderNumber: orderNumberStr,
+          deliveryFee: feeDisplay,
+        }).catch(e => this.logger.warn(`Failed to send WhatsApp to manager ${dutyStatus.managerName || 'Kim'}: ${e.message}`));
+      }
+
       // If shift schedule is enabled:
       if (dutyStatus?.enabled) {
         if (dutyStatus.isShiftActive && dutyStatus.onDutyNinjas?.length > 0) {

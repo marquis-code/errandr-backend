@@ -387,10 +387,18 @@ export class AdminController {
   @Post('ninja-shifts/test-alert')
   @RequirePermissions('can_edit_dispatcher')
   @ApiOperation({ summary: 'Send test WhatsApp bot alert to on-duty ninja or custom recipient' })
-  async testNinjaShiftAlert(@Body() body: { phone?: string; ninjaName?: string }) {
+  async testNinjaShiftAlert(@Body() body: { phone?: string; ninjaName?: string; target?: 'ninja' | 'manager' }) {
     const dutyStatus = await this.ninjaShiftsService.getCurrentDutyStatus();
-    const targetPhone = body.phone || dutyStatus.onDutyNinja?.phone;
-    const targetName = body.ninjaName || dutyStatus.onDutyNinja?.name || 'Errand Ninja';
+    let targetPhone = body.phone;
+    let targetName = body.ninjaName;
+
+    if (body.target === 'manager') {
+      targetPhone = targetPhone || (dutyStatus as any).manager?.phone || '+2348052854256';
+      targetName = targetName || (dutyStatus as any).manager?.name || 'Kim (Operations Manager)';
+    } else {
+      targetPhone = targetPhone || dutyStatus.onDutyNinja?.phone;
+      targetName = targetName || dutyStatus.onDutyNinja?.name || 'Errand Ninja';
+    }
 
     if (!targetPhone) {
       return {
@@ -404,12 +412,13 @@ export class AdminController {
       `━━━━━━━━━━━━━━━━━━━━━━`,
       `Hi *${targetName}*! 👋`,
       ``,
-      `This is a test notification confirming that the Erranders Shift Schedule is connected to your WhatsApp number.`,
+      `This is a test notification confirming that Erranders Bot order notifications are linked to this WhatsApp line (${targetPhone}).`,
       ``,
       `⏰ *Current Shift:* ${dutyStatus.currentShift?.name || 'Scheduled Shift'} (${dutyStatus.currentShift?.timeLabel || 'On-Duty'})`,
       `📅 *Day:* ${dutyStatus.currentDay}`,
+      `🛵 *On-Duty Ninja:* ${dutyStatus.assignedNinjaName || 'None'}`,
       ``,
-      `When customers place new errands during your shift, Erranders Bot will dispatch order alerts directly to you here! 🛵💨`,
+      `When customers place new errands, Erranders Bot dispatches order alerts directly here! 🛵💨`,
       ``,
       `— Erranders Bot`,
     ].join('\n');
