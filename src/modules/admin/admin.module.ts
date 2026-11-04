@@ -14,6 +14,10 @@ import { SystemSetting, SystemSettingSchema } from './schemas/system-setting.sch
 import { Appointment, AppointmentSchema } from '../appointments/schemas/appointment.schema';
 import { Wallet, WalletSchema } from '../wallets/schemas/wallet.schema';
 import { Transaction, TransactionSchema } from '../wallets/schemas/transaction.schema';
+import { Facilitator, FacilitatorSchema } from '../referrals/schemas/facilitator.schema';
+import { Referral, ReferralSchema } from '../referrals/schemas/referral.schema';
+import { PromoCode, PromoCodeSchema } from '../promo-codes/schemas/promo-code.schema';
+import { PromoRedemption, PromoRedemptionSchema } from '../promo-codes/schemas/promo-redemption.schema';
 import { EmailModule } from '../email/email.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 
@@ -27,10 +31,10 @@ import { NotificationsModule } from '../notifications/notifications.module';
       { name: Report.name, schema: ReportSchema },
       { name: SystemSetting.name, schema: SystemSettingSchema },
       { name: Appointment.name, schema: AppointmentSchema },
-      { name: 'Facilitator', schema: new Schema({}, { strict: false, collection: 'facilitators' }) },
-      { name: 'Referral', schema: new Schema({}, { strict: false, collection: 'referrals' }) },
-      { name: 'PromoCode', schema: new Schema({}, { strict: false, collection: 'promocodes' }) },
-      { name: 'PromoRedemption', schema: new Schema({}, { strict: false, collection: 'promoredemptions' }) },
+      { name: Facilitator.name, schema: FacilitatorSchema },
+      { name: Referral.name, schema: ReferralSchema },
+      { name: PromoCode.name, schema: PromoCodeSchema },
+      { name: PromoRedemption.name, schema: PromoRedemptionSchema },
       { name: Wallet.name, schema: WalletSchema },
       { name: Transaction.name, schema: TransactionSchema },
     ]),

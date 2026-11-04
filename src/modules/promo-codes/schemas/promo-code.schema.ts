@@ -83,8 +83,5 @@ export class PromoCode extends Document {
 }
 
 export const PromoCodeSchema = SchemaFactory.createForClass(PromoCode);
-PromoCodeSchema.index({ referrerUser: 1 });
-PromoCodeSchema.index({ referrerFacilitator: 1 });
-PromoCodeSchema.index({ referrerType: 1 });
-PromoCodeSchema.index({ isReferralPromo: 1 });
+(PromoCodeSchema as any).set('strictPopulate', false);
 

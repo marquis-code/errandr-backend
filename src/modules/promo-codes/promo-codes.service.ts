@@ -185,10 +185,10 @@ export class PromoCodesService {
   async findAll(): Promise<PromoCode[]> {
     return this.promoCodeModel
       .find()
-      .populate('referrerUser', 'firstName lastName email role phone referralCode avatar')
-      .populate('referrerFacilitator', 'name email referralCode tier totalReferrals')
-      .populate('applicableVendors', 'storeName businessName name email')
-      .populate('applicableUsers', 'firstName lastName email phone')
+      .populate({ path: 'referrerUser', select: 'firstName lastName email role phone referralCode avatar', strictPopulate: false })
+      .populate({ path: 'referrerFacilitator', select: 'name email referralCode tier totalReferrals', strictPopulate: false })
+      .populate({ path: 'applicableVendors', select: 'storeName businessName name email', strictPopulate: false })
+      .populate({ path: 'applicableUsers', select: 'firstName lastName email phone', strictPopulate: false })
       .sort({ createdAt: -1 });
   }
 
@@ -253,8 +253,8 @@ export class PromoCodesService {
 
     return this.promoCodeModel
       .find(filter)
-      .populate('referrerUser', 'firstName lastName email role phone referralCode avatar points walletBalance')
-      .populate('referrerFacilitator', 'name email referralCode tier totalReferrals pointsEarned')
+      .populate({ path: 'referrerUser', select: 'firstName lastName email role phone referralCode avatar points walletBalance', strictPopulate: false })
+      .populate({ path: 'referrerFacilitator', select: 'name email referralCode tier totalReferrals pointsEarned', strictPopulate: false })
       .sort({ usageCount: -1, createdAt: -1 });
   }
 
@@ -323,10 +323,10 @@ export class PromoCodesService {
     const [redemptions, total] = await Promise.all([
       this.promoRedemptionModel
         .find(filter)
-        .populate('customer', 'firstName lastName email phone avatar role')
-        .populate('referrerUser', 'firstName lastName email role')
-        .populate('referrerFacilitator', 'name email referralCode')
-        .populate('orderId', 'orderType total status deliveryOption createdAt')
+        .populate({ path: 'customer', select: 'firstName lastName email phone avatar role', strictPopulate: false })
+        .populate({ path: 'referrerUser', select: 'firstName lastName email role', strictPopulate: false })
+        .populate({ path: 'referrerFacilitator', select: 'name email referralCode', strictPopulate: false })
+        .populate({ path: 'orderId', select: 'orderType total status deliveryOption createdAt', strictPopulate: false })
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit),
