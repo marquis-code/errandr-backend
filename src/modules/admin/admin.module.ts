@@ -1,5 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { Schema } from 'mongoose';
+import { AmbassadorsService } from './ambassadors.service';
 import { AdminService } from './admin.service';
 import { AdminController } from './admin.controller';
 import { SettingsController } from './settings.controller';
@@ -25,6 +27,10 @@ import { NotificationsModule } from '../notifications/notifications.module';
       { name: Report.name, schema: ReportSchema },
       { name: SystemSetting.name, schema: SystemSettingSchema },
       { name: Appointment.name, schema: AppointmentSchema },
+      { name: 'Facilitator', schema: new Schema({}, { strict: false, collection: 'facilitators' }) },
+      { name: 'Referral', schema: new Schema({}, { strict: false, collection: 'referrals' }) },
+      { name: 'PromoCode', schema: new Schema({}, { strict: false, collection: 'promocodes' }) },
+      { name: 'PromoRedemption', schema: new Schema({}, { strict: false, collection: 'promoredemptions' }) },
       { name: Wallet.name, schema: WalletSchema },
       { name: Transaction.name, schema: TransactionSchema },
     ]),
@@ -32,7 +38,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     EmailModule,
   ],
   controllers: [AdminController, SettingsController],
-  providers: [AdminService],
+  providers: [AmbassadorsService, AdminService],
   exports: [AdminService],
 })
 export class AdminModule {}

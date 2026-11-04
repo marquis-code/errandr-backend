@@ -1,6 +1,7 @@
 import { Controller, Get, Put, Delete, Post, Param, Query, UseGuards, DefaultValuePipe, ParseIntPipe, Body, Res, StreamableFile } from '@nestjs/common';
 import { Response } from 'express';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { AmbassadorsService } from './ambassadors.service';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard, Roles, RolesGuard, PermissionsGuard, RequirePermissions } from '../../common/decorators';
 import { UserRole } from '../users/schemas/user.schema';
@@ -11,7 +12,8 @@ import { UserRole } from '../users/schemas/user.schema';
 @Roles(UserRole.ADMIN)
 @ApiBearerAuth()
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly ambassadorsService: AmbassadorsService,private readonly adminService: AdminService) {}
 
   @Get('stats')
   @ApiOperation({ summary: 'Get admin dashboard statistics' })
@@ -183,6 +185,15 @@ export class AdminController {
   @ApiOperation({ summary: 'Reject a dispatcher verification' })
   rejectDispatcher(@Param('id') id: string, @Body() body?: { reason?: string }) {
     return this.adminService.rejectDispatcher(id, body?.reason);
+  }
+
+  @Get('ambassadors')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Ambassador referrals, orders and spend' })
+  getAmbassadors() {
+    return this.ambassadorsService.overview();
   }
 
   @Get('dispatchers')
