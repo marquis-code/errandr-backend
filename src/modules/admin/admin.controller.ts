@@ -187,13 +187,39 @@ export class AdminController {
     return this.adminService.rejectDispatcher(id, body?.reason);
   }
 
+  @Get('ambassadors/stats')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Platform-wide overview statistics across ambassadors & referrals' })
+  getAmbassadorStats() {
+    return this.ambassadorsService.getOverviewStats();
+  }
+
+  @Get('ambassadors/person-orders/:userId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get full itemized order and spend history for a referred user' })
+  getReferredPersonOrders(@Param('userId') userId: string) {
+    return this.ambassadorsService.getReferredPersonOrders(userId);
+  }
+
   @Get('ambassadors')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Ambassador referrals, orders and spend' })
-  getAmbassadors() {
-    return this.ambassadorsService.overview();
+  getAmbassadors(
+    @Query('persona') persona?: string,
+    @Query('search') search?: string,
+    @Query('minSpend') minSpend?: string,
+  ) {
+    return this.ambassadorsService.overview({
+      persona,
+      search,
+      minSpend: minSpend ? parseFloat(minSpend) : undefined,
+    });
   }
 
   @Get('dispatchers')
