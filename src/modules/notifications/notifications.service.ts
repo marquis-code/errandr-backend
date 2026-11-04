@@ -732,9 +732,41 @@ export class NotificationsService {
     }
 
     // 3. Send Infobip SMS (Instant)
-    const ownerPhone = vendor.owner?.phone;
+    const ownerPhone = vendor.owner?.phone || vendor.phone;
     if (ownerPhone) {
       await this.sendSMS(ownerPhone, body);
+    }
+
+    // 3b. WhatsApp straight away, by name.
+    //
+    // Most vendors are not comfortable with push notifications but do live on WhatsApp, and
+    // it is the channel that actually gets an order accepted. The old cascade only reached
+    // WhatsApp after sixty seconds of silence, and then with a bare string — so a busy vendor
+    // saw nothing until it was nearly too late, and nothing told them who it was for.
+    if (ownerPhone) {
+      const ownerName = vendor.owner?.firstName || vendor.ownerName || '';
+      const items = Array.isArray(order.items) ? order.items : [];
+      const itemLines = items
+        .slice(0, 5)
+        .map((i: any) => `• ${i.quantity || 1}x ${i.name || i.product?.name || 'item'}`);
+
+      await this.sendWhatsApp(
+        ownerPhone,
+        [
+          ownerName ? `Hi ${ownerName}, Erranders Bot here 👋` : 'Hi there, Erranders Bot here 👋',
+          '',
+          `You have a new order for ${vendor.storeName || 'your store'}.`,
+          '',
+          `Order #${order.orderNumber}`,
+          `Total: ₦${(order.total || 0).toLocaleString()}`,
+          ...(itemLines.length ? ['', ...itemLines] : []),
+          '',
+          'Open your dashboard to accept it:',
+          'https://vendor.erranders.org/dashboard/orders',
+          '',
+          '— Erranders Bot',
+        ].join('\n'),
+      ).catch(() => {});
     }
 
     // 4. Wait 60s, check if confirmed. If not -> WhatsApp
