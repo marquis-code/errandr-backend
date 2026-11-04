@@ -176,9 +176,10 @@ export class NotificationsService {
     }
   }
 
-  // ─── Format Phone Numbers to E.164 ────────────────
+  // ─── Format Phone Numbers to E.164 (or Keep Group JIDs) ────────────────
   formatPhoneNumber(phone: string): string {
     if (!phone) return '';
+    if (phone.includes('@g.us')) return phone.trim();
     let cleaned = phone.replace(/[^\d+]/g, '');
     if (cleaned.startsWith('0')) {
       cleaned = '+234' + cleaned.substring(1);
@@ -204,8 +205,69 @@ export class NotificationsService {
     ];
   }
 
-  // ─── Core WhatsApp Sender (Evolution API) ────────────────
-  async sendWhatsApp(phone: string, templateDataOrText: any): Promise<boolean> {
+  // ─── Communications Settings Cache (15s TTL) ────────────────
+  private commsSettingsCache: { data: any; expiry: number } | null = null;
+
+  async getCommunicationsSettingsCached(): Promise<any> {
+    const now = Date.now();
+    if (this.commsSettingsCache && this.commsSettingsCache.expiry > now) {
+      return this.commsSettingsCache.data;
+    }
+    try {
+      const setting = await this.settingModel.findOne({ key: 'communications' }).lean().exec();
+      const val = setting?.value || {};
+      const merged = {
+        emailsEnabled: val.emailsEnabled ?? true,
+        pushNotificationsEnabled: val.pushNotificationsEnabled ?? true,
+        whatsappEnabled: val.whatsappEnabled ?? true,
+        whatsappVendorAlertsEnabled: val.whatsappVendorAlertsEnabled ?? true,
+        whatsappCustomerMilestonesOnly: val.whatsappCustomerMilestonesOnly ?? true,
+        whatsappNinjaBroadcastEnabled: val.whatsappNinjaBroadcastEnabled ?? false,
+        whatsappNinjaGroupJid: val.whatsappNinjaGroupJid ?? '',
+        whatsappNinjaBatchLimit: val.whatsappNinjaBatchLimit !== undefined ? Number(val.whatsappNinjaBatchLimit) : 4,
+        whatsappSupportAlertsEnabled: val.whatsappSupportAlertsEnabled ?? true,
+        whatsappSupportRecipientMode: val.whatsappSupportRecipientMode ?? 'single',
+        whatsappSupportGroupJid: val.whatsappSupportGroupJid ?? '',
+        whatsappThrottleDelaySeconds: val.whatsappThrottleDelaySeconds !== undefined ? Number(val.whatsappThrottleDelaySeconds) : 4,
+        whatsappSimulateTyping: val.whatsappSimulateTyping ?? true,
+      };
+      this.commsSettingsCache = { data: merged, expiry: now + 15000 };
+      return merged;
+    } catch {
+      return {
+        emailsEnabled: true,
+        pushNotificationsEnabled: true,
+        whatsappEnabled: true,
+        whatsappVendorAlertsEnabled: true,
+        whatsappCustomerMilestonesOnly: true,
+        whatsappNinjaBroadcastEnabled: false,
+        whatsappNinjaGroupJid: '',
+        whatsappNinjaBatchLimit: 4,
+        whatsappSupportAlertsEnabled: true,
+        whatsappSupportRecipientMode: 'single',
+        whatsappSupportGroupJid: '',
+        whatsappThrottleDelaySeconds: 4,
+        whatsappSimulateTyping: true,
+      };
+    }
+  }
+
+  // ─── WhatsApp Anti-Ban Queue & Throttling System ────────────────
+  private whatsAppQueue: Array<{
+    phone: string;
+    text: string;
+    resolve: (sent: boolean) => void;
+    isPriority?: boolean;
+    createdAt: number;
+  }> = [];
+  private isProcessingWhatsAppQueue = false;
+  private lastMessageTimestamps: Map<string, number> = new Map();
+
+  /**
+   * Enqueue a WhatsApp message to be dispatched with human-like pacing,
+   * random jitter delay, deduplication, and presence simulation to prevent account bans.
+   */
+  async sendWhatsApp(phone: string, templateDataOrText: any, options?: { isPriority?: boolean }): Promise<boolean> {
     const text = typeof templateDataOrText === 'string'
       ? templateDataOrText
       : (templateDataOrText?.body || JSON.stringify(templateDataOrText));
@@ -213,18 +275,110 @@ export class NotificationsService {
     if (!phone || !text) return false;
     const formattedPhone = this.formatPhoneNumber(phone);
 
-    const evoUrl = this.configService.get<string>('WHATSAPP_EVOLUTION_API_URL')?.replace(/\/$/, '');
-    const evoKey = this.configService.get<string>('WHATSAPP_EVOLUTION_API_KEY');
-    const evoInstance = this.configService.get<string>('WHATSAPP_EVOLUTION_INSTANCE') || 'Erranders';
+    // Global toggle check
+    const comms = await this.getCommunicationsSettingsCached();
+    if (comms?.whatsappEnabled === false) {
+      this.logger.warn(`WhatsApp bot is globally disabled in communications settings. Skipping message to ${formattedPhone}`);
+      return false;
+    }
 
-    try {
-      if (!evoUrl || !evoKey) {
-        this.logger.warn('WHATSAPP_EVOLUTION_API_URL or WHATSAPP_EVOLUTION_API_KEY is not configured');
-        return false;
+    // Deduplication check: prevent identical messages within 5 minutes to the same phone
+    const textHash = crypto.createHash('md5').update(text.trim()).digest('hex').slice(0, 10);
+    const dedupeKey = `notif:wa_dedupe:${formattedPhone}:${textHash}`;
+    const isDup = await this.redisService.get(dedupeKey);
+    if (isDup) {
+      this.logger.log(`[Anti-Ban] Suppressed duplicate WhatsApp to ${formattedPhone} (identical message within 5 mins)`);
+      return true;
+    }
+    await this.redisService.set(dedupeKey, '1', 300); // 5 min TTL
+
+    return new Promise<boolean>((resolve) => {
+      const item = {
+        phone: formattedPhone,
+        text,
+        isPriority: options?.isPriority ?? false,
+        resolve,
+        createdAt: Date.now(),
+      };
+
+      if (options?.isPriority) {
+        // Priority items (e.g. vendor order alerts) go to front of queue
+        this.whatsAppQueue.unshift(item);
+      } else {
+        this.whatsAppQueue.push(item);
       }
 
-      const digitsOnly = formattedPhone.replace(/\D/g, '');
-      const response = await fetch(`${evoUrl}/message/sendText/${evoInstance}`, {
+      // Cap queue size at 150 to prevent memory leak under extreme load
+      if (this.whatsAppQueue.length > 150) {
+        const dropped = this.whatsAppQueue.pop();
+        if (dropped) dropped.resolve(false);
+      }
+
+      // Kick off queue processor
+      this.processWhatsAppQueue();
+    });
+  }
+
+  private async processWhatsAppQueue() {
+    if (this.isProcessingWhatsAppQueue) return;
+    this.isProcessingWhatsAppQueue = true;
+
+    while (this.whatsAppQueue.length > 0) {
+      const item = this.whatsAppQueue.shift();
+      if (!item) break;
+
+      try {
+        const comms = await this.getCommunicationsSettingsCached();
+        if (comms?.whatsappEnabled === false) {
+          item.resolve(false);
+          continue;
+        }
+
+        // Anti-flood check for same recipient (unless priority)
+        const lastSent = this.lastMessageTimestamps.get(item.phone) || 0;
+        const timeSince = Date.now() - lastSent;
+        const minRecipientGap = item.isPriority ? 1500 : 15000; // 15s between normal messages to same recipient
+        if (timeSince < minRecipientGap) {
+          const waitGap = minRecipientGap - timeSince;
+          await new Promise((r) => setTimeout(r, waitGap));
+        }
+
+        // Presence simulation: send 'composing' typing status before text
+        if (comms?.whatsappSimulateTyping !== false && !item.phone.includes('@g.us')) {
+          await this.simulatePresence(item.phone, 'composing');
+          const typingWait = 1200 + Math.floor(Math.random() * 800);
+          await new Promise((r) => setTimeout(r, typingWait));
+        }
+
+        // Dispatch raw message to Evolution API
+        const success = await this.dispatchEvolutionMessage(item.phone, item.text);
+        this.lastMessageTimestamps.set(item.phone, Date.now());
+        item.resolve(success);
+
+        // Throttle gap between ANY consecutive outbound messages to protect account from spam heuristics
+        const baseDelay = (comms?.whatsappThrottleDelaySeconds ?? 4) * 1000;
+        const jitter = Math.floor(Math.random() * 2000); // 0-2s jitter
+        const totalDelay = Math.max(2500, baseDelay + jitter);
+
+        await new Promise((r) => setTimeout(r, totalDelay));
+      } catch (err: any) {
+        this.logger.error(`Error in WhatsApp queue worker: ${err.message}`);
+        item.resolve(false);
+      }
+    }
+
+    this.isProcessingWhatsAppQueue = false;
+  }
+
+  private async simulatePresence(phone: string, presence: string = 'composing'): Promise<void> {
+    try {
+      const evoUrl = this.configService.get<string>('WHATSAPP_EVOLUTION_API_URL')?.replace(/\/$/, '');
+      const evoKey = this.configService.get<string>('WHATSAPP_EVOLUTION_API_KEY');
+      const evoInstance = this.configService.get<string>('WHATSAPP_EVOLUTION_INSTANCE') || 'Erranders';
+      if (!evoUrl || !evoKey) return;
+
+      const digitsOnly = phone.replace(/\D/g, '');
+      await fetch(`${evoUrl}/chat/sendPresence/${evoInstance}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -232,6 +386,38 @@ export class NotificationsService {
         },
         body: JSON.stringify({
           number: digitsOnly,
+          presence,
+          delay: 1200,
+        }),
+        signal: AbortSignal.timeout(5000),
+      }).catch(() => {});
+    } catch {
+      // Presence simulation failure should never block message delivery
+    }
+  }
+
+  private async dispatchEvolutionMessage(phone: string, text: string): Promise<boolean> {
+    const evoUrl = this.configService.get<string>('WHATSAPP_EVOLUTION_API_URL')?.replace(/\/$/, '');
+    const evoKey = this.configService.get<string>('WHATSAPP_EVOLUTION_API_KEY');
+    const evoInstance = this.configService.get<string>('WHATSAPP_EVOLUTION_INSTANCE') || 'Erranders';
+
+    if (!evoUrl || !evoKey) {
+      this.logger.warn('WHATSAPP_EVOLUTION_API_URL or WHATSAPP_EVOLUTION_API_KEY is not configured');
+      return false;
+    }
+
+    try {
+      const isGroup = phone.includes('@g.us');
+      const targetNumber = isGroup ? phone : phone.replace(/\D/g, '');
+
+      const response = await fetch(`${evoUrl}/message/sendText/${evoInstance}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: evoKey,
+        },
+        body: JSON.stringify({
+          number: targetNumber,
           text,
         }),
         signal: AbortSignal.timeout(15000),
@@ -243,10 +429,10 @@ export class NotificationsService {
       }
 
       const msgId = data?.key?.id || data?.id || 'ok';
-      this.logger.log(`✅ WhatsApp sent to ${digitsOnly}. Message ID: ${msgId}`);
+      this.logger.log(`✅ WhatsApp sent to ${targetNumber}. Message ID: ${msgId}`);
       return true;
     } catch (error: any) {
-      this.logger.error(`❌ WhatsApp Failed to ${formattedPhone}: ${error.message}`);
+      this.logger.error(`❌ WhatsApp Failed to ${phone}: ${error.message}`);
       return false;
     }
   }
@@ -423,6 +609,20 @@ export class NotificationsService {
       let message = '';
       const event = statusOrEvent.toUpperCase();
 
+      // Anti-ban check: Verify if global WhatsApp or milestone mode is configured
+      const comms = await this.getCommunicationsSettingsCached();
+      if (comms?.whatsappEnabled === false) {
+        return false;
+      }
+
+      if (comms?.whatsappCustomerMilestonesOnly !== false) {
+        // Milestone Mode: Suppress intermediate kitchen micro-statuses to protect account from spam bans
+        if (['CONFIRMED', 'PREPARING', 'READY_FOR_PICKUP'].includes(event)) {
+          this.logger.log(`[Anti-Ban] Suppressed customer WhatsApp for status "${event}" on order #${order.orderNumber} (Milestone-only mode active)`);
+          return true;
+        }
+      }
+
       switch (event) {
         case 'CUSTOM_ERRAND_RECEIVED':
           message = WhatsAppTemplates.customErrandReceived(templateData);
@@ -568,12 +768,31 @@ export class NotificationsService {
         paymentMethod: (order as any).paymentMethod || 'Card',
       };
 
-      const message = WhatsAppTemplates.customerServiceNewOrder(templateData);
-      const supportPhones = this.getSupportPhones();
+      const comms = await this.getCommunicationsSettingsCached();
+      if (comms?.whatsappEnabled === false || comms?.whatsappSupportAlertsEnabled === false) {
+        return;
+      }
 
-      this.logger.log(`Notifying ${supportPhones.length} CS agents via WhatsApp of new order #${order.orderNumber}`);
-      for (const phone of supportPhones) {
-        await this.sendWhatsApp(phone, message);
+      const message = WhatsAppTemplates.customerServiceNewOrder(templateData);
+
+      // Check if a dedicated WhatsApp group JID is configured for CS desk
+      if (comms?.whatsappSupportGroupJid) {
+        this.logger.log(`Notifying CS Desk via WhatsApp Group ${comms.whatsappSupportGroupJid} for order #${order.orderNumber}`);
+        await this.sendWhatsApp(comms.whatsappSupportGroupJid, message);
+        return;
+      }
+
+      const supportPhones = this.getSupportPhones();
+      const mode = comms?.whatsappSupportRecipientMode || 'single';
+
+      if (mode === 'single' && supportPhones.length > 0) {
+        this.logger.log(`Notifying primary CS agent ${supportPhones[0]} via WhatsApp for order #${order.orderNumber}`);
+        await this.sendWhatsApp(supportPhones[0], message);
+      } else {
+        this.logger.log(`Notifying ${supportPhones.length} CS agents via WhatsApp of new order #${order.orderNumber}`);
+        for (const phone of supportPhones) {
+          await this.sendWhatsApp(phone, message);
+        }
       }
     } catch (e: any) {
       this.logger.error(`Failed to notify CS desk of order #${order?.orderNumber}: ${e.message}`);
@@ -627,8 +846,13 @@ export class NotificationsService {
   }
 
   // ─── Errand Ninja WhatsApp Notifications ────────────────
-  async notifyNinjaNewErrand(phone: string, data: { storeName: string; orderNumber: string; deliveryFee: number }): Promise<boolean> {
+  async notifyNinjaNewErrand(phone: string, data: { storeName: string; orderNumber: string; deliveryFee: number; variantIndex?: number }): Promise<boolean> {
     try {
+      const comms = await this.getCommunicationsSettingsCached();
+      if (comms?.whatsappEnabled === false || comms?.whatsappNinjaBroadcastEnabled !== true) {
+        // Ninja broadcast is disabled by default to prevent mass-messaging WhatsApp account suspensions
+        return true;
+      }
       const message = WhatsAppTemplates.errandAvailableForNinja(data);
       return await this.sendWhatsApp(phone, message);
     } catch (e: any) {
@@ -688,10 +912,22 @@ export class NotificationsService {
           }
 
           // Forward customer/vendor reply directly to Customer Support team on WhatsApp
-          const forwardNotice = WhatsAppTemplates.customerInboundMessageToSupport(fromNumber, inboundText);
-          const supportPhones = this.getSupportPhones();
-          for (const supportPhone of supportPhones) {
-            await this.sendWhatsApp(supportPhone, forwardNotice);
+          const comms = await this.getCommunicationsSettingsCached();
+          if (comms?.whatsappSupportAlertsEnabled !== false) {
+            const forwardNotice = WhatsAppTemplates.customerInboundMessageToSupport(fromNumber, inboundText);
+            if (comms?.whatsappSupportGroupJid) {
+              await this.sendWhatsApp(comms.whatsappSupportGroupJid, forwardNotice);
+            } else {
+              const supportPhones = this.getSupportPhones();
+              const mode = comms?.whatsappSupportRecipientMode || 'single';
+              if (mode === 'single' && supportPhones.length > 0) {
+                await this.sendWhatsApp(supportPhones[0], forwardNotice);
+              } else {
+                for (const supportPhone of supportPhones) {
+                  await this.sendWhatsApp(supportPhone, forwardNotice);
+                }
+              }
+            }
           }
         }
       }
@@ -701,101 +937,149 @@ export class NotificationsService {
   }
 
 
-  // ─── Cascade Orchestrator ────────────────
-  async notifyVendor(vendor: any, order: any) {
-    const title = '🚨 New Order on Erranders!';
-    const body = `Order #${order.orderNumber} for ₦${(order.total || 0).toLocaleString()} has arrived. Please confirm now.`;
-    
-    // Safely extract owner userId — handles both populated (object) and unpopulated (ObjectId) cases
-    const ownerId = (vendor.owner?._id || vendor.owner)?.toString();
-    this.logger.log(`notifyVendor() ownerId=${ownerId}, vendorId=${vendor._id}, orderNumber=${order.orderNumber}`);
-    
-    if (!ownerId) {
-      this.logger.error(`notifyVendor() FAILED: Could not extract owner ID from vendor ${vendor._id}`);
-      return;
-    }
-    
-    // 1. Send in-app Redis notification (Instant — routes to socket room user:<ownerId>)
-    await this.sendNotification(ownerId, {
-      title,
-      body,
-      type: 'NEW_ORDER',
-      data: { orderId: order._id.toString() },
-    });
-    
-    // 2. Send FCM Push (Instant) — try vendor FCM token first, then owner's user FCM token
-    const fcmToken = vendor.fcmToken || vendor.owner?.fcmToken;
-    if (fcmToken) {
-      await this.sendPushNotification(fcmToken, { title, body, data: { orderId: order._id.toString() } });
-    } else {
-      this.logger.warn(`notifyVendor() No FCM token for vendor ${vendor._id} or owner ${ownerId}`);
-    }
+  // ─── Guaranteed Vendor Notification Orchestrator ────────────────
+  async notifyVendor(vendorInput: any, order: any) {
+    try {
+      if (!order) return;
+      const orderId = order._id?.toString() || order.id?.toString();
+      const orderNumber = order.orderNumber || String(orderId || '').slice(-6);
 
-    // 3. Send Infobip SMS (Instant)
-    const ownerPhone = vendor.owner?.phone || vendor.phone;
-    if (ownerPhone) {
-      await this.sendSMS(ownerPhone, body);
-    }
+      // Deduplication guard: Never notify the same vendor twice for the same order
+      if (orderId) {
+        const dedupeKey = `notif:vendor_new_order:${orderId}`;
+        const alreadySent = await this.redisService.get(dedupeKey);
+        if (alreadySent) {
+          this.logger.log(`Vendor already notified for order #${orderNumber}, skipping duplicate.`);
+          return;
+        }
+        await this.redisService.set(dedupeKey, 'sent', 86400); // 24-hr TTL
+      }
 
-    // 3b. WhatsApp straight away, by name.
-    //
-    // Most vendors are not comfortable with push notifications but do live on WhatsApp, and
-    // it is the channel that actually gets an order accepted. The old cascade only reached
-    // WhatsApp after sixty seconds of silence, and then with a bare string — so a busy vendor
-    // saw nothing until it was nearly too late, and nothing told them who it was for.
-    if (ownerPhone) {
-      const ownerName = vendor.owner?.firstName || vendor.ownerName || '';
-      const items = Array.isArray(order.items) ? order.items : [];
-      const itemLines = items
-        .slice(0, 5)
-        .map((i: any) => `• ${i.quantity || 1}x ${i.name || i.product?.name || 'item'}`);
+      // 1. Fully resolve Vendor document & Owner User document
+      let vendorDoc: any = vendorInput;
+      const vendorId = vendorInput?._id || vendorInput;
 
-      await this.sendWhatsApp(
-        ownerPhone,
-        [
-          ownerName ? `Hi ${ownerName}, Erranders Bot here 👋` : 'Hi there, Erranders Bot here 👋',
+      if (!vendorDoc?.storeName || !vendorDoc?.owner?.phone) {
+        if (vendorId) {
+          try {
+            vendorDoc = await this.vendorModel.findById(vendorId).populate('owner').exec();
+          } catch (e: any) {
+            this.logger.warn(`Could not populate vendor by ID ${vendorId}: ${e.message}`);
+          }
+        }
+      }
+
+      if (!vendorDoc && order.vendor) {
+        const orderVendorId = order.vendor?._id || order.vendor;
+        try {
+          vendorDoc = await this.vendorModel.findById(orderVendorId).populate('owner').exec();
+        } catch (e: any) {
+          this.logger.warn(`Could not resolve order vendor ${orderVendorId}: ${e.message}`);
+        }
+      }
+
+      if (!vendorDoc) {
+        this.logger.error(`notifyVendor() FAILED: Could not resolve vendor for order #${orderNumber}`);
+        return;
+      }
+
+      // If owner is an unpopulated ObjectId, load the User document
+      let ownerUser: any = vendorDoc.owner;
+      if (ownerUser && typeof ownerUser === 'object' && ownerUser._id) {
+        // Already populated
+      } else if (ownerUser) {
+        try {
+          ownerUser = await this.userModel.findById(ownerUser).exec();
+        } catch (e: any) {
+          this.logger.warn(`Could not load owner user: ${e.message}`);
+        }
+      }
+
+      const storeName = vendorDoc.storeName || 'Your Store';
+      const ownerId = (ownerUser?._id || vendorDoc.owner)?.toString();
+      const vendorPhone = ownerUser?.phone || vendorDoc.phone;
+      const fcmToken = vendorDoc.fcmToken || ownerUser?.fcmToken;
+
+      const title = '🚨 New Order on Erranders!';
+      const body = `Order #${orderNumber} for ₦${(order.total || 0).toLocaleString()} has arrived at ${storeName}. Please confirm now.`;
+
+      this.logger.log(`[GUARANTEED VENDOR ALERT] Dispatching alerts for order #${orderNumber} to vendor "${storeName}" (phone: ${vendorPhone || 'none'}, ownerId: ${ownerId || 'none'})`);
+
+      // Channel 1: In-App Notification (Socket + Redis)
+      if (ownerId) {
+        await this.sendNotification(ownerId, {
+          title,
+          body,
+          type: 'NEW_ORDER',
+          data: { orderId, orderNumber },
+        }).catch(e => this.logger.warn(`In-app vendor notification failed: ${e.message}`));
+      }
+
+      // Channel 2: FCM Push Notification
+      if (fcmToken) {
+        await this.sendPushNotification(fcmToken, {
+          title,
+          body,
+          data: { orderId, orderNumber },
+        }).catch(e => this.logger.warn(`FCM vendor push failed: ${e.message}`));
+      }
+
+      // Channel 3: SMS Notification
+      if (vendorPhone) {
+        await this.sendSMS(
+          vendorPhone,
+          `🚨 Erranders: You have a new order #${orderNumber} for ${storeName} (₦${(order.total || 0).toLocaleString()}). Please open your vendor dashboard to accept it now!`
+        ).catch(e => this.logger.warn(`SMS vendor alert failed: ${e.message}`));
+      }
+
+      // Channel 4: WhatsApp Notification (direct to vendor/owner phone)
+      const comms = await this.getCommunicationsSettingsCached();
+      if (vendorPhone && comms?.whatsappEnabled !== false && comms?.whatsappVendorAlertsEnabled !== false) {
+        const ownerName = ownerUser?.firstName || vendorDoc.ownerName || '';
+        const items = Array.isArray(order.items) ? order.items : [];
+        const itemLines = items
+          .slice(0, 6)
+          .map((i: any) => `• ${i.quantity || 1}x ${i.name || i.product?.name || 'item'}`);
+
+        const waText = [
+          ownerName ? `Hi *${ownerName}*, Erranders Bot here 👋` : 'Hi there, Erranders Bot here 👋',
+          '━━━━━━━━━━━━━━━━━━━━━━',
+          `🚨 *New Order for ${storeName}!*`,
           '',
-          `You have a new order for ${vendor.storeName || 'your store'}.`,
+          `🧾 *Order #${orderNumber}*`,
+          `💰 *Total:* ₦${(order.total || 0).toLocaleString()}`,
+          ...(itemLines.length ? ['', '📦 *Items Ordered:*', ...itemLines] : []),
           '',
-          `Order #${order.orderNumber}`,
-          `Total: ₦${(order.total || 0).toLocaleString()}`,
-          ...(itemLines.length ? ['', ...itemLines] : []),
-          '',
-          'Open your dashboard to accept it:',
+          '👉 *Open your dashboard to accept and start preparing:*',
           'https://vendor.erranders.org/dashboard/orders',
           '',
           '— Erranders Bot',
-        ].join('\n'),
-      ).catch(() => {});
+        ].join('\n');
+
+        await this.sendWhatsApp(vendorPhone, waText, { isPriority: true })
+          .catch(e => this.logger.warn(`WhatsApp vendor alert failed: ${e.message}`));
+      }
+
+      // 5. Follow-up Check after 90s: If still PENDING, send reminder
+      if (orderId) {
+        setTimeout(async () => {
+          try {
+            const checkOrder = await this.orderModel.findById(orderId);
+            if (checkOrder && checkOrder.status === OrderStatus.PENDING) {
+              if (vendorPhone && comms?.whatsappEnabled !== false && comms?.whatsappVendorAlertsEnabled !== false) {
+                const reminderText = `⚠️ *Reminder from Erranders Bot*\n\nOrder #${orderNumber} for ${storeName} is still waiting for your confirmation!\n\nPlease open your dashboard to accept it so an Errand Ninja can be dispatched:\nhttps://vendor.erranders.org/dashboard/orders`;
+                await this.sendWhatsApp(vendorPhone, reminderText, { isPriority: true }).catch(() => {});
+              }
+            }
+          } catch (e: any) {
+            this.logger.warn(`Vendor reminder check failed: ${e.message}`);
+          }
+        }, 90000);
+      }
+
+    } catch (err: any) {
+      this.logger.error(`Failed to execute notifyVendor: ${err.message}`);
     }
-
-    // 4. Wait 60s, check if confirmed. If not -> WhatsApp
-    setTimeout(async () => {
-      try {
-        const checkOrder = await this.orderModel.findById(order._id);
-        if (checkOrder && checkOrder.status === OrderStatus.PENDING) {
-          if (ownerPhone) {
-            await this.sendWhatsApp(ownerPhone, { body });
-          }
-        }
-      } catch (e) {
-        this.logger.error(`Cascade WhatsApp Check Failed: ${e.message}`);
-      }
-    }, 60000);
-
-    // 5. Wait 90s, check if confirmed. If not -> Termii SMS (Fallback)
-    setTimeout(async () => {
-      try {
-        const checkOrder = await this.orderModel.findById(order._id);
-        if (checkOrder && checkOrder.status === OrderStatus.PENDING) {
-          if (ownerPhone) {
-            await this.sendSMS(ownerPhone, body);
-          }
-        }
-      } catch (e) {
-        this.logger.error(`Cascade SMS Check Failed: ${e.message}`);
-      }
-    }, 150000); // 60s + 90s = 150000ms
   }
 
   /**

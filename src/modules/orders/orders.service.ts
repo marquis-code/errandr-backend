@@ -312,10 +312,28 @@ export class OrdersService {
         }
       }
 
+      const comms = await this.notificationsService.getCommunicationsSettingsCached();
+      const feeDisplay = orderData.type === 'custom_errand' ? (orderData.deliveryFee || 0) : 300;
+      const orderNumberStr = orderData.orderNumber || String(orderData.orderId || '').slice(-6);
+
+      // ─── Channel A: Dedicated Erranders Ninja WhatsApp Group (Zero Ban Risk) ───
+      // Posting to 1 WhatsApp group alerts ALL campus riders on the web app without triggering Meta spam filters
+      if (comms?.whatsappEnabled !== false && comms?.whatsappNinjaGroupJid) {
+        this.logger.log(`Dispatching errand #${orderNumberStr} to official Ninja WhatsApp Group: ${comms.whatsappNinjaGroupJid}`);
+        await this.notificationsService.notifyNinjaNewErrand(comms.whatsappNinjaGroupJid, {
+          storeName: vendorName,
+          orderNumber: orderNumberStr,
+          deliveryFee: feeDisplay,
+        }).catch(e => this.logger.warn(`Ninja WhatsApp Group broadcast failed: ${e.message}`));
+      }
+
+      // ─── Channel B: Individual Rider Notifications (Web App / SMS / Paced WhatsApp) ───
+      let directWaDispatched = 0;
+      const maxDirectWa = comms?.whatsappNinjaBatchLimit || 4; // Max 4 riders per wave to prevent bans
+
       for (const e of filteredErranders) {
         if (e.user) {
           const userObj = e.user as any;
-          const feeDisplay = orderData.type === 'custom_errand' ? (orderData.deliveryFee || 0) : 300;
 
           if (userObj.fcmToken) {
             this.notificationsService.sendPushNotification(userObj.fcmToken, {
@@ -328,11 +346,21 @@ export class OrdersService {
             this.notificationsService.sendSMS(userObj.phone, `🚨 NEW ERRAND AVAILABLE! An order from ${vendorName} needs an Errand Ninja right now! ₦${feeDisplay} fee`)
               .catch(e => this.logger.error(`SMS failed: ${e.message}`));
 
-            this.notificationsService.notifyNinjaNewErrand(userObj.phone, {
-              storeName: vendorName,
-              orderNumber: orderData.orderNumber || String(orderData.orderId || '').slice(-6),
-              deliveryFee: feeDisplay,
-            }).catch(e => this.logger.warn(`Ninja WhatsApp broadcast failed: ${e.message}`));
+            // If no group JID and direct broadcast is enabled, send paced DMs with spintax & cooldown
+            if (!comms?.whatsappNinjaGroupJid && comms?.whatsappNinjaBroadcastEnabled === true && directWaDispatched < maxDirectWa) {
+              const cooldownKey = `notif:ninja_cooldown:${userObj.phone}`;
+              const onCooldown = await (this.notificationsService as any).redisService.get(cooldownKey);
+              if (!onCooldown) {
+                await (this.notificationsService as any).redisService.set(cooldownKey, '1', 300); // 5-min cooldown per rider
+                this.notificationsService.notifyNinjaNewErrand(userObj.phone, {
+                  storeName: vendorName,
+                  orderNumber: orderNumberStr,
+                  deliveryFee: feeDisplay,
+                  variantIndex: directWaDispatched,
+                }).catch(e => this.logger.warn(`Ninja WhatsApp DM failed: ${e.message}`));
+                directWaDispatched++;
+              }
+            }
           }
         }
       }

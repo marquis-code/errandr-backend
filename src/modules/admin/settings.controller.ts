@@ -374,13 +374,29 @@ export class SettingsController {
   @ApiOperation({ summary: 'Get global communications settings' })
   async getCommunicationsSettings() {
     let setting = await this.settingModel.findOne({ key: 'communications' }).exec();
+    const defaults = {
+      emailsEnabled: true,
+      pushNotificationsEnabled: true,
+      whatsappEnabled: true,
+      whatsappVendorAlertsEnabled: true,
+      whatsappCustomerMilestonesOnly: true,
+      whatsappNinjaBroadcastEnabled: false,
+      whatsappNinjaGroupJid: '',
+      whatsappNinjaBatchLimit: 4,
+      whatsappSupportAlertsEnabled: true,
+      whatsappSupportRecipientMode: 'single', // 'single' (primary) or 'all'
+      whatsappSupportGroupJid: '',
+      whatsappThrottleDelaySeconds: 4,
+      whatsappSimulateTyping: true,
+    };
     if (!setting) {
       setting = await this.settingModel.create({
         key: 'communications',
-        value: { emailsEnabled: true, pushNotificationsEnabled: true },
+        value: defaults,
       });
+      return setting.value;
     }
-    return setting.value;
+    return { ...defaults, ...(setting.value || {}) };
   }
 
   @Put('communications')
@@ -388,14 +404,27 @@ export class SettingsController {
   @Roles(UserRole.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update global communications settings (admin only)' })
-  async updateCommunicationsSettings(@Body() body: { emailsEnabled: boolean; pushNotificationsEnabled: boolean }) {
+  async updateCommunicationsSettings(@Body() body: any) {
     let setting = await this.settingModel.findOne({ key: 'communications' }).exec();
     if (!setting) {
       setting = new this.settingModel({ key: 'communications' });
     }
+    const current = setting.value || {};
     setting.value = {
-      emailsEnabled: body.emailsEnabled ?? true,
-      pushNotificationsEnabled: body.pushNotificationsEnabled ?? true,
+      ...current,
+      emailsEnabled: body.emailsEnabled ?? current.emailsEnabled ?? true,
+      pushNotificationsEnabled: body.pushNotificationsEnabled ?? current.pushNotificationsEnabled ?? true,
+      whatsappEnabled: body.whatsappEnabled ?? current.whatsappEnabled ?? true,
+      whatsappVendorAlertsEnabled: body.whatsappVendorAlertsEnabled ?? current.whatsappVendorAlertsEnabled ?? true,
+      whatsappCustomerMilestonesOnly: body.whatsappCustomerMilestonesOnly ?? current.whatsappCustomerMilestonesOnly ?? true,
+      whatsappNinjaBroadcastEnabled: body.whatsappNinjaBroadcastEnabled ?? current.whatsappNinjaBroadcastEnabled ?? false,
+      whatsappNinjaGroupJid: body.whatsappNinjaGroupJid !== undefined ? String(body.whatsappNinjaGroupJid).trim() : (current.whatsappNinjaGroupJid ?? ''),
+      whatsappNinjaBatchLimit: body.whatsappNinjaBatchLimit !== undefined ? Math.max(1, Math.min(10, Number(body.whatsappNinjaBatchLimit))) : (current.whatsappNinjaBatchLimit ?? 4),
+      whatsappSupportAlertsEnabled: body.whatsappSupportAlertsEnabled ?? current.whatsappSupportAlertsEnabled ?? true,
+      whatsappSupportRecipientMode: body.whatsappSupportRecipientMode ?? current.whatsappSupportRecipientMode ?? 'single',
+      whatsappSupportGroupJid: body.whatsappSupportGroupJid !== undefined ? String(body.whatsappSupportGroupJid).trim() : (current.whatsappSupportGroupJid ?? ''),
+      whatsappThrottleDelaySeconds: body.whatsappThrottleDelaySeconds !== undefined ? Math.max(2, Math.min(30, Number(body.whatsappThrottleDelaySeconds))) : (current.whatsappThrottleDelaySeconds ?? 4),
+      whatsappSimulateTyping: body.whatsappSimulateTyping ?? current.whatsappSimulateTyping ?? true,
     };
     // Mark modified for mixed type objects in mongoose
     setting.markModified('value');

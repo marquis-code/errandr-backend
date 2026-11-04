@@ -130,12 +130,11 @@ export class PaymentsController {
             await this.ordersService.broadcastNewOrderToErranders(updatedOrder);
 
             // Notify Vendor
-            const vendorObj = await (this.ordersService as any).vendorModel.findById(updatedOrder.vendor).populate('owner');
-            if (vendorObj) {
-              (this.ordersService as any).notificationsService.notifyVendor(vendorObj, updatedOrder).catch(e => {
-                this.logger.error(`Vendor notification cascade failed from verify: ${e.message}`);
-              });
-            }
+            const vendorId = updatedOrder.vendor?._id || updatedOrder.vendor;
+            const vendorObj = await (this.ordersService as any).vendorModel.findById(vendorId).populate('owner');
+            (this.ordersService as any).notificationsService.notifyVendor(vendorObj || updatedOrder.vendor, updatedOrder).catch((e: any) => {
+              this.logger.error(`Vendor notification cascade failed from verify: ${e.message}`);
+            });
 
             // Notify CS Desk on WhatsApp
             (this.ordersService as any).notificationsService.notifySupportNewOrder(updatedOrder).catch((e: any) => {
@@ -493,12 +492,11 @@ export class PaymentsController {
                 await this.ordersService.broadcastNewOrderToErranders(updatedOrder);
 
                 // Notify Vendor
-                const vendorObj = await (this.ordersService as any).vendorModel.findById(updatedOrder.vendor).populate('owner');
-                if (vendorObj) {
-                  (this.ordersService as any).notificationsService.notifyVendor(vendorObj, updatedOrder).catch(e => {
-                    this.logger.error(`Vendor notification cascade failed from webhook: ${e.message}`);
-                  });
-                }
+                const vendorId = updatedOrder.vendor?._id || updatedOrder.vendor;
+                const vendorObj = await (this.ordersService as any).vendorModel.findById(vendorId).populate('owner');
+                (this.ordersService as any).notificationsService.notifyVendor(vendorObj || updatedOrder.vendor, updatedOrder).catch((e: any) => {
+                  this.logger.error(`Vendor notification cascade failed from webhook: ${e.message}`);
+                });
 
                 // Notify CS Desk on WhatsApp
                 (this.ordersService as any).notificationsService.notifySupportNewOrder(updatedOrder).catch((e: any) => {

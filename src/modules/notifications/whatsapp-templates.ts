@@ -20,7 +20,8 @@ export interface OrderTemplateData {
 
 export class WhatsAppTemplates {
   private static readonly DIVIDER = '━━━━━━━━━━━━━━━━━━━━━━';
-  private static readonly SUPPORT_LINE = '💛 Erranders Bot — just reply here if you need anything.';
+  private static readonly BOT_HEADER = '🤖 *ERRANDERS BOT* · Official Campus Assistant\n━━━━━━━━━━━━━━━━━━━━━━';
+  private static readonly BOT_FOOTER = '\n━━━━━━━━━━━━━━━━━━━━━━\n🤖 *Erranders Automated Bot System*\n💬 Need help? Just reply directly to this chat.\n🌐 https://erranders.org';
 
   /**
    * Helper to format items list concisely
@@ -42,9 +43,10 @@ export class WhatsAppTemplates {
     const itemsList = this.formatItems(data.items);
     const dest = data.deliveryAddress || 'Hostel address provided';
 
-    return `🛍️ *Erranders Bot* · order confirmed
-${this.DIVIDER}
-👋 Hi *${name}*, Erranders Bot here — your order has been received and confirmed!
+    return `${this.BOT_HEADER}
+🛍️ *ORDER CONFIRMED & RECEIVED*
+
+👋 Hi *${name}*, your payment has been verified and your order is confirmed!
 
 🧾 *Order #${data.orderNumber}*
 🏪 *Store:* ${store}
@@ -54,11 +56,9 @@ ${this.DIVIDER}
 ${itemsList}
 
 📍 *Delivery To:* ${dest}
-⏳ *Status:* 🟡 *Sent to vendor for preparation*
+⏳ *Status:* 🟡 Sent to vendor counter
 
-${this.DIVIDER}
-🛵 A verified student Errand Ninja will pick up your package and deliver directly to your hostel room.
-${this.SUPPORT_LINE}`;
+🛵 An Errand Ninja will pick up your package and deliver directly to your hostel room.${this.BOT_FOOTER}`;
   }
 
   /**
@@ -71,9 +71,10 @@ ${this.SUPPORT_LINE}`;
     const itemsList = this.formatItems(data.items);
     const dest = data.deliveryAddress || 'Hostel address provided';
 
-    return `🛍️ *Erranders Bot* · errand received
-${this.DIVIDER}
-👋 Hi *${name}*, Erranders Bot here — your custom errand request has been received!
+    return `${this.BOT_HEADER}
+🛍️ *CUSTOM ERRAND MISSION RECEIVED*
+
+👋 Hi *${name}*, your custom errand request has been logged and broadcast to campus Ninjas!
 
 🧾 *Order #${data.orderNumber}*
 🏪 *Pickup:* ${store}
@@ -83,9 +84,7 @@ ${this.DIVIDER}
 📦 *Items Requested:*
 ${itemsList}
 
-${this.DIVIDER}
-🛵 Our campus operations desk and nearby Errand Ninjas have been alerted. You will receive updates as a runner accepts and confirms your order.
-${this.SUPPORT_LINE}`;
+🛵 Nearby verified student Errand Ninjas have been alerted. You will receive an update once a runner accepts.${this.BOT_FOOTER}`;
   }
 
   /**
@@ -96,17 +95,16 @@ ${this.SUPPORT_LINE}`;
     const store = data.storeName || 'Vendor';
     const prep = data.prepTimeMinutes ? ` (~${data.prepTimeMinutes} mins)` : '';
 
-    return `🍳 *Erranders Bot* · order update
-${this.DIVIDER}
+    return `${this.BOT_HEADER}
+🍳 *KITCHEN PREPARATION STARTED*
+
 Hi *${name}*, *${store}* has accepted your order and started preparing it!
 
 🧾 *Order #${data.orderNumber}*
-🔥 *Status:* 👨‍🍳 *In the Kitchen / Packaging*${prep}
+🔥 *Status:* 👨‍🍳 In Preparation / Packaging${prep}
 📍 *Destination:* ${data.deliveryAddress || 'Hostel'}
 
-${this.DIVIDER}
-We will notify you on WhatsApp the moment your Errand Ninja collects your order.
-${this.SUPPORT_LINE}`;
+We will notify you the moment your Errand Ninja collects your package.${this.BOT_FOOTER}`;
   }
 
   /**
@@ -116,15 +114,13 @@ ${this.SUPPORT_LINE}`;
     const name = data.customerName || 'Valued Customer';
     const store = data.storeName || 'Vendor';
 
-    return `📦 *Erranders Bot* · ready for pickup
-${this.DIVIDER}
+    return `${this.BOT_HEADER}
+📦 *ORDER PACKED & READY*
+
 Hi *${name}*, your package from *${store}* is ready and packed.
 
 🧾 *Order #${data.orderNumber}*
-🛵 *Status:* A nearby Errand Ninja is arriving at the counter now for instant pickup.
-
-${this.DIVIDER}
-${this.SUPPORT_LINE}`;
+🛵 *Status:* An Errand Ninja is arriving at the counter now for pickup.${this.BOT_FOOTER}`;
   }
 
   /**
@@ -137,8 +133,9 @@ ${this.SUPPORT_LINE}`;
     const phone = data.ninjaPhone ? ` (${data.ninjaPhone})` : '';
     const pin = data.deliveryPin ? `*${data.deliveryPin}*` : 'N/A';
 
-    return `🛵 *Erranders Bot* · your ninja is moving
-${this.DIVIDER}
+    return `${this.BOT_HEADER}
+🛵 *YOUR ERRAND NINJA IS ON THE WAY!*
+
 Hi *${name}*, ${ninja} has collected your order from *${store}* and is heading to your hostel!
 
 🧾 *Order #${data.orderNumber}*
@@ -149,9 +146,7 @@ Hi *${name}*, ${ninja} has collected your order from *${store}* and is heading t
 👉 ${pin} 👈
 _⚠️ IMPORTANT: Only share this 4-digit PIN with your Errand Ninja when they hand over your package to verify receipt._
 
-${this.DIVIDER}
-Please keep your phone handy in case the rider needs gate clearance.
-${this.SUPPORT_LINE}`;
+Please keep your phone handy in case the rider needs gate clearance.${this.BOT_FOOTER}`;
   }
 
   /**
@@ -163,16 +158,16 @@ ${this.SUPPORT_LINE}`;
     const phone = data.ninjaPhone ? ` at *${data.ninjaPhone}*` : '';
     const pin = data.deliveryPin ? `*${data.deliveryPin}*` : 'N/A';
 
-    return `📍 *Erranders Bot* · almost there
-${this.DIVIDER}
-Hi *${name}*, ${ninja} is approaching your hostel (${data.deliveryAddress || 'Hostel'})!
+    return `${this.BOT_HEADER}
+📍 *ALMOST AT YOUR HOSTEL!*
+
+Hi *${name}*, ${ninja} is arriving at your hostel (${data.deliveryAddress || 'Hostel'})!
 
 🧾 *Order #${data.orderNumber}*
 🔑 *Delivery PIN:* ${pin}
 📞 Need directions? Call your Ninja${phone}.
 
-${this.DIVIDER}
-Get ready to collect your delivery!`;
+Please be ready to meet your runner and collect your package.${this.BOT_FOOTER}`;
   }
 
   /**
@@ -182,18 +177,15 @@ Get ready to collect your delivery!`;
     const name = data.customerName || 'Valued Customer';
     const store = data.storeName || 'Vendor';
 
-    return `🎉 *Erranders Bot* · delivered
-${this.DIVIDER}
-👋 Hi *${name}*, Erranders Bot here — your order *#${data.orderNumber}* from *${store}* just arrived!
+    return `${this.BOT_HEADER}
+🎉 *DELIVERY COMPLETED!*
 
-Hope you enjoy it 💛
+👋 Hi *${name}*, your order *#${data.orderNumber}* from *${store}* has been successfully delivered!
+
+Hope you enjoy it! 💛
 
 ⭐ *Rate Your Experience:*
-Log in to the Erranders web app to review your meal and tip your student Errand Ninja.
-
-${this.DIVIDER}
-Have a lovely day!
-— Erranders Bot`;
+Log in to the Erranders web app to review your meal and tip your student Errand Ninja:${this.BOT_FOOTER}`;
   }
 
   /**
@@ -204,15 +196,15 @@ Have a lovely day!
     const reason = data.cancellationReason || 'Requested or unfulfilled order';
     const refund = data.refundStatus || 'Processed automatically to your wallet/account';
 
-    return `❌ *Erranders Bot* · order cancelled
-${this.DIVIDER}
+    return `${this.BOT_HEADER}
+❌ *ORDER CANCELLED*
+
 Hi *${name}*, order *#${data.orderNumber}* could not be completed and has been cancelled.
 
 📝 *Reason:* ${reason}
 💳 *Refund Status:* ${refund}
 
-${this.DIVIDER}
-We apologize for any inconvenience. If you have questions, reply directly to this message to chat with support.`;
+We apologize for the inconvenience. Reply to this chat if you have any questions.${this.BOT_FOOTER}`;
   }
 
   /**
@@ -224,17 +216,15 @@ We apologize for any inconvenience. If you have questions, reply directly to thi
     const delay = data.delayMinutes || 10;
     const reason = data.delayReason || 'High order volume at vendor kitchen';
 
-    return `⚠️ *Erranders Bot* · delivery notice
-${this.DIVIDER}
-Hi *${name}*, we noticed your order *#${data.orderNumber}* from *${store}* is experiencing a brief delay.
+    return `${this.BOT_HEADER}
+⚠️ *BRIEF DELIVERY DELAY NOTICE*
+
+Hi *${name}*, your order *#${data.orderNumber}* from *${store}* is experiencing a brief delay.
 
 ⏱️ *Estimated Additional Time:* ~${delay} minutes
 📝 *Reason:* ${reason}
 
-Our campus operations desk is actively tracking this order and expediting your Errand Ninja to ensure your package arrives hot and fresh.
-
-We truly appreciate your patience!
-${this.SUPPORT_LINE}`;
+Our campus operations desk is actively tracking this and expediting your runner. We truly appreciate your patience!${this.BOT_FOOTER}`;
   }
 
   /**
@@ -247,9 +237,10 @@ ${this.SUPPORT_LINE}`;
     const vendPhone = data.vendorPhone ? ` (${data.vendorPhone})` : '';
     const pay = data.paymentMethod || 'Paid (Online)';
 
-    return `🚨 *Erranders Bot* · new order for the desk
-${this.DIVIDER}
-Order *#${data.orderNumber}* has been placed and requires operational monitoring!
+    return `${this.BOT_HEADER}
+🚨 *CS DESK: NEW ORDER ALERT*
+
+Order *#${data.orderNumber}* requires operational monitoring!
 
 🏪 *Vendor:* ${data.storeName || 'Vendor'}${vendPhone}
 👤 *Customer:* ${data.customerName || 'Customer'} (${custPhone})
@@ -259,8 +250,7 @@ Order *#${data.orderNumber}* has been placed and requires operational monitoring
 📦 *Items:*
 ${itemsList}
 
-${this.DIVIDER}
-⚡ *Action Required:* Ensure vendor accepts and runner is assigned within 3 mins.`;
+⚡ *Action Required:* Ensure vendor accepts and runner is assigned within 3 mins.${this.BOT_FOOTER}`;
   }
 
   /**
@@ -270,8 +260,9 @@ ${this.DIVIDER}
     const delay = data.delayMinutes || 10;
     const reason = data.delayReason || 'Unattended / Prep delay';
 
-    return `⚠️ *Erranders Bot* · delay needs a look
-${this.DIVIDER}
+    return `${this.BOT_HEADER}
+⚠️ *CS DESK: ORDER DELAY ESCALATION*
+
 Order *#${data.orderNumber}* is exceeding target delivery window!
 
 🏪 *Vendor:* ${data.storeName || 'Vendor'} (${data.vendorPhone || 'N/A'})
@@ -280,65 +271,64 @@ Order *#${data.orderNumber}* is exceeding target delivery window!
 📝 *Reason:* ${reason}
 🛵 *Rider Assigned:* ${data.ninjaName || 'None'} (${data.ninjaPhone || 'N/A'})
 
-${this.DIVIDER}
-⚡ *Action Required:* Call vendor or re-assign priority Errand Ninja immediately.`;
+⚡ *Action Required:* Call vendor or re-assign priority Errand Ninja immediately.${this.BOT_FOOTER}`;
   }
 
   /**
    * 11. Inbound Customer Reply Forwarded to Support
    */
   static customerInboundMessageToSupport(customerPhone: string, text: string): string {
-    return `💬 *Erranders Bot* · customer message
-${this.DIVIDER}
+    return `${this.BOT_HEADER}
+💬 *INBOUND CUSTOMER MESSAGE TO SUPPORT*
+
 A customer sent a reply via WhatsApp:
 
 👤 *From:* ${customerPhone}
 📩 *Message:*
 "${text}"
 
-${this.DIVIDER}
-⚡ *Action:* Respond to customer or review their active order.`;
+⚡ *Action:* Respond to customer or review their active order.${this.BOT_FOOTER}`;
   }
 
   /**
-   * 12. Broadcast to Errand Ninja: New Errand Available
-   * Dynamic, highly engaging, and time-aware to motivate Errand Ninjas on campus
+   * 12. Broadcast to Errand Ninja: New Errand Available (with dynamic Spintax to avoid ban filters)
    */
-  static errandAvailableForNinja(data: { storeName: string; orderNumber: string; deliveryFee: number }): string {
-    // Current hour in Nigeria (WAT = UTC+1)
+  static errandAvailableForNinja(data: { storeName: string; orderNumber: string; deliveryFee: number; variantIndex?: number }): string {
+    const feeFormatted = (data.deliveryFee || 300).toLocaleString();
     const currentHourWAT = (new Date().getUTCHours() + 1) % 24;
 
-    let timeGreetingHeader = '🚨 *NEW ERRAND MISSION!* 🛵⚡';
-    let motivationalHook = 'A student on campus needs their order delivered right now!';
-    let hypeKicker = 'Fatigue is temporary, cash in your wallet is forever! 💸 Keep the momentum going!';
+    const greetings = [
+      '⚡ *NEW ERRAND MISSION AVAILABLE!* 🛵',
+      '🚨 *FRESH CAMPUS DROP READY!* 💸 🛵',
+      '💰 *DELIVERY MISSION UNLOCKED!* ⚡ 🛵',
+      '📦 *QUICK HOSTEL RUN AVAILABLE!* 🚀',
+    ];
+
+    let timeHook = 'A student on campus needs their order delivered right now!';
+    let hypeKicker = 'Fatigue is temporary, cash in your wallet is forever! 💸';
 
     if (currentHourWAT >= 5 && currentHourWAT < 12) {
-      // Morning (5:00 AM - 11:59 AM)
-      timeGreetingHeader = '🌅 *MORNING BAG ALERT!* 💸 🛵';
-      motivationalHook = 'Start your morning with guaranteed cash! While others are still waking up, secure your daily bag early.';
-      hypeKicker = 'Rise, grind, and stack those delivery fees before noon! 🚀';
+      timeHook = 'Start your morning stacking delivery fees early!';
+      hypeKicker = 'Rise, grind, and secure your daily bag before noon! 🚀';
     } else if (currentHourWAT >= 12 && currentHourWAT < 17) {
-      // Afternoon (12:00 PM - 4:59 PM)
-      timeGreetingHeader = '☀️ *AFTERNOON RUSH — QUICK CASH!* ⚡ 🛵';
-      motivationalHook = 'Lunchtime rush is hot! We know you’ve been moving, but this quick drop is calling your name.';
-      hypeKicker = 'Push through the afternoon fatigue — another easy win in the bag! 🏆';
+      timeHook = 'Lunchtime rush is hot! Quick drop calling your name.';
+      hypeKicker = 'Push through — another easy win in the wallet! 🏆';
     } else if (currentHourWAT >= 17 && currentHourWAT < 22) {
-      // Evening (5:00 PM - 9:59 PM)
-      timeGreetingHeader = '🌆 *EVENING BAG UNLOCKED!* 💰 🛵';
-      motivationalHook = 'Dinner orders are flying in! Knock out this fast campus delivery before you wrap up your day.';
-      hypeKicker = 'Finish today’s shift strong and boost tonight’s total earnings! ✨';
+      timeHook = 'Dinner orders are flying in! Knock out this fast delivery.';
+      hypeKicker = 'Finish strong and boost tonight’s total earnings! ✨';
     } else {
-      // Late Night / Early Hours (10:00 PM - 4:59 AM)
-      timeGreetingHeader = '🌙 *NIGHT OWL NINJA MISSION!* 🦉 🛵';
-      motivationalHook = 'Late-night campus cravings! Fast pickup, clear roads, and zero campus foot traffic.';
-      hypeKicker = 'Easy money for the dedicated Errand Ninja on duty! 🌟';
+      timeHook = 'Late-night campus cravings! Fast pickup and clear roads.';
+      hypeKicker = 'Night owl earnings for the dedicated Ninja on duty! 🌟';
     }
 
-    const feeFormatted = (data.deliveryFee || 300).toLocaleString();
+    const idx = (data.variantIndex !== undefined ? data.variantIndex : Math.floor(Math.random() * greetings.length)) % greetings.length;
+    const header = greetings[idx];
 
-    return `${timeGreetingHeader}
-${this.DIVIDER}
-${motivationalHook}
+    return `🤖 *ERRANDERS BOT* · Errand Mission Alert
+━━━━━━━━━━━━━━━━━━━━━━
+${header}
+
+${timeHook}
 
 🏪 *Pickup Store:* ${data.storeName}
 🧾 *Order:* #${data.orderNumber}
@@ -346,7 +336,12 @@ ${motivationalHook}
 
 💡 _${hypeKicker}_
 
-⚡ *Open your Errand Ninja app now to claim this order before another Errand Ninja takes it!*`;
+👉 *Claim this order on your web dashboard:*
+https://dispatch.erranders.org/orders
+
+━━━━━━━━━━━━━━━━━━━━━━
+🤖 *Erranders Automated Bot System* · Dispatch Desk
+🌐 https://erranders.org`;
   }
 
   /**
@@ -361,9 +356,11 @@ ${motivationalHook}
     itemsCount?: number;
   }): string {
     const name = data.ninjaName || 'Ninja';
-    return `🛵 *Erranders Bot* · you have a new errand
-${this.DIVIDER}
-👋 Hi *${name}*, Erranders Bot here — you have claimed order *#${data.orderNumber}*!
+    return `🤖 *ERRANDERS BOT* · Mission Assignment Confirmed
+━━━━━━━━━━━━━━━━━━━━━━
+🛵 *YOU ARE ASSIGNED TO ORDER #${data.orderNumber}*
+
+👋 Hi *${name}*, you have claimed order *#${data.orderNumber}*!
 
 🏪 *Pickup Store:* ${data.storeName}
 📍 *Deliver To:* ${data.deliveryAddress}
@@ -371,8 +368,15 @@ ${this.DIVIDER}
 💰 *Your Earnings:* ₦${data.deliveryFee.toLocaleString()}
 
 ⚡ *Next Steps:*
-1. Head to the store to collect the package.
-2. Deliver to the customer's hostel/location.
-3. Ask the customer for their *4-digit Delivery PIN* to complete delivery.`;
+1. Head to the store counter to collect the package.
+2. Deliver directly to the customer's hostel/location.
+3. Collect the customer's *4-digit Delivery PIN* to confirm delivery.
+
+👉 *Manage order on your web app:*
+https://dispatch.erranders.org/orders
+
+━━━━━━━━━━━━━━━━━━━━━━
+🤖 *Erranders Automated Bot System* · Campus Dispatch
+🌐 https://erranders.org`;
   }
 }

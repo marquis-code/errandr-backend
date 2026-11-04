@@ -148,10 +148,10 @@ export class AppointmentsService {
     // If Direct Transfer, skip Paystack and return success with pending verification
     if (data.paymentMethod === 'direct_transfer') {
       try {
-        const vendorData = await this.vendorsService.findById(data.vendor);
+        const vendorData: any = await this.vendorsService.findById(data.vendor);
         if (vendorData) {
           const userEmail = data.userEmail || data.guestInfo?.email || 'user@erranders.org';
-          // Notify vendor
+          const studentName = data.guestInfo?.fullName || data.guestInfo?.name || 'A Student';
           const ownerEmail = (vendorData.owner as any)?.email;
           if (ownerEmail) {
             await this.emailService.sendVendorNewBooking(
@@ -159,6 +159,43 @@ export class AppointmentsService {
               appointment,
               userEmail
             );
+          }
+
+          // In-App Notification to Vendor Owner
+          const ownerId = (vendorData.owner?._id || vendorData.owner)?.toString();
+          if (ownerId) {
+            await this.notificationsService.sendNotification(ownerId, {
+              title: 'New Service Booking (Direct Transfer) 📅',
+              body: `${studentName} submitted a direct transfer booking for ${vendorData.storeName || 'your service'}. Payment pending verification.`,
+              type: 'NEW_BOOKING',
+              data: { appointmentId: appointment._id }
+            });
+          }
+
+          // WhatsApp Notification to Service Provider
+          const providerPhone = (vendorData.owner as any)?.phone || vendorData.phone;
+          if (providerPhone) {
+            const providerName = (vendorData.owner as any)?.firstName || vendorData.ownerName || '';
+            const scheduledDateStr = appointment.scheduledDate ? new Date(appointment.scheduledDate).toDateString() : 'see dashboard';
+            await this.notificationsService.sendWhatsApp(
+              providerPhone,
+              [
+                providerName ? `Hi *${providerName}*, Erranders Bot here 👋` : 'Hi there, Erranders Bot here 👋',
+                '━━━━━━━━━━━━━━━━━━━━━━',
+                `📅 *New Booking Alert (Direct Transfer)*`,
+                '',
+                `${studentName} just booked an appointment for ${vendorData.storeName || 'your business'}.`,
+                `🗓️ *When:* ${scheduledDateStr}${appointment.startTime ? ' at ' + appointment.startTime : ''}`,
+                `💰 *Total:* ₦${(appointment.price || 0).toLocaleString()}`,
+                `⏳ *Payment Status:* 🟡 Pending Admin Verification (Proof uploaded)`,
+                '',
+                '👉 *View details on your dashboard:*',
+                'https://vendor.erranders.org/dashboard/appointments',
+                '',
+                '— Erranders Bot',
+              ].join('\n'),
+              { isPriority: true }
+            ).catch(() => {});
           }
         }
       } catch (err) {

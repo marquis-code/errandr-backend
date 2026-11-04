@@ -21,6 +21,8 @@ export class AmbassadorsService {
     @InjectModel('Order') private orderModel: Model<any>,
     @InjectModel('PromoCode') private promoCodeModel: Model<any>,
     @InjectModel('PromoRedemption') private promoRedemptionModel: Model<any>,
+    @InjectModel('Vendor') private vendorModel: Model<any>,
+    @InjectModel('Appointment') private appointmentModel: Model<any>,
   ) {}
 
   /** Every ambassador, with their referrals and what those referrals spent. */
@@ -141,7 +143,77 @@ export class AmbassadorsService {
       }
     }
 
+    // A referral is only worth something if the person generates revenue, and a rider
+    // generates it by delivering rather than by ordering. Summing only orders made riders
+    // look worthless, which is misleading for a programme that recruits them.
+    let riderDeliveries = 0;
+    let riderFees = 0;
+    let vendorOrders = 0;
+    let vendorGmv = 0;
+    let bookingRevenue = 0;
+
+    if (uniqueIds.length) {
+      const objectIds = uniqueIds.map((id) => new Types.ObjectId(id));
+
+      const riderStats = await this.orderModel
+        .aggregate([
+          {
+            $match: {
+              errander: { $in: objectIds },
+              status: { $nin: ['cancelled', 'refunded'] },
+            },
+          },
+          {
+            $group: {
+              _id: null,
+              count: { $sum: 1 },
+              fees: { $sum: { $ifNull: ['$deliveryFee', 0] } },
+            },
+          },
+        ])
+        .exec();
+      riderDeliveries = riderStats[0]?.count || 0;
+      riderFees = riderStats[0]?.fees || 0;
+
+      // Vendors earn through the store they own, not through orders placed as themselves.
+      const ownedVendors = await this.vendorModel
+        .find({ owner: { $in: objectIds } })
+        .select('_id')
+        .lean()
+        .exec();
+
+      if (ownedVendors.length) {
+        const vendorIds = ownedVendors.map((v: any) => v._id);
+        const vendorStats = await this.orderModel
+          .aggregate([
+            {
+              $match: {
+                vendor: { $in: vendorIds },
+                status: { $nin: ['cancelled', 'refunded'] },
+              },
+            },
+            { $group: { _id: null, count: { $sum: 1 }, gmv: { $sum: '$total' } } },
+          ])
+          .exec();
+        vendorOrders = vendorStats[0]?.count || 0;
+        vendorGmv = vendorStats[0]?.gmv || 0;
+
+        const bookingStats = await this.appointmentModel
+          .aggregate([
+            { $match: { vendor: { $in: vendorIds }, status: { $ne: 'cancelled' } } },
+            { $group: { _id: null, total: { $sum: '$price' } } },
+          ])
+          .exec();
+        bookingRevenue = bookingStats[0]?.total || 0;
+      }
+    }
+
     return {
+      riderDeliveries,
+      riderFees,
+      vendorOrders,
+      vendorGmv,
+      bookingRevenue,
       id: String(facilitator._id),
       name: facilitator.name || 'Unnamed ambassador',
       email: facilitator.email,
