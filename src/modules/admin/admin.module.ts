@@ -20,6 +20,7 @@ import { PromoCode, PromoCodeSchema } from '../promo-codes/schemas/promo-code.sc
 import { PromoRedemption, PromoRedemptionSchema } from '../promo-codes/schemas/promo-redemption.schema';
 import { EmailModule } from '../email/email.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { ErrandersModule } from '../erranders/erranders.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
       { name: Transaction.name, schema: TransactionSchema },
     ]),
     forwardRef(() => NotificationsModule),
+    forwardRef(() => ErrandersModule),
     EmailModule,
   ],
   controllers: [AdminController, SettingsController],

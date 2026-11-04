@@ -27,6 +27,7 @@ import { BatchDeliveryService } from './batch-delivery.service';
 import { augmentVendor } from '../../utils/vendor-helpers';
 import { RewardsService } from '../rewards/rewards.service';
 import { ErrandersService } from '../erranders/erranders.service';
+import { NinjaShiftsService } from '../erranders/ninja-shifts.service';
 import { MapboxService } from '../mapbox/mapbox.service';
 import { PromoCodesService } from '../promo-codes/promo-codes.service';
 import * as bcrypt from 'bcryptjs';
@@ -67,6 +68,8 @@ export class OrdersService {
     private moduleRef: ModuleRef,
     @Inject(forwardRef(() => ErrandersService))
     private errandersService: ErrandersService,
+    @Inject(forwardRef(() => NinjaShiftsService))
+    private ninjaShiftsService: NinjaShiftsService,
     private institutionResolver: InstitutionResolver,
     private institutionsService: InstitutionsService,
   ) { }
@@ -315,6 +318,63 @@ export class OrdersService {
       const comms = await this.notificationsService.getCommunicationsSettingsCached();
       const feeDisplay = orderData.type === 'custom_errand' ? (orderData.deliveryFee || 0) : 300;
       const orderNumberStr = orderData.orderNumber || String(orderData.orderId || '').slice(-6);
+
+      // ─── Shift Timetable: Determine On-Duty Ninja(s) ───
+      let dutyStatus: any = null;
+      try {
+        dutyStatus = await this.ninjaShiftsService.getCurrentDutyRecipients();
+        if (dutyStatus?.enabled) {
+          this.logger.log(
+            `[NinjaShiftSchedule] Order #${orderNumberStr}: active=${dutyStatus.isShiftActive}, day=${dutyStatus.currentDay}, shift=${dutyStatus.currentShift?.name || 'Off-Hours'}, onDuty=${dutyStatus.onDutyNames.join(', ') || 'None'}`
+          );
+        }
+      } catch (err: any) {
+        this.logger.warn(`[NinjaShiftSchedule] Failed to resolve duty status: ${err.message}`);
+      }
+
+      // If shift schedule is enabled:
+      if (dutyStatus?.enabled) {
+        if (dutyStatus.isShiftActive && dutyStatus.onDutyNinjas?.length > 0) {
+          // Direct Bot message to the on-duty ninja(s) WhatsApp (Safe & targeted, zero ban risk)
+          if (comms?.whatsappEnabled !== false) {
+            for (const ninja of dutyStatus.onDutyNinjas) {
+              if (ninja.phone) {
+                this.logger.log(`[NinjaShiftSchedule] Alerting ON-DUTY Ninja '${ninja.name}' (${ninja.phone}) via WhatsApp for order #${orderNumberStr}`);
+                this.notificationsService.notifyNinjaNewErrand(ninja.phone, {
+                  storeName: vendorName,
+                  orderNumber: orderNumberStr,
+                  deliveryFee: feeDisplay,
+                }).catch(e => this.logger.warn(`Failed to send WhatsApp to on-duty ninja ${ninja.name}: ${e.message}`));
+              }
+            }
+          }
+
+          // Filter filteredErranders so push notifications & SMS only go to on-duty ninja(s)
+          const onDutyUserIds: string[] = dutyStatus.onDutyUserIds || [];
+          const onDutyPhones: string[] = dutyStatus.onDutyPhones || [];
+          const onDutyNames: string[] = dutyStatus.onDutyNames || [];
+
+          filteredErranders = filteredErranders.filter(e => {
+            const userObj = e.user as any;
+            if (!userObj) return false;
+            const uId = String(userObj._id || '');
+            const phone = String(userObj.phone || '').replace(/\D/g, '');
+            const fullName = `${userObj.firstName || ''} ${userObj.lastName || ''}`.toLowerCase();
+
+            const matchId = onDutyUserIds.includes(uId);
+            const matchPhone = onDutyPhones.some(p => {
+              const cleanP = p.replace(/\D/g, '');
+              return cleanP && (phone.endsWith(cleanP.slice(-8)) || cleanP.endsWith(phone.slice(-8)));
+            });
+            const matchName = onDutyNames.some(n => fullName.includes(n.toLowerCase()));
+
+            return matchId || matchPhone || matchName;
+          });
+        } else if (!dutyStatus.isShiftActive && dutyStatus.offHoursFallback === 'none') {
+          this.logger.log(`[NinjaShiftSchedule] Order #${orderNumberStr} arrived during off-hours (no shift active). Off-hours fallback is 'none'. Suppressing rider alerts.`);
+          return;
+        }
+      }
 
       // ─── Channel A: Dedicated Erranders Ninja WhatsApp Group (Zero Ban Risk) ───
       // Posting to 1 WhatsApp group alerts ALL campus riders on the web app without triggering Meta spam filters

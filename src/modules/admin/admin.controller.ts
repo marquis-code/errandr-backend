@@ -1,8 +1,10 @@
-import { Controller, Get, Put, Delete, Post, Param, Query, UseGuards, DefaultValuePipe, ParseIntPipe, Body, Res, StreamableFile } from '@nestjs/common';
+import { Controller, Get, Put, Delete, Post, Param, Query, UseGuards, DefaultValuePipe, ParseIntPipe, Body, Res, StreamableFile, Inject, forwardRef } from '@nestjs/common';
 import { Response } from 'express';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AmbassadorsService } from './ambassadors.service';
 import { AdminService } from './admin.service';
+import { NinjaShiftsService } from '../erranders/ninja-shifts.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { JwtAuthGuard, Roles, RolesGuard, PermissionsGuard, RequirePermissions } from '../../common/decorators';
 import { UserRole } from '../users/schemas/user.schema';
 
@@ -13,7 +15,13 @@ import { UserRole } from '../users/schemas/user.schema';
 @ApiBearerAuth()
 export class AdminController {
   constructor(
-    private readonly ambassadorsService: AmbassadorsService,private readonly adminService: AdminService) {}
+    private readonly ambassadorsService: AmbassadorsService,
+    private readonly adminService: AdminService,
+    @Inject(forwardRef(() => NinjaShiftsService))
+    private readonly ninjaShiftsService: NinjaShiftsService,
+    @Inject(forwardRef(() => NotificationsService))
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   @Get('stats')
   @ApiOperation({ summary: 'Get admin dashboard statistics' })
@@ -332,5 +340,88 @@ export class AdminController {
   @ApiOperation({ summary: 'Batch delete users' })
   batchDeleteUsers(@Body() body: { ids: string[] }) {
     return this.adminService.batchDeleteUsers(body.ids);
+  }
+
+  // ─── Errand Ninja Weekly Shift Schedule & Bot Dispatch ───
+  @Get('ninja-shifts')
+  @ApiOperation({ summary: 'Get Errand Ninja Weekly Shift Schedule and current duty status' })
+  async getNinjaShifts() {
+    const settings = await this.ninjaShiftsService.getScheduleSettings();
+    const dutyStatus = await this.ninjaShiftsService.getCurrentDutyStatus();
+    return {
+      settings,
+      dutyStatus,
+    };
+  }
+
+  @Put('ninja-shifts')
+  @RequirePermissions('can_edit_dispatcher')
+  @ApiOperation({ summary: 'Update Errand Ninja Weekly Shift Schedule, slots, and roster' })
+  async updateNinjaShifts(@Body() body: any) {
+    const updated = await this.ninjaShiftsService.updateScheduleSettings(body);
+    const dutyStatus = await this.ninjaShiftsService.getCurrentDutyStatus();
+    return {
+      settings: updated,
+      dutyStatus,
+    };
+  }
+
+  @Get('ninja-shifts/current')
+  @ApiOperation({ summary: 'Get currently on-duty Errand Ninja right now' })
+  async getCurrentDutyNinja() {
+    return this.ninjaShiftsService.getCurrentDutyStatus();
+  }
+
+  @Post('ninja-shifts/reset')
+  @RequirePermissions('can_edit_dispatcher')
+  @ApiOperation({ summary: 'Reset Weekly Shift Schedule to official defaults' })
+  async resetNinjaShifts() {
+    const reset = await this.ninjaShiftsService.resetToDefaultSchedule();
+    const dutyStatus = await this.ninjaShiftsService.getCurrentDutyStatus();
+    return {
+      settings: reset,
+      dutyStatus,
+    };
+  }
+
+  @Post('ninja-shifts/test-alert')
+  @RequirePermissions('can_edit_dispatcher')
+  @ApiOperation({ summary: 'Send test WhatsApp bot alert to on-duty ninja or custom recipient' })
+  async testNinjaShiftAlert(@Body() body: { phone?: string; ninjaName?: string }) {
+    const dutyStatus = await this.ninjaShiftsService.getCurrentDutyStatus();
+    const targetPhone = body.phone || dutyStatus.onDutyNinja?.phone;
+    const targetName = body.ninjaName || dutyStatus.onDutyNinja?.name || 'Errand Ninja';
+
+    if (!targetPhone) {
+      return {
+        success: false,
+        message: 'No phone number available for on-duty ninja. Please enter a WhatsApp phone number in the roster first.',
+      };
+    }
+
+    const testMessage = [
+      `🧪 *Erranders Bot · Shift Notification Test*`,
+      `━━━━━━━━━━━━━━━━━━━━━━`,
+      `Hi *${targetName}*! 👋`,
+      ``,
+      `This is a test notification confirming that the Erranders Shift Schedule is connected to your WhatsApp number.`,
+      ``,
+      `⏰ *Current Shift:* ${dutyStatus.currentShift?.name || 'Scheduled Shift'} (${dutyStatus.currentShift?.timeLabel || 'On-Duty'})`,
+      `📅 *Day:* ${dutyStatus.currentDay}`,
+      ``,
+      `When customers place new errands during your shift, Erranders Bot will dispatch order alerts directly to you here! 🛵💨`,
+      ``,
+      `— Erranders Bot`,
+    ].join('\n');
+
+    const sent = await this.notificationsService.sendWhatsApp(targetPhone, testMessage, { isPriority: true });
+    return {
+      success: sent,
+      recipient: targetPhone,
+      ninjaName: targetName,
+      message: sent
+        ? `Test WhatsApp alert dispatched to ${targetName} (${targetPhone})`
+        : `Failed to dispatch WhatsApp alert to ${targetPhone}`,
+    };
   }
 }
