@@ -262,7 +262,7 @@ export class AppointmentsService {
             });
           }
 
-          // Trigger vendor notifications (Push + Email)
+          // Trigger vendor notifications (Push + Email + WhatsApp)
           const vendorOwnerId = (appointment.vendor as any)?.owner?._id?.toString() || (appointment.vendor as any)?.owner?.toString();
           if (vendorOwnerId) {
             await this.notificationsService.sendNotification(vendorOwnerId, {
@@ -271,6 +271,40 @@ export class AppointmentsService {
               type: 'NEW_BOOKING',
               data: { appointmentId: appointment._id }
             });
+
+            // The provider's own WhatsApp, by name.
+            //
+            // Every bot message greets the person it is for: a message with your real name
+            // on it is harder to fake, and easy to tell apart from someone posing as us.
+            try {
+              const vendorDoc: any = await this.appointmentModel
+                .findById(appointment._id)
+                .populate({ path: 'vendor', populate: { path: 'owner', select: 'firstName phone' } })
+                .lean()
+                .exec();
+              const providerOwner: any = vendorDoc?.vendor?.owner;
+              const storeName = (appointment.vendor as any)?.storeName || 'your store';
+              if (providerOwner?.phone) {
+                await this.notificationsService
+                  .sendWhatsApp(
+                    providerOwner.phone,
+                    [
+                      `Hi ${providerOwner.firstName || 'there'}, Erranders Bot here 👋`,
+                      '',
+                      `${studentName} just booked you for ${storeName}.`,
+                      `When: ${appointment.scheduledDate ? new Date(appointment.scheduledDate).toDateString() : 'see your dashboard'}${appointment.startTime ? ' at ' + appointment.startTime : ''}`,
+                      '',
+                      'Open your dashboard to see the details and confirm:',
+                      'https://vendor.erranders.org/dashboard/appointments',
+                      '',
+                      '— Erranders Bot',
+                    ].join('\n'),
+                  )
+                  .catch(() => {});
+              }
+            } catch {
+              // A WhatsApp failure must never block a paid booking.
+            }
 
             const vendorEmail = (appointment.vendor as any)?.email; // Ensure vendor is populated properly if we want email.
             if (vendorEmail) {
