@@ -1,3 +1,14 @@
+export interface PayoutReceiptTemplateData {
+  recipientName: string;
+  role: string;
+  amount: number;
+  reference: string;
+  bankName?: string;
+  accountNumber?: string;
+  accountName?: string;
+  paidAt?: Date;
+}
+
 export interface OrderTemplateData {
   orderNumber: string;
   customerName?: string;
@@ -377,6 +388,51 @@ https://dispatch.erranders.org/orders
 
 ━━━━━━━━━━━━━━━━━━━━━━
 🤖 *Erranders Automated Bot System* · Campus Dispatch
+🌐 https://erranders.org`;
+  }
+
+  /**
+   * 14. Payout / Withdrawal Receipt for Vendors and Errand Ninjas
+   */
+  static payoutReceipt(data: PayoutReceiptTemplateData): string {
+    const isNinja = data.role === 'rider' || data.role === 'errander';
+    const roleTitle = isNinja ? '🛵 Errand Ninja Payout' : '🏪 Vendor Settlement';
+    const recipientTitle = isNinja ? 'Errand Ninja' : 'Vendor Partner';
+    const bank = data.bankName || 'Direct Bank Transfer';
+    const maskedAcct = data.accountNumber
+      ? (data.accountNumber.length > 4 ? `••••${data.accountNumber.slice(-4)}` : data.accountNumber)
+      : 'Registered Account';
+    const timeStr = (data.paidAt || new Date()).toLocaleString('en-NG', {
+      timeZone: 'Africa/Lagos',
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+
+    const motivationalNote = isNinja
+      ? 'Keep up the fantastic hustle! Great work completing campus runs. 🛵💨'
+      : 'Thank you for serving the campus community with quality orders! 🌟';
+
+    return `🤖 *ERRANDERS BOT* · Official Payment Receipt
+━━━━━━━━━━━━━━━━━━━━━━
+💸 *PAYOUT CONFIRMED & CREDITED!*
+
+👋 Hi *${data.recipientName}* (${recipientTitle}),
+Your withdrawal request has been approved and successfully credited to your bank account!
+
+📋 *PAYOUT RECEIPT DETAILS*
+━━━━━━━━━━━━━━━━━━━━━━
+🧾 *Reference:* #${data.reference}
+💰 *Amount Credited:* ₦${Number(data.amount).toLocaleString()}
+🏦 *Bank:* ${bank}
+💳 *Account:* ${maskedAcct}${data.accountName ? `\n👤 *Account Name:* ${data.accountName}` : ''}
+📅 *Date & Time:* ${timeStr}
+⚡ *Status:* ✅ *SUCCESSFUL / PAID*
+
+💡 _${motivationalNote}_
+
+━━━━━━━━━━━━━━━━━━━━━━
+🤖 *Erranders Automated Bot System* · Treasury Desk
+💬 For payout questions or support, reply directly to this chat.
 🌐 https://erranders.org`;
   }
 }

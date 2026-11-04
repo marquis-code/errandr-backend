@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException, Inject, forwardRef } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Inject, forwardRef, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Wallet, WalletDocument, PayoutPreference } from './schemas/wallet.schema';
@@ -17,6 +17,8 @@ const WITHDRAWAL_ALERT_PHONE = process.env.WITHDRAWAL_ALERT_PHONE || '+234814762
 
 @Injectable()
 export class WalletsService {
+  private readonly logger = new Logger(WalletsService.name);
+
   constructor(
     @InjectModel(Wallet.name) private walletModel: Model<WalletDocument>,
     @InjectModel(Transaction.name) private transactionModel: Model<TransactionDocument>,
@@ -466,6 +468,7 @@ export class WalletsService {
       transaction.description = `Withdrawal (Mock): ${transaction.reference}`;
       transaction.metadata = { ...transaction.metadata, mock: true, approvedAt: new Date().toISOString() };
       await transaction.save();
+      await this.sendPayoutReceiptWhatsApp(transaction);
       return;
     }
 
@@ -492,14 +495,27 @@ export class WalletsService {
         throw new Error((transfer as any).message || 'Transfer initiation failed via Paystack');
       }
 
-      transaction.metadata = { 
-        ...transaction.metadata, 
-        paystackReference: transaction.reference, 
-        transferCode: (transfer as any).data?.transfer_code,
-        approvedAt: new Date().toISOString()
-      };
-      // Keep it pending until webhook confirms, but update metadata
-      await transaction.save();
+      const transferData = (transfer as any)?.data;
+      if (transferData?.status === 'success') {
+        transaction.status = TransactionStatus.COMPLETED;
+        transaction.metadata = { 
+          ...transaction.metadata, 
+          paystackReference: transaction.reference, 
+          transferCode: transferData.transfer_code,
+          approvedAt: new Date().toISOString()
+        };
+        await transaction.save();
+        await this.sendPayoutReceiptWhatsApp(transaction);
+      } else {
+        transaction.metadata = { 
+          ...transaction.metadata, 
+          paystackReference: transaction.reference, 
+          transferCode: transferData?.transfer_code,
+          approvedAt: new Date().toISOString()
+        };
+        // Keep it pending until webhook confirms, but update metadata
+        await transaction.save();
+      }
     } catch (error: any) {
       // If Paystack rejects it immediately (e.g. insufficient funds in business wallet)
       transaction.status = TransactionStatus.FAILED;
@@ -554,6 +570,7 @@ export class WalletsService {
     if (owner && owner.email) {
       await this.emailService.sendPayoutSuccessful(owner.email, transaction.amount, transaction.reference || transactionId);
     }
+    await this.sendPayoutReceiptWhatsApp(transaction);
   }
 
   async rejectPayoutRequest(transactionId: string): Promise<void> {
@@ -753,7 +770,101 @@ export class WalletsService {
         if (owner && owner.email) {
           await this.emailService.sendPayoutSuccessful(owner.email, transaction.amount, transaction.reference || reference);
         }
+        await this.sendPayoutReceiptWhatsApp(transaction);
       }
+    }
+  }
+
+  /**
+   * Sends an automated WhatsApp payment receipt to the Vendor or Errand Ninja
+   * upon successful approval and settlement of their payout.
+   */
+  async sendPayoutReceiptWhatsApp(transaction: any): Promise<boolean> {
+    try {
+      if (!transaction) return false;
+      if (transaction.metadata?.whatsappReceiptSentAt) {
+        return false; // Prevent duplicate receipt messages
+      }
+
+      let wallet = transaction.wallet;
+      let owner = wallet?.owner;
+      if (!owner || typeof owner === 'string') {
+        const fullTx = await this.transactionModel.findById(transaction._id).populate({
+          path: 'wallet',
+          populate: { path: 'owner' },
+        });
+        if (fullTx) {
+          transaction = fullTx;
+          wallet = fullTx.wallet;
+          owner = (wallet as any)?.owner;
+        }
+      }
+
+      if (!owner) {
+        this.logger.warn(`Cannot send WhatsApp payout receipt for tx ${transaction._id}: owner not found`);
+        return false;
+      }
+
+      const phone = owner.phone || owner.phoneNumber || transaction.metadata?.userPhone;
+      if (!phone) {
+        this.logger.warn(`Cannot send WhatsApp payout receipt for tx ${transaction._id}: no phone number for ${owner.email}`);
+        return false;
+      }
+
+      let recipientName = transaction.metadata?.userName;
+      if (!recipientName) {
+        if (owner.role === 'vendor') {
+          const vendor = await this.vendorModel.findOne({ user: owner._id });
+          recipientName = vendor?.businessName || vendor?.storeName;
+        }
+      }
+      if (!recipientName) {
+        recipientName = `${owner.firstName || ''} ${owner.lastName || ''}`.trim() || 'Partner';
+      }
+
+      const bankName =
+        transaction.metadata?.bankName ||
+        wallet?.bankDetails?.bankName ||
+        (wallet?.bankAccounts && wallet.bankAccounts[0]?.bankName) ||
+        'Direct Bank Transfer';
+
+      const accountNumber =
+        transaction.metadata?.accountNumber ||
+        wallet?.bankDetails?.accountNumber ||
+        (wallet?.bankAccounts && wallet.bankAccounts[0]?.accountNumber);
+
+      const accountName =
+        transaction.metadata?.accountName ||
+        wallet?.bankDetails?.accountName ||
+        (wallet?.bankAccounts && wallet.bankAccounts[0]?.accountName);
+
+      const sent = await this.notificationsService.sendPayoutReceipt(phone, {
+        recipientName,
+        role: owner.role || 'partner',
+        amount: transaction.amount,
+        reference: transaction.reference || transaction._id.toString(),
+        bankName,
+        accountNumber,
+        accountName,
+        paidAt: new Date(),
+      });
+
+      if (sent) {
+        transaction.metadata = {
+          ...transaction.metadata,
+          whatsappReceiptSentAt: new Date().toISOString(),
+        };
+        await this.transactionModel.updateOne(
+          { _id: transaction._id },
+          { $set: { 'metadata.whatsappReceiptSentAt': new Date().toISOString() } },
+        );
+        this.logger.log(`WhatsApp payout receipt successfully sent to ${phone} for ${recipientName} (Ref: ${transaction.reference})`);
+      }
+
+      return sent;
+    } catch (error: any) {
+      this.logger.error(`Error sending WhatsApp payout receipt for tx ${transaction?._id}: ${error.message}`);
+      return false;
     }
   }
 

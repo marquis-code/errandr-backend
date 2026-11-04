@@ -8,7 +8,7 @@ import { Order, OrderStatus } from '../orders/schemas/order.schema';
 import { User } from '../users/schemas/user.schema';
 import { Vendor } from '../vendors/schemas/vendor.schema';
 import { SystemSetting } from '../admin/schemas/system-setting.schema';
-import { WhatsAppTemplates, OrderTemplateData } from './whatsapp-templates';
+import { WhatsAppTemplates, OrderTemplateData, PayoutReceiptTemplateData } from './whatsapp-templates';
 import * as crypto from 'crypto';
 export interface NotificationPayload {
   title: string;
@@ -867,6 +867,16 @@ export class NotificationsService {
       return await this.sendWhatsApp(phone, message);
     } catch (e: any) {
       this.logger.warn(`Failed to send order assigned WhatsApp to Ninja ${phone}: ${e.message}`);
+      return false;
+    }
+  }
+
+  async sendPayoutReceipt(phone: string, data: PayoutReceiptTemplateData): Promise<boolean> {
+    try {
+      const message = WhatsAppTemplates.payoutReceipt(data);
+      return await this.sendWhatsApp(phone, message, { isPriority: true });
+    } catch (e: any) {
+      this.logger.error(`Failed to send WhatsApp payout receipt to ${phone}: ${e.message}`);
       return false;
     }
   }
