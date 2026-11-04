@@ -82,9 +82,9 @@ export const DEFAULT_MANAGER: ManagerConfig = {
 };
 
 export const DEFAULT_NINJA_ROSTER: NinjaRosterEntry[] = [
-  { id: 'ninja_ife', name: 'Ife', phone: '+2348179495795', userId: '6a89a7a17c25d2ef0dcfbaeb', userEmail: 'ifechukwuethel@gmail.com', isActive: true, notes: 'Campus Errand Ninja' },
-  { id: 'ninja_brandy', name: 'Brandy', phone: '+2348139908262', userId: '6a84524262af2bddc4e7a9cb', userEmail: 'ajayiatilola03@gmail.com', isActive: true, notes: 'Campus Errand Ninja' },
-  { id: 'ninja_ruth', name: 'Ruth', phone: '+2348106600919', userId: '', userEmail: '', isActive: true, notes: 'Campus Errand Ninja' },
+  { id: 'ninja_ife', name: 'Ife', phone: '+2348179495795', userId: '6a89a7a17c25d2ef0dcfbaeb', userEmail: 'ifechukwuethel@gmail.com', isActive: true, notes: 'Customer Service Representative' },
+  { id: 'ninja_brandy', name: 'Brandy', phone: '+2348139908262', userId: '6a84524262af2bddc4e7a9cb', userEmail: 'ajayiatilola03@gmail.com', isActive: true, notes: 'Customer Service Representative' },
+  { id: 'ninja_ruth', name: 'Ruth', phone: '+2348106600919', userId: '', userEmail: '', isActive: true, notes: 'Customer Service Representative' },
 ];
 
 /**

@@ -386,7 +386,7 @@ export class AdminController {
 
   @Post('ninja-shifts/test-alert')
   @RequirePermissions('can_edit_dispatcher')
-  @ApiOperation({ summary: 'Send test WhatsApp bot alert to on-duty ninja or custom recipient' })
+  @ApiOperation({ summary: 'Send test WhatsApp bot alert to on-duty CSR or manager' })
   async testNinjaShiftAlert(@Body() body: { phone?: string; ninjaName?: string; target?: 'ninja' | 'manager' }) {
     const dutyStatus = await this.ninjaShiftsService.getCurrentDutyStatus();
     let targetPhone = body.phone;
@@ -397,28 +397,28 @@ export class AdminController {
       targetName = targetName || (dutyStatus as any).manager?.name || 'Kim (Operations Manager)';
     } else {
       targetPhone = targetPhone || dutyStatus.onDutyNinja?.phone;
-      targetName = targetName || dutyStatus.onDutyNinja?.name || 'Errand Ninja';
+      targetName = targetName || dutyStatus.onDutyNinja?.name || 'Customer Service Representative';
     }
 
     if (!targetPhone) {
       return {
         success: false,
-        message: 'No phone number available for on-duty ninja. Please enter a WhatsApp phone number in the roster first.',
+        message: 'No phone number available for on-duty Customer Service Rep. Please enter a WhatsApp phone number in the roster first.',
       };
     }
 
     const testMessage = [
-      `🧪 *Erranders Bot · Shift Notification Test*`,
+      `🧪 *Erranders Bot · Customer Service Notification Test*`,
       `━━━━━━━━━━━━━━━━━━━━━━`,
       `Hi *${targetName}*! 👋`,
       ``,
-      `This is a test notification confirming that Erranders Bot order notifications are linked to this WhatsApp line (${targetPhone}).`,
+      `This is a test notification confirming that Erranders Bot customer service notifications are linked to this WhatsApp line (${targetPhone}).`,
       ``,
       `⏰ *Current Shift:* ${dutyStatus.currentShift?.name || 'Scheduled Shift'} (${dutyStatus.currentShift?.timeLabel || 'On-Duty'})`,
       `📅 *Day:* ${dutyStatus.currentDay}`,
-      `🛵 *On-Duty Ninja:* ${dutyStatus.assignedNinjaName || 'None'}`,
+      `🎧 *On-Duty CSR:* ${dutyStatus.assignedNinjaName || 'None'}`,
       ``,
-      `When customers place new errands, Erranders Bot dispatches order alerts directly here! 🛵💨`,
+      `When customers place new errands, Erranders Bot dispatches order alerts directly here so you can coordinate with Errand Ninjas (dispatchers)! 🛵💨`,
       ``,
       `— Erranders Bot`,
     ].join('\n');
