@@ -192,8 +192,41 @@ export class PromoCodesService {
       .sort({ createdAt: -1 });
   }
 
+  /**
+   * Helper: generates normalized variants of a promo code
+   */
+  private getCodeVariants(rawCode: string): string[] {
+    if (!rawCode) return [];
+    const trimmed = rawCode.trim();
+    const clean = trimmed.replace(/^ERR[\s-_]*/i, '').trim();
+    const withErr = `ERR-${clean.toUpperCase()}`;
+    return Array.from(
+      new Set([
+        trimmed,
+        trimmed.toUpperCase(),
+        trimmed.toLowerCase(),
+        clean,
+        clean.toUpperCase(),
+        clean.toLowerCase(),
+        withErr,
+      ]),
+    ).filter(Boolean);
+  }
+
+  private async findPromoByCodeFlexible(code: string): Promise<PromoCode | null> {
+    if (!code || !code.trim()) return null;
+    const variants = this.getCodeVariants(code);
+    const regexList = variants.map((v) => new RegExp(`^${v}$`, 'i'));
+    return this.promoCodeModel.findOne({
+      $or: [
+        { code: { $in: variants } },
+        { code: { $in: regexList } },
+      ],
+    });
+  }
+
   async findByCode(code: string): Promise<PromoCode> {
-    const promo = await this.promoCodeModel.findOne({ code: code.trim().toUpperCase() });
+    const promo = await this.findPromoByCodeFlexible(code);
     if (!promo) {
       throw new NotFoundException('Promo code not found');
     }
@@ -321,8 +354,7 @@ export class PromoCodesService {
     if (!code || !code.trim()) {
       throw new BadRequestException('Promo code is required');
     }
-    const cleanCode = code.trim().toUpperCase();
-    const promo = await this.promoCodeModel.findOne({ code: cleanCode });
+    const promo = await this.findPromoByCodeFlexible(code);
     if (!promo) {
       throw new BadRequestException('Invalid promo code');
     }
@@ -427,7 +459,7 @@ export class PromoCodesService {
       return { found: false, promo: null, eligibility: null };
     }
     const cleanCode = code.trim().toUpperCase();
-    const promo = await this.promoCodeModel.findOne({ code: cleanCode });
+    const promo = await this.findPromoByCodeFlexible(code);
     
     if (!promo) {
       return {
@@ -598,10 +630,9 @@ export class PromoCodesService {
   }) {
     if (!data.code) return;
     const cleanCode = data.code.trim().toUpperCase();
-
-    const promo = await this.promoCodeModel.findOne({ code: cleanCode });
+    const promo = await this.findPromoByCodeFlexible(data.code);
     if (!promo) {
-      this.logger.warn(`Promo code ${cleanCode} not found for redemption recording`);
+      this.logger.warn(`Promo code ${data.code} not found for redemption recording`);
       return;
     }
 

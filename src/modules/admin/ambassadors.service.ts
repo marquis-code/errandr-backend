@@ -85,35 +85,73 @@ export class AmbassadorsService {
   }
 
   /**
+   * Helper: generates normalized variants of a referral/promo code
+   */
+  private getCodeVariants(rawCode: string): string[] {
+    if (!rawCode) return [];
+    const trimmed = rawCode.trim();
+    const clean = trimmed.replace(/^ERR[\s-_]*/i, '').trim();
+    const withErr = `ERR-${clean.toUpperCase()}`;
+    return Array.from(
+      new Set([
+        trimmed,
+        trimmed.toUpperCase(),
+        trimmed.toLowerCase(),
+        clean,
+        clean.toUpperCase(),
+        clean.toLowerCase(),
+        withErr,
+      ]),
+    ).filter(Boolean);
+  }
+
+  /**
    * Build metrics row for a Campus Ambassador (Facilitator)
    */
   private async buildFacilitatorRow(facilitator: any): Promise<any> {
     const facId = facilitator._id;
     const facCode = facilitator.referralCode || '';
+    const codeVariants = this.getCodeVariants(facCode);
+    const regexList = codeVariants.map((v) => new RegExp(`^${v}$`, 'i'));
 
-    // A. Direct Signup Referrals
+    // A. Direct Signup Referrals from referralModel
     const referralFilter: any = {
-      $or: [{ facilitatorReferrer: facId }],
+      $or: [
+        { facilitatorReferrer: facId },
+        { referralCode: { $in: codeVariants } },
+        { referralCode: { $in: regexList } },
+      ],
     };
-    if (facCode) {
-      referralFilter.$or.push({ referralCode: facCode });
-    }
     const referrals = await this.referralModel.find(referralFilter).lean().exec();
 
-    // B. Linked Promo Codes
+    // B. Direct Users in userModel who registered with this code (Safety Net Fallback)
+    const usersWithReferredBy = await this.userModel
+      .find({
+        referredBy: { $in: regexList },
+      })
+      .select('_id referredBy createdAt')
+      .lean()
+      .exec();
+
+    // C. Linked Promo Codes
     const promoFilter: any = {
-      $or: [{ referrerFacilitator: facId }],
+      $or: [
+        { referrerFacilitator: facId },
+        { code: { $in: codeVariants } },
+        { code: { $in: regexList } },
+      ],
     };
-    if (facCode) {
-      promoFilter.$or.push({ code: { $regex: `^${facCode}$`, $options: 'i' } });
-    }
     const promoCodes = await this.promoCodeModel.find(promoFilter).lean().exec();
     const promoIds = promoCodes.map((p: any) => p._id);
     const promoCodeStrings = promoCodes.map((p: any) => p.code.toUpperCase());
 
-    // C. Promo Redemptions
+    // D. Promo Redemptions
     const redemptionFilter: any = {
-      $or: [{ referrerFacilitator: facId }],
+      $or: [
+        { referrerFacilitator: facId },
+        { promoCode: { $in: codeVariants } },
+        { promoCode: { $in: regexList } },
+      ],
     };
     if (promoIds.length) {
       redemptionFilter.$or.push({ promoId: { $in: promoIds } });
@@ -123,11 +161,18 @@ export class AmbassadorsService {
     }
     const redemptions = await this.promoRedemptionModel.find(redemptionFilter).lean().exec();
 
-    // D. Extract unique referred user IDs from both Signup Referrals and Promo Code Redemptions
+    // E. Extract unique referred user IDs from both Signup Referrals, User collection, and Promo Code Redemptions
     const signupUserMap = new Map<string, string>(); // userId -> referralCode
     for (const r of referrals) {
       if (r.referred && Types.ObjectId.isValid(String(r.referred))) {
         signupUserMap.set(String(r.referred), r.referralCode || facCode);
+      }
+    }
+    // Safety net: include any user who registered with this referral code directly
+    for (const u of usersWithReferredBy) {
+      const uId = String(u._id);
+      if (!signupUserMap.has(uId)) {
+        signupUserMap.set(uId, u.referredBy || facCode);
       }
     }
 
@@ -271,30 +316,49 @@ export class AmbassadorsService {
   private async buildUserRow(user: any): Promise<any> {
     const userId = user._id;
     const userCode = user.referralCode || '';
+    const codeVariants = this.getCodeVariants(userCode);
+    const regexList = codeVariants.map((v) => new RegExp(`^${v}$`, 'i'));
 
-    // A. Direct Signup Referrals
+    // A. Direct Signup Referrals from referralModel
     const referralFilter: any = {
-      $or: [{ referrer: userId }],
+      $or: [
+        { referrer: userId },
+        ...(codeVariants.length ? [{ referralCode: { $in: codeVariants } }] : []),
+        ...(regexList.length ? [{ referralCode: { $in: regexList } }] : []),
+      ],
     };
-    if (userCode) {
-      referralFilter.$or.push({ referralCode: userCode });
-    }
     const referrals = await this.referralModel.find(referralFilter).lean().exec();
 
-    // B. Linked Promo Codes
+    // B. Direct Users in userModel who registered with this code (Safety Net Fallback)
+    const usersWithReferredBy = regexList.length
+      ? await this.userModel
+          .find({
+            referredBy: { $in: regexList },
+          })
+          .select('_id referredBy createdAt')
+          .lean()
+          .exec()
+      : [];
+
+    // C. Linked Promo Codes
     const promoFilter: any = {
-      $or: [{ referrerUser: userId }],
+      $or: [
+        { referrerUser: userId },
+        ...(codeVariants.length ? [{ code: { $in: codeVariants } }] : []),
+        ...(regexList.length ? [{ code: { $in: regexList } }] : []),
+      ],
     };
-    if (userCode) {
-      promoFilter.$or.push({ code: { $regex: `^${userCode}$`, $options: 'i' } });
-    }
     const promoCodes = await this.promoCodeModel.find(promoFilter).lean().exec();
     const promoIds = promoCodes.map((p: any) => p._id);
     const promoCodeStrings = promoCodes.map((p: any) => p.code.toUpperCase());
 
-    // C. Promo Redemptions
+    // D. Promo Redemptions
     const redemptionFilter: any = {
-      $or: [{ referrerUser: userId }],
+      $or: [
+        { referrerUser: userId },
+        ...(codeVariants.length ? [{ promoCode: { $in: codeVariants } }] : []),
+        ...(regexList.length ? [{ promoCode: { $in: regexList } }] : []),
+      ],
     };
     if (promoIds.length) {
       redemptionFilter.$or.push({ promoId: { $in: promoIds } });
@@ -304,11 +368,18 @@ export class AmbassadorsService {
     }
     const redemptions = await this.promoRedemptionModel.find(redemptionFilter).lean().exec();
 
-    // D. Extract unique referred user IDs
+    // E. Extract unique referred user IDs
     const signupUserMap = new Map<string, string>();
     for (const r of referrals) {
       if (r.referred && Types.ObjectId.isValid(String(r.referred))) {
         signupUserMap.set(String(r.referred), r.referralCode || userCode);
+      }
+    }
+    // Safety net fallback
+    for (const u of usersWithReferredBy) {
+      const uId = String(u._id);
+      if (!signupUserMap.has(uId)) {
+        signupUserMap.set(uId, u.referredBy || userCode);
       }
     }
 

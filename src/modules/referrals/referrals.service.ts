@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, Logger, BadRequestException, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Referral, ReferralStatus, ReferrerType, ReferredType } from './schemas/referral.schema';
@@ -21,7 +21,7 @@ const TIER_CONFIG = [
 const REFERRED_USER_BONUS = 100; // Points for the person who was referred
 
 @Injectable()
-export class ReferralsService {
+export class ReferralsService implements OnModuleInit {
   private readonly logger = new Logger(ReferralsService.name);
 
   constructor(
@@ -34,6 +34,35 @@ export class ReferralsService {
     @InjectModel(Errander.name) private erranderModel: Model<Errander>,
     private emailService: EmailService,
   ) {}
+
+  async onModuleInit() {
+    this.reconcileMissingReferrals().catch((e) => {
+      this.logger.error(`Failed to reconcile missing referrals on startup: ${e.message}`);
+    });
+  }
+
+  /**
+   * Helper: generates normalized variants of a referral/promo code
+   * e.g. "TESHY" -> ["TESHY", "ERR-TESHY", "teshy"]
+   * "ERR-OLAYINKA" -> ["ERR-OLAYINKA", "OLAYINKA", "err-olayinka"]
+   */
+  getCodeVariants(rawCode: string): string[] {
+    if (!rawCode) return [];
+    const trimmed = rawCode.trim();
+    const clean = trimmed.replace(/^ERR[\s-_]*/i, '').trim();
+    const withErr = `ERR-${clean.toUpperCase()}`;
+    return Array.from(
+      new Set([
+        trimmed,
+        trimmed.toUpperCase(),
+        trimmed.toLowerCase(),
+        clean,
+        clean.toUpperCase(),
+        clean.toLowerCase(),
+        withErr,
+      ]),
+    ).filter(Boolean);
+  }
 
   // ─── Core Referral Processing ─────────────────────────────────────
 
@@ -57,16 +86,30 @@ export class ReferralsService {
       return null;
     }
 
-    // 1. Check if it's a facilitator code
-    const facilitator = await this.facilitatorModel.findOne({ referralCode, isActive: true });
+    const variants = this.getCodeVariants(referralCode);
+    const regexList = variants.map((v) => new RegExp(`^${v}$`, 'i'));
+
+    // 1. Check if it's a facilitator code (resilient match)
+    const facilitator = await this.facilitatorModel.findOne({
+      $or: [
+        { referralCode: { $in: variants } },
+        { referralCode: { $in: regexList } },
+      ],
+      isActive: true,
+    });
     if (facilitator) {
-      return this.processFacilitatorReferral(facilitator, newUser, referralCode, referredType);
+      return this.processFacilitatorReferral(facilitator, newUser, facilitator.referralCode || referralCode, referredType);
     }
 
-    // 2. Check if it's a regular user code
-    const referrerUser = await this.userModel.findOne({ referralCode });
+    // 2. Check if it's a regular user code (resilient match)
+    const referrerUser = await this.userModel.findOne({
+      $or: [
+        { referralCode: { $in: variants } },
+        { referralCode: { $in: regexList } },
+      ],
+    });
     if (referrerUser) {
-      return this.processUserReferral(referrerUser, newUser, referralCode, referredType);
+      return this.processUserReferral(referrerUser, newUser, referrerUser.referralCode || referralCode, referredType);
     }
 
     this.logger.warn(`Referral code "${referralCode}" not found in users or facilitators.`);
@@ -1025,11 +1068,175 @@ export class ReferralsService {
   }
 
   private async isCodeTaken(code: string): Promise<boolean> {
+    const variants = this.getCodeVariants(code);
+    const regexList = variants.map((v) => new RegExp(`^${v}$`, 'i'));
+
     const [userWithCode, facilitatorWithCode] = await Promise.all([
-      this.userModel.findOne({ referralCode: code }),
-      this.facilitatorModel.findOne({ referralCode: code }),
+      this.userModel.findOne({
+        $or: [
+          { referralCode: { $in: variants } },
+          { referralCode: { $in: regexList } },
+        ],
+      }),
+      this.facilitatorModel.findOne({
+        $or: [
+          { referralCode: { $in: variants } },
+          { referralCode: { $in: regexList } },
+        ],
+      }),
     ]);
     return !!(userWithCode || facilitatorWithCode);
+  }
+
+  /**
+   * Reconciles all existing users in the database who registered with a referral code in referredBy
+   * but didn't have a Referral document created due to prefix or case differences.
+   */
+  async reconcileMissingReferrals() {
+    this.logger.log('Running automatic referral reconciliation for existing users...');
+    const usersWithReferredBy = await this.userModel
+      .find({
+        referredBy: { $exists: true, $nin: [null, ''] },
+      })
+      .lean()
+      .exec();
+
+    let reconciledCount = 0;
+    for (const u of usersWithReferredBy) {
+      const code = (u.referredBy || '').trim();
+      if (!code) continue;
+
+      const existing = await this.referralModel.findOne({ referred: u._id });
+      if (!existing) {
+        const variants = this.getCodeVariants(code);
+        const regexList = variants.map((v) => new RegExp(`^${v}$`, 'i'));
+
+        // Check facilitator
+        const fac = await this.facilitatorModel.findOne({
+          $or: [
+            { referralCode: { $in: variants } },
+            { referralCode: { $in: regexList } },
+          ],
+        });
+
+        if (fac) {
+          const referredType = this.mapRoleToReferredType(u.role);
+          const currentTier = this.calculateTier(fac.totalReferrals || 0);
+          await this.referralModel.create({
+            facilitatorReferrer: fac._id,
+            referred: u._id,
+            referralCode: fac.referralCode || code,
+            referrerType: ReferrerType.FACILITATOR,
+            referredType,
+            status: ReferralStatus.COMPLETED,
+            referrerPointsAwarded: 100,
+            referredPointsAwarded: REFERRED_USER_BONUS,
+            tier: currentTier,
+            createdAt: (u as any).createdAt || new Date(),
+          });
+
+          await this.facilitatorModel.findByIdAndUpdate(fac._id, {
+            $inc: { totalReferrals: 1, pointsEarned: 100 },
+          });
+          reconciledCount++;
+          this.logger.log(`Reconciled referral for user ${u.email} -> Facilitator ${fac.name} (${fac.referralCode})`);
+          continue;
+        }
+
+        // Check user
+        const refUser = await this.userModel.findOne({
+          $or: [
+            { referralCode: { $in: variants } },
+            { referralCode: { $in: regexList } },
+          ],
+        });
+
+        if (refUser && refUser._id.toString() !== u._id.toString()) {
+          const referredType = this.mapRoleToReferredType(u.role);
+          await this.referralModel.create({
+            referrer: refUser._id,
+            referred: u._id,
+            referralCode: refUser.referralCode || code,
+            referrerType: this.mapRoleToReferrerType(refUser.role),
+            referredType,
+            status: ReferralStatus.COMPLETED,
+            referrerPointsAwarded: 100,
+            referredPointsAwarded: REFERRED_USER_BONUS,
+            tier: 'starter',
+            createdAt: (u as any).createdAt || new Date(),
+          });
+
+          await this.userModel.findByIdAndUpdate(refUser._id, {
+            $inc: { referralCount: 1, points: 100 },
+          });
+          reconciledCount++;
+          this.logger.log(`Reconciled referral for user ${u.email} -> User ${refUser.email} (${refUser.referralCode})`);
+        }
+      }
+    }
+
+    if (reconciledCount > 0) {
+      this.logger.log(`Successfully reconciled ${reconciledCount} missing referral records!`);
+    }
+
+    // Ensure ambassadors like TESHY have active affiliate promo codes
+    await this.ensureAmbassadorsConfigured();
+  }
+
+  private async ensureAmbassadorsConfigured() {
+    // 1. Ensure TOWESHO DORCAS TESOMA (ERR-TESHY) has an active referral promo code
+    const teshyFac = await this.facilitatorModel.findOne({
+      $or: [
+        { referralCode: { $regex: '^ERR-?TESHY$', $options: 'i' } },
+        { email: 'toweshodocas@gmail.com' },
+      ],
+    });
+
+    if (teshyFac) {
+      const existingPromo = await this.promoCodeModel.findOne({
+        $or: [
+          { code: 'TESHY' },
+          { code: 'ERR-TESHY' },
+          { referrerFacilitator: teshyFac._id },
+        ],
+      });
+
+      if (!existingPromo) {
+        await this.promoCodeModel.create({
+          code: 'TESHY',
+          discountType: 'percentage',
+          value: 30,
+          isActive: true,
+          onlyForNewUsers: false,
+          applicableOrderTypes: ['inside_campus'],
+          appliesToDeliveryFeeOnly: true,
+          referrerFacilitator: teshyFac._id,
+          referrerType: 'facilitator',
+          isReferralPromo: true,
+          rewardPerUse: 50,
+          rewardType: 'points',
+          totalRevenueGenerated: 0,
+          totalDiscountGiven: 0,
+          totalEarnings: 0,
+        });
+        this.logger.log('Created affiliate promo code "TESHY" for facilitator TOWESHO DORCAS TESOMA');
+      }
+    }
+
+    // 2. Ensure Ogunenika Olayinka (OLAYINKA) has ERR-OLAYINKA recognized
+    const olayinkaFac = await this.facilitatorModel.findOne({
+      $or: [
+        { referralCode: { $regex: '^ERR-?OLAYINKA$', $options: 'i' } },
+        { email: 'ogunenikaolayinka74@gmail.com' },
+      ],
+    });
+
+    if (olayinkaFac && olayinkaFac.referralCode === 'OLAYINKA') {
+      await this.facilitatorModel.findByIdAndUpdate(olayinkaFac._id, {
+        referralCode: 'ERR-OLAYINKA',
+      });
+      this.logger.log('Updated Ogunenika Olayinka referral code to ERR-OLAYINKA');
+    }
   }
 
   private mapRoleToReferrerType(role: UserRole | string): ReferrerType {
