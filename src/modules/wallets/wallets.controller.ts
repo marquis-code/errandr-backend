@@ -2,7 +2,6 @@ import { Controller, Get, Post, Put, Body, UseGuards, Param, Res, StreamableFile
 import { Response } from 'express';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { WalletsService } from './wallets.service';
-import { WalletsCronService } from './wallets.cron';
 import { JwtAuthGuard, CurrentUser, Roles, RolesGuard, PermissionsGuard, RequirePermissions } from '../../common/decorators';
 import { User, UserRole } from '../users/schemas/user.schema';
 import { UpdatePreferencesDto } from './dto/update-preferences.dto';
@@ -13,10 +12,7 @@ import { FundWalletDto } from './dto/fund-wallet.dto';
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class WalletsController {
-  constructor(
-    private readonly walletsService: WalletsService,
-    private readonly walletsCronService: WalletsCronService,
-  ) {}
+  constructor(private readonly walletsService: WalletsService) {}
 
   @Get('mine')
   @ApiOperation({ summary: 'Get my wallet balance and details' })
@@ -134,13 +130,6 @@ export class WalletsController {
   async markPayoutAsPaid(@Param('id') id: string) {
     await this.walletsService.markPayoutAsPaid(id);
     return { success: true, message: 'Payout marked as completed manually' };
-  }
-
-  @Post('admin/trigger-midnight-payout')
-  @ApiOperation({ summary: 'Manually trigger midnight payout batch & receipts (Admin)' })
-  async triggerMidnightPayoutManually() {
-    await this.walletsCronService.processMidnightPayouts();
-    return { success: true, message: 'Midnight payout batch triggered successfully' };
   }
 
   @Get('transactions/:id/receipt')
