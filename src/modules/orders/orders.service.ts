@@ -400,7 +400,7 @@ export class OrdersService {
             this.notificationsService.sendSMS(userObj.phone, `🚨 NEW ERRAND AVAILABLE! An order from ${vendorName} needs an Errand Ninja right now! ₦${feeDisplay} fee`)
               .catch(e => this.logger.error(`SMS failed: ${e.message}`));
 
-            // Direct WhatsApp when there is no group, or to a busy Pro who should not have to
+            // Direct WhatsApp when there is no group, or to a busy tier 3 rider who should not have to
             // watch the group.
             //
             // With a group configured this used to skip DMs entirely. That is fine for riders
@@ -447,22 +447,20 @@ export class OrdersService {
    * the other to available riders only — so a rider could fall through both.
    */
   private notifiableErranderFilter(): Record<string, any> {
-    // Everyone who is online, whatever their tier.
+    // Tier 3 riders, plus anyone currently on a delivery.
     //
-    // Restricting this to tier 3 plus busy riders meant a verified-but-new rider sat online
-    // and heard nothing, which reads as the platform being broken. Being available is the
-    // signal that matters: they have said they will take work.
+    // Tier 2 cannot take orders yet, so telling them about one is noise they cannot act on —
+    // and it trains them to ignore the bot before they are even able to use it. Busy is the
+    // exception: a rider mid-delivery is proven and is picking up the next job.
+    //
+    // Offline is excluded on both sides. A tier 3 rider who has stepped away cannot act
+    // either, and messaging them was how the audience reached almost the whole roster.
+    const online = [ErranderStatus.AVAILABLE, ErranderStatus.BUSY, 'available', 'busy', 'Available', 'Busy'];
     return {
-      status: {
-        $in: [
-          ErranderStatus.AVAILABLE,
-          ErranderStatus.BUSY,
-          'available',
-          'busy',
-          'Available',
-          'Busy',
-        ],
-      },
+      $or: [
+        { verificationLevel: 3, status: { $in: online } },
+        { status: { $in: [ErranderStatus.BUSY, 'busy', 'Busy'] } },
+      ],
     };
   }
 
