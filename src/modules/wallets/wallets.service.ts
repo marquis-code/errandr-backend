@@ -429,18 +429,7 @@ export class WalletsService {
       try {
         await this.approvePayoutRequest(transaction._id.toString());
       } catch (error: any) {
-        // Rollback if instant payout fails
-        wallet.balance += amount;
-        await wallet.save();
-        await this.userModel.findByIdAndUpdate(userId, { $inc: { walletBalance: amount } });
-        transaction.status = TransactionStatus.FAILED;
-        transaction.description = `Instant withdrawal failed: ${error.message}`;
-        await transaction.save();
-
-        if (userEmail) {
-          await this.emailService.sendPayoutFailed(userEmail, amount, error.message || 'Processing failed').catch(e => console.warn(`Failed to send payout failed email: ${e.message}`));
-        }
-
+        // approvePayoutRequest already handles the single wallet balance refund, status update, and notification
         throw error;
       }
     }
