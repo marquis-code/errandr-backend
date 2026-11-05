@@ -5057,6 +5057,46 @@ export class OrdersService {
       throw new BadRequestException('Only custom errands support vendor disbursement');
     }
 
+    // Fallback mode: the customer pays the vendor, not Erranders.
+    //
+    // When the Paystack balance cannot cover a custom errand, the platform cannot front the
+    // goods. In that mode the rider still captures the vendor's account at the counter, but
+    // the transfer is made by the customer and the rider's job is to confirm the vendor was
+    // paid before handing anything over. Erranders keeps only its fee, so it needs almost no
+    // float.
+    const paymentSettings = await this.settingModel.findOne({ key: 'custom_errand' }).lean().exec();
+    const customErrandPaymentMode = (paymentSettings as any)?.value?.customErrandPaymentMode || 'platform_pays_vendor';
+
+    if (customErrandPaymentMode === 'customer_pays_vendor') {
+      const resolvedName = vendorBankDetails?.accountName || '';
+      (order as any).vendorPaymentMode = 'customer_pays_vendor';
+      (order as any).pendingVendorPayment = {
+        accountNumber: vendorBankDetails?.accountNumber,
+        bankCode: vendorBankDetails?.bankCode,
+        bankName: vendorBankDetails?.bankName,
+        accountName: resolvedName,
+        amount: Number(amount) || 0,
+        requestedAt: new Date(),
+        requestedBy: erranderId,
+      };
+      await order.save();
+
+      // Tell the customer exactly who to pay, so the rider is not stranded at the counter.
+      const customerId = (order.customer as any)?._id?.toString() || order.customer?.toString();
+      if (customerId) {
+        await this.notificationsService
+          .sendNotification(customerId, {
+            title: 'Pay the vendor to continue',
+            body: `Transfer ₦${(Number(amount) || 0).toLocaleString()} to ${resolvedName || 'the vendor'} (${vendorBankDetails?.bankName || ''} ${vendorBankDetails?.accountNumber || ''}) for order #${order.orderNumber}. Your rider is waiting at the counter.`,
+            type: 'VENDOR_PAYMENT_REQUEST',
+            data: { orderId: order._id.toString() },
+          })
+          .catch(() => {});
+      }
+
+      return order;
+    }
+
     // Validation: must be the assigned errander
     const orderErranderId = (order.errander as any)?._id ? (order.errander as any)._id.toString() : order.errander?.toString();
     if (!orderErranderId || orderErranderId !== erranderId.toString()) {

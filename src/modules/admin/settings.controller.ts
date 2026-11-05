@@ -44,6 +44,7 @@ export class SettingsController {
           minCampusEnvironsFee: 350,
           minCustomErrandFee: 300,
           enableTransferFee: false,
+          customErrandPaymentMode: 'platform_pays_vendor',
           interceptionEnabled: true,
           interceptionFirstErranderPercentage: 60,
           interceptionSecondErranderPercentage: 40,
@@ -128,6 +129,7 @@ export class SettingsController {
     minCampusEnvironsFee?: number;
     minCustomErrandFee?: number;
     enableTransferFee?: boolean;
+    customErrandPaymentMode?: 'platform_pays_vendor' | 'customer_pays_vendor';
     interceptionEnabled?: boolean;
     interceptionFirstErranderPercentage?: number;
     interceptionSecondErranderPercentage?: number;
@@ -183,6 +185,8 @@ export class SettingsController {
       minCustomErrandFee: Number(body.minCustomErrandFee ?? 400),
       customErrandSafetyBufferPercentage: Number(body.customErrandSafetyBufferPercentage ?? 0),
       enableTransferFee: Boolean(body.enableTransferFee),
+      customErrandPaymentMode:
+        body.customErrandPaymentMode === 'customer_pays_vendor' ? 'customer_pays_vendor' : 'platform_pays_vendor',
       interceptionEnabled: body.interceptionEnabled ?? (setting.value?.interceptionEnabled !== false),
       interceptionFirstErranderPercentage: firstPct,
       interceptionSecondErranderPercentage: secondPct,
