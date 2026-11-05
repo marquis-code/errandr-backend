@@ -775,17 +775,23 @@ export class NotificationsService {
 
       const message = WhatsAppTemplates.customerServiceNewOrder(templateData);
 
-      // Check if a dedicated WhatsApp group JID is configured for CS desk
+      // The group raises everyone's awareness; the on-duty agent is the one who has to act.
+      //
+      // This used to return after posting to the group, so the person actually on shift got
+      // nothing — the group saw the order and everyone assumed someone else had it.
       if (comms?.whatsappSupportGroupJid) {
         this.logger.log(`Notifying CS Desk via WhatsApp Group ${comms.whatsappSupportGroupJid} for order #${order.orderNumber}`);
         await this.sendWhatsApp(comms.whatsappSupportGroupJid, message);
-        return;
       }
 
       const supportPhones = this.getSupportPhones();
       const mode = comms?.whatsappSupportRecipientMode || 'single';
 
-      if (mode === 'single' && supportPhones.length > 0) {
+      if (!supportPhones.length) {
+        return;
+      }
+
+      if (mode === 'single') {
         this.logger.log(`Notifying primary CS agent ${supportPhones[0]} via WhatsApp for order #${order.orderNumber}`);
         await this.sendWhatsApp(supportPhones[0], message);
       } else {
