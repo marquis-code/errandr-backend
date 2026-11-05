@@ -525,7 +525,8 @@ export class OrdersService {
       isNegotiating: data.isNegotiating !== false,
     };
 
-    return this.create(adminUser._id.toString(), payload);
+    // Barter is the one legitimate unpaid path: the platform settles it separately.
+    return this.create(adminUser._id.toString(), payload, undefined, { trustedUnpaid: true });
   }
 
 
@@ -603,7 +604,17 @@ export class OrdersService {
     return this.create(customerId, payload);
   }
 
-  async create(customerId: string, data: any, req?: any): Promise<Order> {
+  async create(
+    customerId: string,
+    data: any,
+    req?: any,
+    /** Set only by server-side callers. Never derived from the request body. */
+    internal?: { trustedUnpaid?: boolean },
+  ): Promise<Order> {
+    // 'cash' used to be trusted straight from the request body, so any caller could post
+    // paymentMethod: 'cash' and be marked paid and confirmed without paying a naira.
+    const trustedUnpaid = internal?.trustedUnpaid === true;
+
     if (data.type === 'custom_errand') {
       const runnerFee = Number(data.runnerFee);
 
@@ -765,7 +776,7 @@ export class OrdersService {
       }
 
       // Broadcast immediately if negotiating or paid
-      if (paymentVerified || data.paymentMethod === 'cash' || order.status === OrderStatus.NEGOTIATING) {
+      if (paymentVerified || trustedUnpaid || order.status === OrderStatus.NEGOTIATING) {
         // Detached on purpose: the customer should not wait for WhatsApp.
         this.broadcastNewOrderToErranders(order).catch((e) =>
           this.logger.error(`Errand broadcast failed for ${order.orderNumber}: ${e?.message || e}`),
@@ -1289,24 +1300,24 @@ export class OrdersService {
       deliveryAddress: data.deliveryAddress || data.specificAddress || '',
       deliveryLocation: data.deliveryLocation,
       deliveryNotes: data.deliveryNotes,
-      paymentStatus: (paymentVerified || data.paymentMethod === 'cash') ? PaymentStatus.PAID : PaymentStatus.PENDING,
+      paymentStatus: (paymentVerified || trustedUnpaid) ? PaymentStatus.PAID : PaymentStatus.PENDING,
       paymentReference: data.paymentReference,
       locationType: data.locationType || LocationType.INSIDE_CAMPUS,
       proposedDeliveryFee: (data.locationType === LocationType.OUTSIDE_CAMPUS || data.locationType === LocationType.CAMPUS_ENVIRONS) ? Number(data.proposedDeliveryFee) : undefined,
       status: (data.locationType === LocationType.OUTSIDE_CAMPUS || data.locationType === LocationType.CAMPUS_ENVIRONS)
         ? OrderStatus.NEGOTIATING
-        : (paymentVerified || data.paymentMethod === 'cash')
+        : (paymentVerified || trustedUnpaid)
           ? (data.isPreOrder ? OrderStatus.SCHEDULED : OrderStatus.CONFIRMED)
           : OrderStatus.PENDING,
       statusHistory: [
         {
           status: (data.locationType === LocationType.OUTSIDE_CAMPUS || data.locationType === LocationType.CAMPUS_ENVIRONS)
             ? OrderStatus.NEGOTIATING
-            : (paymentVerified || data.paymentMethod === 'cash')
+            : (paymentVerified || trustedUnpaid)
               ? (data.isPreOrder ? OrderStatus.SCHEDULED : OrderStatus.CONFIRMED)
               : OrderStatus.PENDING,
           timestamp: new Date(),
-          note: (data.locationType === LocationType.OUTSIDE_CAMPUS || data.locationType === LocationType.CAMPUS_ENVIRONS) ? 'Negotiating with riders' : (paymentVerified || data.paymentMethod === 'cash')
+          note: (data.locationType === LocationType.OUTSIDE_CAMPUS || data.locationType === LocationType.CAMPUS_ENVIRONS) ? 'Negotiating with riders' : (paymentVerified || trustedUnpaid)
             ? (data.isPreOrder ? 'Order scheduled for a later time' : 'Order placed and payment confirmed')
             : 'Order placed, awaiting payment'
         },
@@ -1750,8 +1761,21 @@ export class OrdersService {
     const isNegotiating = targetOrder.status === OrderStatus.NEGOTIATING;
     const isCustomErrandPending = isCustomErrand && targetOrder.status === OrderStatus.PENDING;
 
-    const newStatus = targetOrder.status === OrderStatus.PENDING ? OrderStatus.CONFIRMED :
-      (isNegotiating ? (targetOrder.paymentStatus === PaymentStatus.PAID ? OrderStatus.CONFIRMED : OrderStatus.AWAITING_PAYMENT) : targetOrder.status);
+    // Accepting an order does not pay for it.
+    //
+    // This used to promote any PENDING order straight to CONFIRMED, whatever its payment
+    // status. Custom errands are listed while still unpaid, so a rider could accept one, be
+    // told to collect, and deliver goods nobody had paid for — ten such errands had gone out
+    // unpaid before this was caught. An unpaid order now waits at AWAITING_PAYMENT, which is
+    // the same state a negotiating order already used.
+    const isPaid = targetOrder.paymentStatus === PaymentStatus.PAID;
+    const newStatus = !isPaid
+      ? OrderStatus.AWAITING_PAYMENT
+      : targetOrder.status === OrderStatus.PENDING
+        ? OrderStatus.CONFIRMED
+        : isNegotiating
+          ? OrderStatus.CONFIRMED
+          : targetOrder.status;
 
     const updateSet: any = {
       errander: new Types.ObjectId(erranderId),
