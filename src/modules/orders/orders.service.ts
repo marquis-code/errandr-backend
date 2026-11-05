@@ -766,7 +766,10 @@ export class OrdersService {
 
       // Broadcast immediately if negotiating or paid
       if (paymentVerified || data.paymentMethod === 'cash' || order.status === OrderStatus.NEGOTIATING) {
-        await this.broadcastNewOrderToErranders(order);
+        // Detached on purpose: the customer should not wait for WhatsApp.
+        this.broadcastNewOrderToErranders(order).catch((e) =>
+          this.logger.error(`Errand broadcast failed for ${order.orderNumber}: ${e?.message || e}`),
+        );
       }
 
       return order.populate('customer', 'firstName lastName phone avatar');
