@@ -303,7 +303,7 @@ export class OrdersService {
     await this.notificationsService.broadcastNewOrder(orderData);
     this.logger.log(`Broadcasted order ${populated.orderNumber} to all erranders via Redis`);
 
-    // Notify Pro riders (tier 3) and riders who are busy, and nobody else.
+    // Every rider who is online — available or busy, any tier.
     try {
       const busyErranders = await this.erranderModel
         .find(this.notifiableErranderFilter())
@@ -400,8 +400,19 @@ export class OrdersService {
             this.notificationsService.sendSMS(userObj.phone, `🚨 NEW ERRAND AVAILABLE! An order from ${vendorName} needs an Errand Ninja right now! ₦${feeDisplay} fee`)
               .catch(e => this.logger.error(`SMS failed: ${e.message}`));
 
-            // If no group JID and direct broadcast is enabled, send paced DMs with spintax & cooldown
-            if (!comms?.whatsappNinjaGroupJid && comms?.whatsappNinjaBroadcastEnabled === true && directWaDispatched < maxDirectWa) {
+            // Direct WhatsApp when there is no group, or to a busy Pro who should not have to
+            // watch the group.
+            //
+            // With a group configured this used to skip DMs entirely. That is fine for riders
+            // sitting idle, who will see the group post — but a busy Pro is mid-delivery, is the
+            // one most likely to take the next job, and is exactly the person least likely to be
+            // reading a group chat. They get their own message as well.
+            const isBusyPro =
+              Number((e as any).verificationLevel) === 3 &&
+              String((e as any).status || '').toLowerCase() === 'busy';
+            const needsDirectDm = !comms?.whatsappNinjaGroupJid || isBusyPro;
+
+            if (needsDirectDm && comms?.whatsappNinjaBroadcastEnabled === true && directWaDispatched < maxDirectWa) {
               const cooldownKey = `notif:ninja_cooldown:${userObj.phone}`;
               const onCooldown = await (this.notificationsService as any).redisService.get(cooldownKey);
               if (!onCooldown) {
