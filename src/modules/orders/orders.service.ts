@@ -38,6 +38,9 @@ import { NegotiationGateway } from './gateways/negotiation.gateway';
 import { InstitutionResolver } from '../institutions/institution-resolver.service';
 import { InstitutionsService } from '../institutions/institutions.service';
 
+/** The founding campus, used when an order has no campus to inherit. */
+const DEFAULT_INSTITUTION_ID = new Types.ObjectId('6ad26b70fda36e944287748c');
+
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
@@ -103,7 +106,13 @@ export class OrdersService {
     const vendorInstitution = this.toObjectId(vendor?.institution);
     if (vendorInstitution) return vendorInstitution;
 
-    return undefined;
+    // Neither the customer nor the vendor belongs to a campus.
+    //
+    // Leaving it unset produced orders that belonged to nobody: an errand raised by a student
+    // with no campus on their record took whichever campus the app had selected, and the board
+    // then hid it from every rider who could actually have taken it. CMUL is the founding
+    // campus and the default until the customer picks their own.
+    return DEFAULT_INSTITUTION_ID;
   }
 
   /** Accepts an ObjectId or a populated document, returns an ObjectId or undefined. */
