@@ -2333,7 +2333,12 @@ export class OrdersService {
         {
           $or: [
             { institution },
-            { institution: { $in: [null, undefined] }, type: OrderType.CUSTOM_ERRAND },
+            // A custom errand is a one-off request, not a storefront: the customer picks a
+            // location by hand and a rider decides whether the trip is worth it. Scoping them
+            // to one campus meant a request raised in a hall two campuses away sat invisible
+            // to every rider, while the admin — who sees across campuses — reported it as
+            // missing from the board.
+            { type: OrderType.CUSTOM_ERRAND },
             { isBarter: true },
             { 'customDetails.description': { $regex: /Barter/i } },
           ],
