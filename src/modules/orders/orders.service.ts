@@ -428,19 +428,30 @@ export class OrdersService {
   /**
    * Who should be told about a new errand.
    *
-   * Tier 3 is a Pro rider, fully verified. Busy means they are already on a delivery but
-   * still want to see what is coming. Offline riders and tier 1-2 riders are not notified.
+   * Online is the only test: available riders have said they will take work, and busy riders
+   * are mid-delivery but want to see what is next. Offline riders are left alone.
    *
-   * The two broadcast paths used to disagree — one pushed to busy riders only, the other to
-   * available riders only — so a verified Pro who was online during one path and idle
-   * during the other fell through both and never heard anything.
+   * Tier used to be part of this, which meant a verified but new rider could sit online and
+   * hear nothing. The two broadcast paths also disagreed — one pushed to busy riders only,
+   * the other to available riders only — so a rider could fall through both.
    */
   private notifiableErranderFilter(): Record<string, any> {
+    // Everyone who is online, whatever their tier.
+    //
+    // Restricting this to tier 3 plus busy riders meant a verified-but-new rider sat online
+    // and heard nothing, which reads as the platform being broken. Being available is the
+    // signal that matters: they have said they will take work.
     return {
-      $or: [
-        { verificationLevel: 3 },
-        { status: { $in: [ErranderStatus.BUSY, 'busy', 'Busy'] } },
-      ],
+      status: {
+        $in: [
+          ErranderStatus.AVAILABLE,
+          ErranderStatus.BUSY,
+          'available',
+          'busy',
+          'Available',
+          'Busy',
+        ],
+      },
     };
   }
 
