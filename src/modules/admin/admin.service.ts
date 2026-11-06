@@ -1047,8 +1047,31 @@ export class AdminService {
       });
     }
 
+    // Counts and value across every group, not just the page — otherwise the stat cards change
+    // as you paginate, which reads as the data changing.
+    const summaryRows = await (this as any).groupOrderModel
+      .aggregate([
+        {
+          $project: {
+            status: 1,
+            value: { $sum: { $ifNull: ['$participants.total', []] } },
+          },
+        },
+        { $group: { _id: '$status', count: { $sum: 1 }, value: { $sum: '$value' } } },
+      ])
+      .exec();
+
+    const summary: any = { total: 0, open: 0, locked: 0, completed: 0, cancelled: 0, value: 0 };
+    for (const row of summaryRows || []) {
+      const key = String(row._id || '').toLowerCase();
+      if (key in summary) summary[key] = row.count;
+      summary.total += row.count;
+      summary.value += row.value || 0;
+    }
+
     return {
       total,
+      summary,
       page: Number(page),
       groups: groups.map((g: any) => ({
         id: String(g._id),
