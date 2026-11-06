@@ -6,6 +6,7 @@ import { GroupOrdersGateway } from './group-orders.gateway';
 import { GroupOrder, GroupOrderSchema } from './schemas/group-order.schema';
 import { OrdersModule } from '../orders/orders.module';
 import { WalletsModule } from '../wallets/wallets.module';
+import { PaymentsModule } from '../payments/payments.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { WalletsModule } from '../wallets/wallets.module';
     ]),
     forwardRef(() => OrdersModule),
     forwardRef(() => WalletsModule),
+    forwardRef(() => PaymentsModule),
   ],
   controllers: [GroupOrdersController],
   providers: [GroupOrdersService, GroupOrdersGateway],

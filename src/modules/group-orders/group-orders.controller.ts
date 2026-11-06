@@ -120,10 +120,11 @@ export class GroupOrdersController {
     @Param('code') code: string,
     @Body('guestId') guestId?: string,
     @Body('paymentReference') paymentReference?: string,
+    @Body('deliveryDetails') deliveryDetails?: any,
   ) {
     const userId = user ? (user._id as unknown as string) : guestId;
     if (!userId) throw new BadRequestException('User ID is required');
-    return this.groupOrdersService.checkout(userId, code, paymentReference, guestId);
+    return this.groupOrdersService.checkout(userId, code, paymentReference, guestId, deliveryDetails);
   }
 
   @Delete(':code')

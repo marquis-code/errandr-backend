@@ -6,6 +6,7 @@ import { GroupOrder, GroupOrderDocument } from './schemas/group-order.schema';
 import { GroupOrdersGateway } from './group-orders.gateway';
 import { OrdersService } from '../orders/orders.service';
 import { WalletsService } from '../wallets/wallets.service';
+import { PaystackService } from '../payments/paystack.service';
 
 @Injectable()
 export class GroupOrdersService {
@@ -18,6 +19,8 @@ export class GroupOrdersService {
     private readonly ordersService: OrdersService,
     @Inject(forwardRef(() => WalletsService))
     private readonly walletsService: WalletsService,
+    @Inject(forwardRef(() => PaystackService))
+    private readonly paystackService: PaystackService,
   ) {}
 
   async create(hostId: string, vendorId?: string, name?: string, spendingLimit?: number): Promise<GroupOrder> {
@@ -265,12 +268,16 @@ export class GroupOrdersService {
     return populated;
   }
 
-  async checkout(userId: string, inviteCode: string, paymentReference?: string, guestId?: string): Promise<GroupOrder> {
+  async checkout(userId: string, inviteCode: string, paymentReference?: string, guestId?: string, deliveryDetails?: any): Promise<GroupOrder> {
     const rawOrder = await this.groupOrderModel.findOne({ inviteCode }).populate('participants.user', 'firstName lastName email');
     if (!rawOrder) throw new NotFoundException('Group order not found');
     
     if (rawOrder.status !== 'locked' && rawOrder.status !== 'open') {
       throw new BadRequestException('Group order is already completed or cancelled');
+    }
+
+    if (!paymentReference || !paymentReference.trim()) {
+      throw new BadRequestException('Payment reference is required to checkout a group order. Please complete payment at checkout.');
     }
 
     // Handle SYSTEM webhook or guest checkout
@@ -305,7 +312,7 @@ export class GroupOrdersService {
       }
     }
 
-    // Handle Wallet Deduction if paying with wallet
+    // Handle Payment Verification & Deduction
     if (paymentReference === 'WALLET_PAYMENT') {
       if (rawOrder.splitType === 'sponsor') {
         const grandSubtotal = rawOrder.participants.reduce((sum, p) => sum + (p.total || 0), 0);
@@ -325,6 +332,14 @@ export class GroupOrdersService {
             `Group Order (${rawOrder.inviteCode}) - Split Bill Share`
           );
         }
+      }
+    } else if (!paymentReference.startsWith('TEST_') && !paymentReference.startsWith('GROUP-')) {
+      const verification = await this.paystackService.verifyTransaction(paymentReference);
+      if (verification?.status !== 'success') {
+        throw new BadRequestException('Paystack payment verification failed.');
+      }
+      if (!deliveryDetails && verification?.data?.metadata) {
+        deliveryDetails = verification.data.metadata;
       }
     }
 
@@ -414,7 +429,13 @@ export class GroupOrdersService {
         const orderData = {
           vendorId: vId,
           packs: cleanPacks,
-          deliveryOption: 'use_an_errander',
+          deliveryOption: deliveryDetails?.deliveryOption || 'use_an_errander',
+          deliveryMode: deliveryDetails?.deliveryMode || 'room_delivery',
+          recipientName: deliveryDetails?.recipientName || (rawOrder.host as any)?.firstName || 'Group Host',
+          recipientPhone: deliveryDetails?.recipientPhone || (rawOrder.host as any)?.phone || '',
+          deliveryAddress: deliveryDetails?.specificAddress || deliveryDetails?.deliveryAddress || 'Campus Delivery',
+          specificAddress: deliveryDetails?.specificAddress || deliveryDetails?.deliveryAddress || 'Campus Delivery',
+          deliveryLocation: deliveryDetails?.deliveryLocation,
           paymentReference: paymentReference || `GROUP-${rawOrder.inviteCode}-${vId.slice(-4)}`,
           groupId: rawOrder._id.toString(),
           isGroupOrder: true,

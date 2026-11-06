@@ -3044,14 +3044,33 @@ export class OrdersService {
     const order = await this.orderModel.findById(orderId);
     if (!order) throw new NotFoundException('Order not found');
 
-    const allowedStatuses = [
-      OrderStatus.PENDING,
-      OrderStatus.AWAITING_PAYMENT,
-      OrderStatus.NEGOTIATING,
-      OrderStatus.SCHEDULED
+    const user = await this.userModel.findById(userId);
+    const isAdmin = Boolean(user && ((user.role as string) === 'admin' || (user.role as string) === 'super_admin' || (user as any).isAdmin));
+
+    const nonCancellableStatuses = [
+      OrderStatus.PICKED_UP,
+      OrderStatus.IN_TRANSIT,
+      OrderStatus.DELIVERED,
+      OrderStatus.CANCELLED,
+      OrderStatus.REFUNDED,
     ];
-    if (!allowedStatuses.includes(order.status)) {
-      throw new BadRequestException('Order cannot be cancelled at this stage. It has already been accepted.');
+
+    if (nonCancellableStatuses.includes(order.status)) {
+      throw new BadRequestException(`Order cannot be cancelled at this stage (${order.status}). It has already been picked up or completed.`);
+    }
+
+    if (!isAdmin) {
+      // For customers: allow cancellation before delivery has started
+      const customerAllowedStatuses = [
+        OrderStatus.PENDING,
+        OrderStatus.AWAITING_PAYMENT,
+        OrderStatus.NEGOTIATING,
+        OrderStatus.SCHEDULED,
+        OrderStatus.CONFIRMED,
+      ];
+      if (!customerAllowedStatuses.includes(order.status)) {
+        throw new BadRequestException('Order cannot be cancelled at this stage. It is already being fulfilled.');
+      }
     }
 
     order.status = OrderStatus.CANCELLED;
