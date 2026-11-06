@@ -978,7 +978,7 @@ export class AdminService {
         .skip(skip)
         .limit(limit)
         .populate('host', 'firstName lastName email phone')
-        .populate('participants.user', 'firstName lastName email')
+        .populate('participants.user', 'firstName lastName email phone')
         .lean()
         .exec(),
       (this as any).groupOrderModel.countDocuments({}),
@@ -988,7 +988,7 @@ export class AdminService {
 
     const orders = await this.orderModel
       .find({ groupId: { $in: groups.map((g: any) => String(g._id)) } })
-      .select('orderNumber vendor total status paymentStatus groupId isGroupOrder')
+      .select('orderNumber vendor total status paymentStatus groupId isGroupOrder createdAt deliveryFee serviceFee')
       .populate('vendor', 'storeName')
       .lean()
       .exec();
@@ -1001,8 +1001,11 @@ export class AdminService {
         orderNumber: o.orderNumber,
         store: (o.vendor as any)?.storeName || 'Store',
         total: o.total,
+        deliveryFee: o.deliveryFee || 0,
+        serviceFee: o.serviceFee || 0,
         status: o.status,
         paymentStatus: o.paymentStatus,
+        createdAt: o.createdAt,
       });
     }
 
@@ -1019,12 +1022,23 @@ export class AdminService {
         host: g.host
           ? `${g.host.firstName || ''} ${g.host.lastName || ''}`.trim()
           : 'Unknown host',
+        hostPhone: g.host?.phone || '',
+        hostEmail: g.host?.email || '',
         participants: (g.participants || []).map((pt: any) => ({
           name: pt.user
             ? `${pt.user.firstName || ''} ${pt.user.lastName || ''}`.trim()
             : pt.guestName || 'Guest',
           email: pt.user?.email || '',
+          // Needed to actually reach someone about their part of the order.
+          phone: pt.user?.phone || pt.guestPhone || '',
           items: (pt.items || []).length,
+          itemList: (pt.items || []).map((it: any) => ({
+            name: it.name,
+            quantity: it.quantity,
+            price: it.price,
+            subtotal: it.subtotal ?? (it.price || 0) * (it.quantity || 0),
+            vendorName: it.vendorName || '',
+          })),
           total: pt.total || 0,
           isReady: !!pt.isReady,
         })),
