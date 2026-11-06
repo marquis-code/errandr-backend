@@ -962,6 +962,44 @@ export class AdminService {
   }
 
   /**
+   * Admin control over a group.
+   *
+   * A group can be left open forever by a student who wandered off, or locked while its
+   * participants are still adding, and only an operator can put it right.
+   */
+  async setGroupStatus(groupId: string, status: 'open' | 'locked' | 'cancelled') {
+    const group = await (this as any).groupOrderModel.findById(groupId).exec();
+    if (!group) throw new NotFoundException('Group order not found');
+
+    const previous = group.status;
+    group.status = status;
+    await group.save();
+
+    return { id: String(group._id), inviteCode: group.inviteCode, previous, status: group.status };
+  }
+
+  /**
+   * Removes a group that never became orders.
+   *
+   * Refused once any store order exists: deleting the group would orphan real orders and their
+   * payments, so those have to be cancelled individually.
+   */
+  async deleteGroupOrder(groupId: string) {
+    const group = await (this as any).groupOrderModel.findById(groupId).exec();
+    if (!group) throw new NotFoundException('Group order not found');
+
+    const orderCount = await this.orderModel.countDocuments({ groupId: String(group._id) });
+    if (orderCount > 0) {
+      throw new BadRequestException(
+        `This group already produced ${orderCount} order(s). Cancel those instead of deleting the group.`,
+      );
+    }
+
+    await (this as any).groupOrderModel.deleteOne({ _id: group._id });
+    return { deleted: true, inviteCode: group.inviteCode };
+  }
+
+  /**
    * Group orders, with the people in them and the orders each produced.
    *
    * A group order is one payment that becomes several vendor orders, so looking at it from the

@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Delete, Post, Param, Query, UseGuards, DefaultValuePipe, ParseIntPipe, Body, Res, StreamableFile, Inject, forwardRef } from '@nestjs/common';
+import { Controller, Get, Put, Patch, Delete, Post, Param, Query, UseGuards, DefaultValuePipe, ParseIntPipe, Body, Res, StreamableFile, Inject, forwardRef } from '@nestjs/common';
 import { Response } from 'express';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AmbassadorsService } from './ambassadors.service';
@@ -228,6 +228,24 @@ export class AdminController {
       search,
       minSpend: minSpend ? parseFloat(minSpend) : undefined,
     });
+  }
+
+  @Patch('group-orders/:id/status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Lock, unlock or cancel a group order' })
+  setGroupStatus(@Param('id') id: string, @Body() body: { status: 'open' | 'locked' | 'cancelled' }) {
+    return this.adminService.setGroupStatus(id, body.status);
+  }
+
+  @Delete('group-orders/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Delete a group order that never produced orders' })
+  deleteGroupOrder(@Param('id') id: string) {
+    return this.adminService.deleteGroupOrder(id);
   }
 
   @Get('group-orders')
