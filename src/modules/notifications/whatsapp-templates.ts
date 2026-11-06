@@ -31,8 +31,8 @@ export interface OrderTemplateData {
 
 export class WhatsAppTemplates {
   private static readonly DIVIDER = '━━━━━━━━━━━━━━━━━━━━━━';
-  private static readonly BOT_HEADER = '🤖 *ERRANDERS BOT* · Official Campus Assistant\n━━━━━━━━━━━━━━━━━━━━━━';
-  private static readonly BOT_FOOTER = '\n━━━━━━━━━━━━━━━━━━━━━━\n🤖 *Erranders Automated Bot System*\n💬 Need help? Just reply directly to this chat.\n🌐 https://erranders.org';
+  private static readonly BOT_HEADER = '🤖 *Erranders Bot*';
+  private static readonly BOT_FOOTER = '\n\n💬 Reply here for help.';
 
   /**
    * Helper to format items list concisely
@@ -55,21 +55,13 @@ export class WhatsAppTemplates {
     const dest = data.deliveryAddress || 'Hostel address provided';
 
     return `${this.BOT_HEADER}
-🛍️ *ORDER CONFIRMED & RECEIVED*
+Hi ${name}, your order is confirmed.
 
-👋 Hi *${name}*, your payment has been verified and your order is confirmed!
-
-🧾 *Order #${data.orderNumber}*
-🏪 *Store:* ${store}
-💰 *Total Paid:* ₦${total}
-
-📦 *Items Ordered:*
+#${data.orderNumber} · ${store} · ₦${total}
 ${itemsList}
+To: ${dest}
 
-📍 *Delivery To:* ${dest}
-⏳ *Status:* 🟡 Sent to vendor counter
-
-🛵 An Errand Ninja will pick up your package and deliver directly to your hostel room.${this.BOT_FOOTER}`;
+We'll message you when a rider collects it.${this.BOT_FOOTER}`;
   }
 
   /**
@@ -288,17 +280,22 @@ Order *#${data.orderNumber}* is exceeding target delivery window!
   /**
    * 11. Inbound Customer Reply Forwarded to Support
    */
-  static customerInboundMessageToSupport(customerPhone: string, text: string): string {
+  static customerInboundMessageToSupport(
+    customerPhone: string,
+    text: string,
+    context?: { name?: string; orderNumber?: string; orderStatus?: string },
+  ): string {
+    const who = context?.name ? `${context.name} (${customerPhone})` : customerPhone;
+    const order = context?.orderNumber
+      ? `${context.orderNumber}${context.orderStatus ? ' · ' + context.orderStatus : ''}`
+      : 'no active order found';
+
     return `${this.BOT_HEADER}
-💬 *INBOUND CUSTOMER MESSAGE TO SUPPORT*
+Customer reply
+From: ${who}
+Order: ${order}
 
-A customer sent a reply via WhatsApp:
-
-👤 *From:* ${customerPhone}
-📩 *Message:*
-"${text}"
-
-⚡ *Action:* Respond to customer or review their active order.${this.BOT_FOOTER}`;
+"${text}"`;
   }
 
   /**
@@ -335,24 +332,12 @@ A customer sent a reply via WhatsApp:
     const idx = (data.variantIndex !== undefined ? data.variantIndex : Math.floor(Math.random() * greetings.length)) % greetings.length;
     const header = greetings[idx];
 
-    return `🤖 *ERRANDERS BOT* · Errand Mission Alert
-━━━━━━━━━━━━━━━━━━━━━━
-${header}
+    return `🤖 *Erranders Bot*
 
-${timeHook}
+New errand · ₦${feeFormatted}
+${data.storeName} · #${data.orderNumber}
 
-🏪 *Pickup Store:* ${data.storeName}
-🧾 *Order:* #${data.orderNumber}
-💰 *Your Earning:* ₦${feeFormatted}
-
-💡 _${hypeKicker}_
-
-👉 *Claim this order on your web dashboard:*
-https://dispatch.erranders.org/orders
-
-━━━━━━━━━━━━━━━━━━━━━━
-🤖 *Erranders Automated Bot System* · Dispatch Desk
-🌐 https://erranders.org`;
+Claim it: https://dispatch.erranders.org/orders`;
   }
 
   /**

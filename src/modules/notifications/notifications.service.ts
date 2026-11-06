@@ -930,7 +930,34 @@ export class NotificationsService {
           // Forward customer/vendor reply directly to Customer Support team on WhatsApp
           const comms = await this.getCommunicationsSettingsCached();
           if (comms?.whatsappSupportAlertsEnabled !== false) {
-            const forwardNotice = WhatsAppTemplates.customerInboundMessageToSupport(fromNumber, inboundText);
+            // Attach who is writing and which order they mean, so the desk can act without
+            // searching. The last few digits of a phone number tell an agent nothing.
+            let context: { name?: string; orderNumber?: string; orderStatus?: string } = {};
+            try {
+              const digits = fromNumber.replace(/\D/g, '').slice(-10);
+              const sender: any = await this.userModel
+                .findOne({ phone: { $regex: digits + '$' } })
+                .select('firstName lastName')
+                .lean()
+                .exec();
+              if (sender) {
+                context.name = `${sender.firstName || ''} ${sender.lastName || ''}`.trim();
+                const latest: any = await this.orderModel
+                  .findOne({ customer: sender._id })
+                  .sort({ createdAt: -1 })
+                  .select('orderNumber status')
+                  .lean()
+                  .exec();
+                if (latest) {
+                  context.orderNumber = latest.orderNumber;
+                  context.orderStatus = latest.status;
+                }
+              }
+            } catch (e: any) {
+              this.logger.warn(`Could not resolve inbound sender: ${e?.message || e}`);
+            }
+
+            const forwardNotice = WhatsAppTemplates.customerInboundMessageToSupport(fromNumber, inboundText, context);
             if (comms?.whatsappSupportGroupJid) {
               await this.sendWhatsApp(comms.whatsappSupportGroupJid, forwardNotice);
             } else {
