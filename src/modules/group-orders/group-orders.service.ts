@@ -1,25 +1,32 @@
-import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { GroupOrder, GroupOrderDocument } from './schemas/group-order.schema';
 import { GroupOrdersGateway } from './group-orders.gateway';
 import { OrdersService } from '../orders/orders.service';
+import { WalletsService } from '../wallets/wallets.service';
 
 @Injectable()
 export class GroupOrdersService {
+  private readonly logger = new Logger(GroupOrdersService.name);
+
   constructor(
     @InjectModel(GroupOrder.name) private groupOrderModel: Model<GroupOrderDocument>,
     private readonly gateway: GroupOrdersGateway,
     @Inject(forwardRef(() => OrdersService))
     private readonly ordersService: OrdersService,
+    @Inject(forwardRef(() => WalletsService))
+    private readonly walletsService: WalletsService,
   ) {}
 
-  async create(hostId: string, vendorId: string, name?: string, spendingLimit?: number): Promise<GroupOrder> {
+  async create(hostId: string, vendorId?: string, name?: string, spendingLimit?: number): Promise<GroupOrder> {
     const inviteCode = uuidv4().slice(0, 8).toUpperCase();
+    const vendorObjId = vendorId && Types.ObjectId.isValid(vendorId) ? new Types.ObjectId(vendorId) : undefined;
     const groupOrder = await this.groupOrderModel.create({
       host: new Types.ObjectId(hostId),
-      vendor: new Types.ObjectId(vendorId),
+      vendor: vendorObjId,
+      vendors: vendorObjId ? [vendorObjId] : [],
       inviteCode,
       name: name || `Group Order - ${new Date().toLocaleDateString()}`,
       spendingLimit,
@@ -41,8 +48,10 @@ export class GroupOrdersService {
 
     const groupOrder = await this.groupOrderModel.findOne({ inviteCode })
       .populate('vendor', 'storeName logo banner deliveryFee packagingFee')
+      .populate('vendors', 'storeName logo banner deliveryFee packagingFee')
       .populate('host', 'firstName lastName avatar')
       .populate('participants.user', 'firstName lastName avatar')
+      .populate('participants.items.vendorId', 'storeName logo banner deliveryFee packagingFee')
       .lean();
 
     if (!groupOrder) throw new NotFoundException('Group order not found');
@@ -69,8 +78,10 @@ export class GroupOrdersService {
     })
     .sort({ createdAt: -1 })
     .populate('vendor', 'storeName logo banner')
+    .populate('vendors', 'storeName logo banner')
     .populate('host', 'firstName lastName avatar')
-    .populate('participants.user', 'firstName lastName avatar');
+    .populate('participants.user', 'firstName lastName avatar')
+    .populate('participants.items.vendorId', 'storeName logo banner');
   }
 
   async join(userId: string, inviteCode: string): Promise<GroupOrder> {
@@ -83,7 +94,7 @@ export class GroupOrdersService {
 
     const userIdStr = userId.toString();
     const isParticipant = groupOrder.participants.some(
-      (p) => p.user.toString() === userIdStr
+      (p) => p.user && p.user.toString() === userIdStr
     );
 
     if (!isParticipant) {
@@ -139,18 +150,55 @@ export class GroupOrdersService {
       throw new BadRequestException('User is not a participant in this group order');
     }
 
-    // Calculate total for this participant
-    const total = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    // Sanitize and ensure vendorId & vendorName on each item
+    const sanitizedItems = (items || []).map(item => {
+      let vId = item.vendorId || (item.vendor?._id || item.vendor);
+      if (!vId && groupOrder.vendor) {
+        vId = groupOrder.vendor;
+      }
+      return {
+        productId: item.productId ? new Types.ObjectId(item.productId) : undefined,
+        vendorId: vId && Types.ObjectId.isValid(vId) ? new Types.ObjectId(vId) : undefined,
+        vendorName: item.vendorName || item.vendor?.storeName || undefined,
+        name: item.name,
+        price: Number(item.price) || 0,
+        quantity: Number(item.quantity) || 1,
+        customizations: Array.isArray(item.customizations) ? item.customizations : [],
+        image: item.image || '',
+      };
+    });
 
-    groupOrder.participants[participantIndex].items = items;
+    // Calculate total for this participant
+    const total = sanitizedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+    groupOrder.participants[participantIndex].items = sanitizedItems as any;
     groupOrder.participants[participantIndex].total = total;
     groupOrder.participants[participantIndex].isReady = true; // Auto-ready when items are updated from cart
+
+    // Collect all unique vendors across ALL participants in the group order
+    const allVendorIds = new Set<string>();
+    if (groupOrder.vendor) {
+      allVendorIds.add(groupOrder.vendor.toString());
+    }
+    for (const p of groupOrder.participants) {
+      for (const it of (p.items || [])) {
+        if (it.vendorId) {
+          allVendorIds.add(it.vendorId.toString());
+        }
+      }
+    }
+    groupOrder.vendors = Array.from(allVendorIds).map(id => new Types.ObjectId(id)) as any;
+    if (!groupOrder.vendor && groupOrder.vendors.length > 0) {
+      groupOrder.vendor = groupOrder.vendors[0];
+    }
     
     await groupOrder.save();
     
-    this.gateway.broadcastUpdate(inviteCode, await this.findByCode(inviteCode));
+    const populated = await this.findByCode(inviteCode);
+    this.gateway.broadcastUpdate(inviteCode, populated);
+    this.gateway.broadcastItemsUpdated(inviteCode, { userId: userIdStr, items: sanitizedItems, total });
     
-    return this.findByCode(inviteCode);
+    return populated;
   }
 
   async toggleReady(userId: string, inviteCode: string, isReady: boolean): Promise<GroupOrder> {
@@ -218,37 +266,65 @@ export class GroupOrdersService {
   }
 
   async checkout(userId: string, inviteCode: string, paymentReference?: string, guestId?: string): Promise<GroupOrder> {
-    const rawOrder = await this.groupOrderModel.findOne({ inviteCode }).populate('participants.user', 'firstName lastName');
+    const rawOrder = await this.groupOrderModel.findOne({ inviteCode }).populate('participants.user', 'firstName lastName email');
     if (!rawOrder) throw new NotFoundException('Group order not found');
     
     if (rawOrder.status !== 'locked' && rawOrder.status !== 'open') {
       throw new BadRequestException('Group order is already completed or cancelled');
     }
 
+    // Handle SYSTEM webhook or guest checkout
+    const isSystem = userId === 'SYSTEM';
+    const sponsorIdStr = (rawOrder.sponsorId || rawOrder.host).toString();
+    const effectiveUserId = isSystem ? sponsorIdStr : userId.toString();
+
     // If splitType is sponsor, only the sponsor can checkout
-    if (rawOrder.splitType === 'sponsor' && rawOrder.sponsorId.toString() !== userId.toString() && rawOrder.sponsorId.toString() !== guestId?.toString()) {
+    if (rawOrder.splitType === 'sponsor' && !isSystem && sponsorIdStr !== effectiveUserId && rawOrder.sponsorId?.toString() !== guestId?.toString()) {
       throw new BadRequestException('Only the sponsor can checkout this group order');
     }
 
     // Find the participant
     let participantIndex = rawOrder.participants.findIndex(
-      (p) => p.user.toString() === userId.toString()
+      (p) => p.user && p.user.toString() === effectiveUserId
     );
 
     if (participantIndex === -1 && guestId) {
       participantIndex = rawOrder.participants.findIndex(
-        (p) => p.user.toString() === guestId.toString()
+        (p) => p.user && p.user.toString() === guestId.toString()
       );
       if (participantIndex !== -1) {
         // Migrate the guest ID to the authenticated user ID
-        rawOrder.participants[participantIndex].user = new Types.ObjectId(userId) as any;
+        rawOrder.participants[participantIndex].user = new Types.ObjectId(effectiveUserId) as any;
         if (rawOrder.host.toString() === guestId.toString()) {
-          rawOrder.host = new Types.ObjectId(userId) as any;
+          rawOrder.host = new Types.ObjectId(effectiveUserId) as any;
         }
         if (rawOrder.sponsorId && rawOrder.sponsorId.toString() === guestId.toString()) {
-          rawOrder.sponsorId = new Types.ObjectId(userId) as any;
+          rawOrder.sponsorId = new Types.ObjectId(effectiveUserId) as any;
         }
         await rawOrder.save();
+      }
+    }
+
+    // Handle Wallet Deduction if paying with wallet
+    if (paymentReference === 'WALLET_PAYMENT') {
+      if (rawOrder.splitType === 'sponsor') {
+        const grandSubtotal = rawOrder.participants.reduce((sum, p) => sum + (p.total || 0), 0);
+        if (grandSubtotal > 0) {
+          await this.walletsService.debitWallet(
+            sponsorIdStr,
+            grandSubtotal,
+            `Group Order (${rawOrder.inviteCode}) - Sponsor Checkout`
+          );
+        }
+      } else if (rawOrder.splitType === 'split_bill' && participantIndex !== -1) {
+        const myShare = rawOrder.participants[participantIndex].total || 0;
+        if (myShare > 0) {
+          await this.walletsService.debitWallet(
+            effectiveUserId,
+            myShare,
+            `Group Order (${rawOrder.inviteCode}) - Split Bill Share`
+          );
+        }
       }
     }
 
@@ -282,43 +358,80 @@ export class GroupOrdersService {
     }
 
     // If we reach here, either it's sponsor, or split_bill and everyone has paid.
-    // Convert into real Orders
-    const readyParticipants = rawOrder.participants.filter(p => p.items.length > 0);
+    // Convert into real Orders — grouped by vendorId!
+    const readyParticipants = rawOrder.participants.filter(p => p.items && p.items.length > 0);
     const createdOrderIds: Types.ObjectId[] = [];
     
-    // Map each participant's cart to a distinct Pack
-    const allPacks = readyParticipants.map((participant, index) => {
-      let name = `Participant ${index + 1}`;
+    // Group participants' items by vendorId
+    const vendorMap = new Map<string, { vendorId: string, packs: any[] }>();
+
+    readyParticipants.forEach((participant, pIdx) => {
+      let participantName = `Participant ${pIdx + 1}`;
       if (participant.user && (participant.user as any).firstName) {
-         name = `${(participant.user as any).firstName} ${(participant.user as any).lastName || ''}`.trim();
+        participantName = `${(participant.user as any).firstName} ${(participant.user as any).lastName || ''}`.trim();
       }
-      return {
-        packId: `group_pack_${index + 1}`,
-        name: name,
-        items: participant.items.map(item => ({
+
+      participant.items.forEach(item => {
+        const vId = (item.vendorId || rawOrder.vendor)?.toString();
+        if (!vId) return;
+
+        if (!vendorMap.has(vId)) {
+          vendorMap.set(vId, { vendorId: vId, packs: [] });
+        }
+
+        const entry = vendorMap.get(vId)!;
+        let pack = entry.packs.find(p => p.participantId === participant.user?.toString());
+        if (!pack) {
+          pack = {
+            participantId: participant.user?.toString(),
+            packId: `group_pack_${pIdx + 1}`,
+            name: participantName,
+            items: [],
+          };
+          entry.packs.push(pack);
+        }
+
+        pack.items.push({
           productId: item.productId,
           name: item.name,
           price: item.price,
           quantity: item.quantity,
-          customizations: item.customizations,
-          subtotal: item.price * item.quantity
-        }))
-      };
+          customizations: item.customizations || [],
+          subtotal: item.price * item.quantity,
+        });
+      });
     });
 
-    if (allPacks.length > 0) {
-      const orderData = {
-        vendorId: rawOrder.vendor.toString(),
-        packs: allPacks,
-        deliveryOption: 'use_an_errander',
-        paymentReference, 
-        groupId: rawOrder._id.toString(),
-        isGroupOrder: true,
-      };
+    // Create an order for each distinct vendor
+    for (const [vId, { packs }] of vendorMap.entries()) {
+      if (packs.length > 0) {
+        const cleanPacks = packs.map(p => ({
+          packId: p.packId,
+          name: p.name,
+          items: p.items,
+        }));
 
-      // Create ONE order, assigned to the Host
-      const order = await this.ordersService.create(rawOrder.host.toString(), orderData);
-      createdOrderIds.push(order._id as Types.ObjectId);
+        const orderData = {
+          vendorId: vId,
+          packs: cleanPacks,
+          deliveryOption: 'use_an_errander',
+          paymentReference: paymentReference || `GROUP-${rawOrder.inviteCode}-${vId.slice(-4)}`,
+          groupId: rawOrder._id.toString(),
+          isGroupOrder: true,
+        };
+
+        try {
+          const order = await this.ordersService.create(
+            rawOrder.host.toString(),
+            orderData,
+            undefined,
+            { trustedUnpaid: true }
+          );
+          createdOrderIds.push(order._id as Types.ObjectId);
+        } catch (err: any) {
+          this.logger.error(`Failed to create order for vendor ${vId} in group order ${rawOrder.inviteCode}: ${err.message}`, err.stack);
+        }
+      }
     }
 
     rawOrder.status = 'completed';

@@ -8,6 +8,12 @@ export class GroupOrderItem {
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Product', required: true })
   productId: MongooseSchema.Types.ObjectId;
 
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Vendor', required: false })
+  vendorId?: MongooseSchema.Types.ObjectId;
+
+  @Prop()
+  vendorName?: string;
+
   @Prop({ required: true })
   name: string;
 
@@ -46,8 +52,11 @@ export type GroupOrderDocument = GroupOrder & Document;
 
 @Schema({ timestamps: true })
 export class GroupOrder {
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Vendor', required: true })
-  vendor: Vendor | MongooseSchema.Types.ObjectId;
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Vendor', required: false })
+  vendor?: Vendor | MongooseSchema.Types.ObjectId;
+
+  @Prop({ type: [{ type: MongooseSchema.Types.ObjectId, ref: 'Vendor' }], default: [] })
+  vendors: (Vendor | MongooseSchema.Types.ObjectId)[];
 
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true })
   host: User | MongooseSchema.Types.ObjectId;

@@ -1227,10 +1227,14 @@ export class OrdersService {
 
     // Optional Paystack verification if reference is passed (e.g., from some legacy flows)
     let paymentVerified = false;
-    if (data.paymentReference) {
-      const verification = await this.paystackService.verifyTransaction(data.paymentReference);
-      if (verification?.status === 'success' && verification.amount >= total - 5) {
-        paymentVerified = true;
+    if (data.paymentReference && !trustedUnpaid && !data.paymentReference.startsWith('WALLET_') && !data.paymentReference.startsWith('GROUP-') && !data.paymentReference.startsWith('TEST_')) {
+      try {
+        const verification = await this.paystackService.verifyTransaction(data.paymentReference);
+        if (verification?.status === 'success' && verification.amount >= total - 5) {
+          paymentVerified = true;
+        }
+      } catch (err: any) {
+        this.logger.warn(`Paystack verification skipped or failed for reference ${data.paymentReference}: ${err.message}`);
       }
     }
 

@@ -50,22 +50,32 @@ export class GroupOrdersGateway implements OnGatewayConnection, OnGatewayDisconn
   }
 
   broadcastUpdate(inviteCode: string, data: any) {
-    this.server.to(inviteCode).emit('group-order-updated', data);
+    if (this.server) {
+      this.server.to(inviteCode).emit('group-order-updated', data);
+    }
   }
 
   broadcastMemberJoined(inviteCode: string, user: any) {
-    this.server.to(inviteCode).emit('member-joined', user);
+    if (this.server) {
+      this.server.to(inviteCode).emit('member-joined', user);
+    }
   }
 
   broadcastItemsUpdated(inviteCode: string, data: { userId: string, items: any[], total: number }) {
-    this.server.to(inviteCode).emit('items-updated', data);
+    if (this.server) {
+      this.server.to(inviteCode).emit('items-updated', data);
+    }
   }
 
   broadcastPaymentProgress(inviteCode: string, data: any) {
-    this.server.to(inviteCode).emit('group-order-payment-progress', data);
+    if (this.server) {
+      this.server.to(inviteCode).emit('group-order-payment-progress', data);
+    }
   }
 
   broadcastStatusChanged(inviteCode: string, status: string) {
-    this.server.to(inviteCode).emit('status-changed', status);
+    if (this.server) {
+      this.server.to(inviteCode).emit('status-changed', status);
+    }
   }
 }

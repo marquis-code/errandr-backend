@@ -24,7 +24,7 @@ export class GroupOrdersController {
   @Post()
   async create(
     @CurrentUser() user: User | undefined,
-    @Body('vendorId') vendorId: string,
+    @Body('vendorId') vendorId?: string,
     @Body('name') name?: string,
     @Body('spendingLimit') spendingLimit?: number,
     @Body('guestId') guestId?: string,
