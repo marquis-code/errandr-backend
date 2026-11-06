@@ -254,6 +254,10 @@ export class GroupOrdersService {
       throw new BadRequestException('Group order must be open to initiate checkout');
     }
 
+    // Refuse here rather than at checkout, so the customer is told at the moment they choose
+    // instead of after locking the group and walking to the payment step.
+    await this.assertSplitTypeAllowed(splitType);
+
     rawOrder.status = 'locked';
     rawOrder.splitType = splitType;
     if (splitType === 'sponsor') {
