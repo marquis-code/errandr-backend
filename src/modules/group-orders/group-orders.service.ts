@@ -14,6 +14,7 @@ export class GroupOrdersService {
 
   constructor(
     @InjectModel(GroupOrder.name) private groupOrderModel: Model<GroupOrderDocument>,
+    @InjectModel('SystemSetting') private settingModel: Model<any>,
     private readonly gateway: GroupOrdersGateway,
     @Inject(forwardRef(() => OrdersService))
     private readonly ordersService: OrdersService,
@@ -268,6 +269,29 @@ export class GroupOrdersService {
     return populated;
   }
 
+  /**
+   * The platform's cut on a group order.
+   *
+   * A group splits one delivery across several participants and often several stores, so one
+   * flat per-order fee undercharges the work involved. This reads the admin configuration and
+   * returns the fee to add; zero when the admin has switched group fees off.
+   */
+  private async resolveGroupServiceFee(subtotal: number): Promise<number> {
+    try {
+      const setting = await this.settingModel.findOne({ key: 'group_orders' }).lean().exec();
+      const cfg: any = (setting as any)?.value || {};
+      if (cfg.serviceFeeEnabled === false) return 0;
+
+      const type = cfg.serviceFeeType === 'percentage' ? 'percentage' : 'flat';
+      const value = Number(cfg.serviceFeeValue ?? 150);
+      const min = Number(cfg.minServiceFee ?? 100);
+      const raw = type === 'percentage' ? Math.round(subtotal * (value / 100)) : value;
+      return Math.max(min, raw);
+    } catch {
+      return 0;
+    }
+  }
+
   async checkout(userId: string, inviteCode: string, paymentReference?: string, guestId?: string, deliveryDetails?: any): Promise<GroupOrder> {
     const rawOrder = await this.groupOrderModel.findOne({ inviteCode }).populate('participants.user', 'firstName lastName email');
     if (!rawOrder) throw new NotFoundException('Group order not found');
@@ -417,6 +441,12 @@ export class GroupOrdersService {
       });
     });
 
+    // One group fee per store, not per participant: the platform does the same work whether
+    // one person ordered from that store or five.
+    const groupFeePerVendor = await this.resolveGroupServiceFee(
+      readyParticipants.reduce((sum, p) => sum + (Number(p.total) || 0), 0),
+    );
+
     // Create an order for each distinct vendor
     for (const [vId, { packs }] of vendorMap.entries()) {
       if (packs.length > 0) {
@@ -439,6 +469,7 @@ export class GroupOrdersService {
           paymentReference: paymentReference || `GROUP-${rawOrder.inviteCode}-${vId.slice(-4)}`,
           groupId: rawOrder._id.toString(),
           isGroupOrder: true,
+          serviceFee: groupFeePerVendor,
         };
 
         try {

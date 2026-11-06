@@ -229,6 +229,50 @@ export class SettingsController {
     return setting.value;
   }
 
+  @Get('group-orders/config')
+  @ApiOperation({ summary: 'Get group order payment and fee configuration' })
+  async getGroupOrderConfig() {
+    let setting = await this.settingModel.findOne({ key: 'group_orders' }).exec();
+    if (!setting) {
+      setting = await this.settingModel.create({
+        key: 'group_orders',
+        value: {
+          allowSponsorPays: true,
+          allowSplitBill: true,
+          serviceFeeType: 'flat',
+          serviceFeeValue: 150,
+          minServiceFee: 100,
+          ninjaFeeBoostPercent: 0,
+        },
+      });
+    }
+    return setting.value;
+  }
+
+  @Put('group-orders/config')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update group order configuration (admin only)' })
+  async updateGroupOrderConfig(@Body() body: any) {
+    let setting = await this.settingModel.findOne({ key: 'group_orders' }).exec();
+    if (!setting) {
+      setting = await this.settingModel.create({ key: 'group_orders', value: {} });
+    }
+
+    const prev = setting.value || {};
+    setting.value = {
+      allowSponsorPays: body.allowSponsorPays !== undefined ? Boolean(body.allowSponsorPays) : prev.allowSponsorPays !== false,
+      allowSplitBill: body.allowSplitBill !== undefined ? Boolean(body.allowSplitBill) : prev.allowSplitBill !== false,
+      serviceFeeType: body.serviceFeeType === 'percentage' ? 'percentage' : 'flat',
+      serviceFeeValue: body.serviceFeeValue !== undefined ? Number(body.serviceFeeValue) : (prev.serviceFeeValue ?? 150),
+      minServiceFee: body.minServiceFee !== undefined ? Number(body.minServiceFee) : (prev.minServiceFee ?? 100),
+      ninjaFeeBoostPercent: body.ninjaFeeBoostPercent !== undefined ? Number(body.ninjaFeeBoostPercent) : (prev.ninjaFeeBoostPercent ?? 0),
+    };
+    await setting.save();
+    return setting.value;
+  }
+
   @Get('market-pool/config')
   @ApiOperation({ summary: 'Get market pool general config (slots, fees)' })
   async getMarketPoolConfig() {

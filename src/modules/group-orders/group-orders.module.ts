@@ -4,6 +4,7 @@ import { GroupOrdersService } from './group-orders.service';
 import { GroupOrdersController } from './group-orders.controller';
 import { GroupOrdersGateway } from './group-orders.gateway';
 import { GroupOrder, GroupOrderSchema } from './schemas/group-order.schema';
+import { SystemSetting, SystemSettingSchema } from '../admin/schemas/system-setting.schema';
 import { OrdersModule } from '../orders/orders.module';
 import { WalletsModule } from '../wallets/wallets.module';
 import { PaymentsModule } from '../payments/payments.module';
@@ -12,6 +13,7 @@ import { PaymentsModule } from '../payments/payments.module';
   imports: [
     MongooseModule.forFeature([
       { name: GroupOrder.name, schema: GroupOrderSchema },
+      { name: SystemSetting.name, schema: SystemSettingSchema },
     ]),
     forwardRef(() => OrdersModule),
     forwardRef(() => WalletsModule),

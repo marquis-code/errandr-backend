@@ -24,6 +24,7 @@ export class AdminService {
     @InjectModel(SystemSetting.name) private systemSettingModel: Model<SystemSetting>,
     @InjectModel(Appointment.name) private appointmentModel: Model<Appointment>,
     @InjectModel(Wallet.name) private walletModel: Model<any>,
+    @InjectModel('GroupOrder') private groupOrderModel: Model<any>,
     @InjectModel(Transaction.name) private transactionModel: Model<any>,
     private emailService: EmailService,
     @Inject(forwardRef(() => NotificationsService)) private notificationsService: NotificationsService,
@@ -958,6 +959,80 @@ export class AdminService {
     }
 
     return updated;
+  }
+
+  /**
+   * Group orders, with the people in them and the orders each produced.
+   *
+   * A group order is one payment that becomes several vendor orders, so looking at it from the
+   * order list shows fragments. This assembles the whole thing: who was in the group, what each
+   * person ordered, and which store orders it turned into.
+   */
+  async getGroupOrders(page = 1, limit = 20) {
+    const skip = (Math.max(1, page) - 1) * limit;
+
+    const [groups, total] = await Promise.all([
+      (this as any).groupOrderModel
+        .find({})
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate('host', 'firstName lastName email phone')
+        .populate('participants.user', 'firstName lastName email')
+        .lean()
+        .exec(),
+      (this as any).groupOrderModel.countDocuments({}),
+    ]);
+
+    const inviteCodes = groups.map((g: any) => g.inviteCode).filter(Boolean);
+
+    const orders = await this.orderModel
+      .find({ groupId: { $in: groups.map((g: any) => String(g._id)) } })
+      .select('orderNumber vendor total status paymentStatus groupId isGroupOrder')
+      .populate('vendor', 'storeName')
+      .lean()
+      .exec();
+
+    const ordersByGroup = new Map<string, any[]>();
+    for (const o of orders as any[]) {
+      const key = String(o.groupId);
+      if (!ordersByGroup.has(key)) ordersByGroup.set(key, []);
+      ordersByGroup.get(key)!.push({
+        orderNumber: o.orderNumber,
+        store: (o.vendor as any)?.storeName || 'Store',
+        total: o.total,
+        status: o.status,
+        paymentStatus: o.paymentStatus,
+      });
+    }
+
+    return {
+      total,
+      page: Number(page),
+      groups: groups.map((g: any) => ({
+        id: String(g._id),
+        inviteCode: g.inviteCode,
+        name: g.name,
+        status: g.status,
+        splitType: g.splitType,
+        createdAt: (g as any).createdAt,
+        host: g.host
+          ? `${g.host.firstName || ''} ${g.host.lastName || ''}`.trim()
+          : 'Unknown host',
+        participants: (g.participants || []).map((pt: any) => ({
+          name: pt.user
+            ? `${pt.user.firstName || ''} ${pt.user.lastName || ''}`.trim()
+            : pt.guestName || 'Guest',
+          email: pt.user?.email || '',
+          items: (pt.items || []).length,
+          total: pt.total || 0,
+          isReady: !!pt.isReady,
+        })),
+        groupTotal: (g.participants || []).reduce((sum: number, pt: any) => sum + (pt.total || 0), 0),
+        orders: ordersByGroup.get(String(g._id)) || [],
+      })),
+      inviteCodes,
+    };
   }
 
   async getAllDispatchers(page = 1, limit = 10) {

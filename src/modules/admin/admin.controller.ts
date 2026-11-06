@@ -230,6 +230,15 @@ export class AdminController {
     });
   }
 
+  @Get('group-orders')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Group orders with participants and their store orders' })
+  getGroupOrders(@Query('page') page = '1', @Query('limit') limit = '20') {
+    return this.adminService.getGroupOrders(parseInt(page, 10) || 1, parseInt(limit, 10) || 20);
+  }
+
   @Get('dispatchers')
   @ApiOperation({ summary: 'Get all dispatchers' })
   getAllDispatchers(
