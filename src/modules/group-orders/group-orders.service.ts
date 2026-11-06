@@ -441,12 +441,6 @@ export class GroupOrdersService {
       });
     });
 
-    // One group fee per store, not per participant: the platform does the same work whether
-    // one person ordered from that store or five.
-    const groupFeePerVendor = await this.resolveGroupServiceFee(
-      readyParticipants.reduce((sum, p) => sum + (Number(p.total) || 0), 0),
-    );
-
     // Create an order for each distinct vendor
     for (const [vId, { packs }] of vendorMap.entries()) {
       if (packs.length > 0) {
@@ -469,7 +463,15 @@ export class GroupOrdersService {
           paymentReference: paymentReference || `GROUP-${rawOrder.inviteCode}-${vId.slice(-4)}`,
           groupId: rawOrder._id.toString(),
           isGroupOrder: true,
-          serviceFee: groupFeePerVendor,
+          // Priced on this store's own basket. Charging the group total on every store order
+          // meant a two-store group paid the fee twice.
+          serviceFee: await this.resolveGroupServiceFee(
+            packs.reduce(
+              (sum: number, pk: any) =>
+                sum + pk.items.reduce((s2: number, it: any) => s2 + (it.subtotal || 0), 0),
+              0,
+            ),
+          ),
         };
 
         try {

@@ -1,6 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Schema } from 'mongoose';
+import { GroupOrder, GroupOrderSchema } from '../group-orders/schemas/group-order.schema';
 import { AmbassadorsService } from './ambassadors.service';
 import { AdminService } from './admin.service';
 import { AdminController } from './admin.controller';
@@ -29,6 +30,7 @@ import { ErrandersModule } from '../erranders/erranders.module';
       { name: Vendor.name, schema: VendorSchema },
       { name: Order.name, schema: OrderSchema },
       { name: Errander.name, schema: ErranderSchema },
+      { name: GroupOrder.name, schema: GroupOrderSchema },
       { name: Report.name, schema: ReportSchema },
       { name: SystemSetting.name, schema: SystemSettingSchema },
       { name: Appointment.name, schema: AppointmentSchema },
