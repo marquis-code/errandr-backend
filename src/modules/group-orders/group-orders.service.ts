@@ -270,6 +270,35 @@ export class GroupOrdersService {
   }
 
   /**
+   * The admin decides which payment shapes are allowed.
+   *
+   * A toggle that saves but does not block anything is worse than no toggle: it tells the
+   * operator they have switched a path off while customers keep using it. This refuses the
+   * checkout before any money moves.
+   */
+  private async assertSplitTypeAllowed(splitType: string): Promise<void> {
+    const setting = await this.settingModel.findOne({ key: 'group_orders' }).lean().exec();
+    const cfg: any = (setting as any)?.value || {};
+
+    // Absent configuration means the default (both allowed) — a fresh install must not block.
+    const sponsorAllowed = cfg.allowSponsorPays !== false;
+    const splitAllowed = cfg.allowSplitBill !== false;
+    const type = String(splitType || 'sponsor');
+
+    if ((type === 'sponsor' || type === 'host_pays') && !sponsorAllowed) {
+      throw new BadRequestException(
+        'One person paying for the whole group is currently turned off. Ask each person to pay their own share.',
+      );
+    }
+
+    if (type === 'split_bill' && !splitAllowed) {
+      throw new BadRequestException(
+        'Split payments are currently turned off for group orders. One person has to pay for the group.',
+      );
+    }
+  }
+
+  /**
    * The platform's cut on a group order.
    *
    * A group splits one delivery across several participants and often several stores, so one
@@ -303,6 +332,8 @@ export class GroupOrdersService {
     if (!paymentReference || !paymentReference.trim()) {
       throw new BadRequestException('Payment reference is required to checkout a group order. Please complete payment at checkout.');
     }
+
+    await this.assertSplitTypeAllowed(rawOrder.splitType);
 
     // Handle SYSTEM webhook or guest checkout
     const isSystem = userId === 'SYSTEM';
