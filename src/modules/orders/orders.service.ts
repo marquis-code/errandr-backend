@@ -341,8 +341,12 @@ export class OrdersService {
         this.logger.warn(`[CSRShiftSchedule] Failed to resolve duty status: ${err.message}`);
       }
 
-      // ─── Manager WhatsApp Bot Alert (Kim: Always alerted regardless of shift) ───
-      if (comms?.whatsappEnabled !== false && dutyStatus?.managerPhone) {
+      // The manager no longer gets a direct message for every order.
+      //
+      // One WhatsApp per order to the operations manager is noise at any volume — the CS group
+      // and the on-duty rep already see it, and a per-order DM trains the manager to ignore the
+      // number entirely. Set communications.managerOrderAlertsEnabled to restore it.
+      if (comms?.whatsappEnabled !== false && dutyStatus?.managerPhone && comms?.managerOrderAlertsEnabled === true) {
         this.logger.log(`[CSRShiftSchedule] Alerting Manager '${dutyStatus.managerName || 'Kim'}' (${dutyStatus.managerPhone}) via WhatsApp for order #${orderNumberStr}`);
         this.notificationsService.notifyNinjaNewErrand(dutyStatus.managerPhone, {
           storeName: vendorName,
