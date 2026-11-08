@@ -1,4 +1,5 @@
 import { Module, Global, forwardRef } from '@nestjs/common';
+import { RiderAvailabilityCron } from './rider-availability.cron';
 import { VendorStockCheckCron } from './vendor-stock-check.cron';
 import { NotificationsService } from './notifications.service';
 import { NotificationsGateway } from './notifications.gateway';
@@ -9,6 +10,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { Order, OrderSchema } from '../orders/schemas/order.schema';
 import { Vendor, VendorSchema } from '../vendors/schemas/vendor.schema';
 import { User, UserSchema } from '../users/schemas/user.schema';
+import { Errander, ErranderSchema } from '../erranders/schemas/errander.schema';
 import { SystemSetting, SystemSettingSchema } from '../admin/schemas/system-setting.schema';
 import { ChatModule } from '../chat/chat.module';
 
@@ -16,6 +18,7 @@ import { ChatModule } from '../chat/chat.module';
 @Module({
   imports: [
     MongooseModule.forFeature([
+      { name: Errander.name, schema: ErranderSchema },
       { name: Order.name, schema: OrderSchema },
       { name: Vendor.name, schema: VendorSchema },
       { name: User.name, schema: UserSchema },
@@ -24,7 +27,7 @@ import { ChatModule } from '../chat/chat.module';
     forwardRef(() => ChatModule),
   ],
   controllers: [NotificationsController, WebhooksController],
-  providers: [VendorStockCheckCron, NotificationsService, NotificationsGateway, CronService],
+  providers: [RiderAvailabilityCron, VendorStockCheckCron, NotificationsService, NotificationsGateway, CronService],
   exports: [NotificationsService, NotificationsGateway],
 })
 export class NotificationsModule {}
