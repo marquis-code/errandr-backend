@@ -248,6 +248,15 @@ export class AdminController {
     return this.adminService.deleteGroupOrder(id);
   }
 
+  @Get('rider-availability')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Live rider availability per campus' })
+  getRiderAvailability() {
+    return this.adminService.getRiderAvailability();
+  }
+
   @Get('group-orders')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)

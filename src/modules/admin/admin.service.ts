@@ -1000,6 +1000,94 @@ export class AdminService {
   }
 
   /**
+   * Who can actually take an order right now, per campus.
+   *
+   * A single global number is misleading once more than one campus is live: seven riders at
+   * CMUL says nothing about whether a UNILAG order will be picked up.
+   */
+  async getRiderAvailability() {
+    const cutoff = new Date(Date.now() - 10 * 60 * 1000);
+
+    const rows = await (this as any).erranderModel
+      .aggregate([
+        {
+          $group: {
+            _id: '$institution',
+            total: { $sum: 1 },
+            available: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ['$status', 'available'] },
+                      {
+                        $or: [
+                          { $eq: [{ $ifNull: ['$lastActiveAt', null] }, null] },
+                          { $gte: ['$lastActiveAt', cutoff] },
+                        ],
+                      },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+            busy: { $sum: { $cond: [{ $eq: ['$status', 'busy'] }, 1, 0] } },
+            // Available on paper, silent for over ten minutes: the number that makes the
+            // headline figure honest.
+            stale: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ['$status', 'available'] },
+                      { $ne: [{ $ifNull: ['$lastActiveAt', null] }, null] },
+                      { $lt: ['$lastActiveAt', cutoff] },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+          },
+        },
+      ])
+      .exec();
+
+    const institutions = await (this as any).institutionModel
+      .find({})
+      .select('name slug')
+      .lean()
+      .exec()
+      .catch(() => []);
+
+    const byId = new Map<string, any>((institutions as any[]).map((i) => [String(i._id), i]));
+
+    const campuses = (rows || []).map((r: any) => {
+      const meta = byId.get(String(r._id));
+      return {
+        institutionId: r._id ? String(r._id) : null,
+        name: meta?.name || 'Unassigned',
+        slug: meta?.slug || '',
+        total: r.total,
+        available: r.available,
+        busy: r.busy,
+        stale: r.stale,
+        canServe: r.available > 0,
+      };
+    });
+
+    return {
+      checkedAt: new Date().toISOString(),
+      // Anyone free in *any* campus is enough to keep the platform open overall.
+      anyoneAvailable: campuses.some((c) => c.canServe),
+      campuses: campuses.sort((a, b) => b.total - a.total),
+    };
+  }
+
+  /**
    * Group orders, with the people in them and the orders each produced.
    *
    * A group order is one payment that becomes several vendor orders, so looking at it from the

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { RiderHeartbeatInterceptor } from './rider-heartbeat.interceptor';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ErrandersService } from './erranders.service';
 import { ErrandersController } from './erranders.controller';
@@ -23,7 +24,7 @@ import { InstitutionsModule } from '../institutions/institutions.module';
     InstitutionsModule,
   ],
   controllers: [ErrandersController],
-  providers: [ErrandersService, NinjaShiftsService],
+  providers: [RiderHeartbeatInterceptor, ErrandersService, NinjaShiftsService],
   exports: [ErrandersService, NinjaShiftsService],
 })
 export class ErrandersModule {}

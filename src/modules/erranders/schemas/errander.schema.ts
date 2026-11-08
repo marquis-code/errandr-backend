@@ -15,6 +15,14 @@ export class Errander extends Document {
   @Prop({ type: String, enum: ErranderStatus, default: ErranderStatus.OFFLINE })
   status: ErranderStatus;
 
+  /**
+   * When this rider was last seen using the app.
+   *
+   * 'available' alone says nothing — a rider who force-closed the app a week ago still has it
+   * set. Availability is only meaningful next to a recent heartbeat.
+   */
+  lastActiveAt?: Date;
+
   @Prop({
     type: {
       type: String,

@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
+import { RiderHeartbeatInterceptor } from './modules/erranders/rider-heartbeat.interceptor';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -124,6 +126,10 @@ import { CallsModule } from './modules/calls/calls.module';
     PromoCodesModule,
     ExamModeModule,
     MarketPoolModule,
+  ],
+  providers: [
+    // Applied globally so every authenticated rider request records a heartbeat.
+    { provide: APP_INTERCEPTOR, useClass: RiderHeartbeatInterceptor },
   ],
 })
 export class AppModule {}

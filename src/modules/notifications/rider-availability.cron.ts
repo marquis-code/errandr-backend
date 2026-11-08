@@ -35,8 +35,16 @@ export class RiderAvailabilityCron implements OnModuleInit {
   @Cron('0 */15 7-21 * * *', { name: 'rider-availability-watch', timeZone: 'Africa/Lagos' })
   async check(): Promise<void> {
     try {
+      // 'available' with no recent heartbeat is a stale flag, not a rider who can help.
+      // Riders with no heartbeat yet are counted, so deploying this cannot cause a false alarm
+      // before the first one arrives.
+      const cutoff = new Date(Date.now() - 10 * 60 * 1000);
+      const recentlySeen = {
+        $or: [{ lastActiveAt: { $exists: false } }, { lastActiveAt: null }, { lastActiveAt: { $gte: cutoff } }],
+      };
+
       const [available, busy, total] = await Promise.all([
-        this.erranderModel.countDocuments({ status: 'available' }),
+        this.erranderModel.countDocuments({ status: 'available', ...recentlySeen }),
         this.erranderModel.countDocuments({ status: 'busy' }),
         this.erranderModel.countDocuments({}),
       ]);
