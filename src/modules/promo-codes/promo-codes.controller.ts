@@ -61,9 +61,12 @@ export class PromoCodesController {
   }
 
   @Get('preview')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Preview a promo code eligibility without applying it' })
+  @ApiOperation({
+    summary: 'Preview a promo code eligibility without applying it',
+    description:
+      'Public by design: a student can check an ambassador code before signing in, which is the ' +
+      'moment they are most likely to abandon. Per-user redemption limits are enforced at apply.',
+  })
   preview(
     @Query('code') code: string, 
     @Query('subtotal') subtotal: string, 
@@ -88,8 +91,6 @@ export class PromoCodesController {
   }
 
   @Get('validate')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'Validate a promo code for a checkout' })
   validate(
     @Query('code') code: string, 
