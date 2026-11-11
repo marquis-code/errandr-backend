@@ -229,6 +229,40 @@ export class SettingsController {
     return setting.value;
   }
 
+  @Get('buffer-payout/config')
+  @ApiOperation({ summary: 'Get buffer payout configuration' })
+  async getBufferPayoutConfig() {
+    let setting = await this.settingModel.findOne({ key: 'buffer_payout' }).exec();
+    if (!setting) {
+      setting = await this.settingModel.create({
+        key: 'buffer_payout',
+        // Off by default. A job that moves customer money to bank accounts starts under adult
+        // supervision, not on a fresh deploy.
+        value: { enabled: false, minimumPayout: 100 },
+      });
+    }
+    return setting.value;
+  }
+
+  @Put('buffer-payout/config')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Turn the nightly buffer payout on or off (admin only)' })
+  async updateBufferPayoutConfig(@Body() body: any) {
+    let setting = await this.settingModel.findOne({ key: 'buffer_payout' }).exec();
+    if (!setting) setting = await this.settingModel.create({ key: 'buffer_payout', value: {} });
+
+    const prev: any = setting.value || {};
+    setting.value = {
+      enabled: body.enabled !== undefined ? Boolean(body.enabled) : prev.enabled === true,
+      minimumPayout:
+        body.minimumPayout !== undefined ? Number(body.minimumPayout) : (prev.minimumPayout ?? 100),
+    };
+    await setting.save();
+    return setting.value;
+  }
+
   @Get('referrals/config')
   @ApiOperation({ summary: 'Get referral cashback configuration' })
   async getReferralConfig() {

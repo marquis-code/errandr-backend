@@ -18,17 +18,32 @@ import { PaystackService } from '../payments/paystack.service';
 @Injectable()
 export class BufferPayoutCron implements OnModuleInit {
   private readonly logger = new Logger(BufferPayoutCron.name);
-  private readonly enabled = process.env.BUFFER_PAYOUT_ENABLED === 'true';
-  private readonly minimum = Number(process.env.BUFFER_PAYOUT_MINIMUM || 100);
+  // Read from settings at run time, not at boot: switching this from the admin must take effect
+  // tonight, not at the next deploy.
 
   constructor(
     @InjectModel('Wallet') private readonly walletModel: Model<any>,
     private readonly paystackService: PaystackService,
+    @InjectModel('SystemSetting') private readonly settingModel: Model<any>,
   ) {}
+
+  /** Admin-controlled. Off unless someone has deliberately turned it on. */
+  private async config(): Promise<{ enabled: boolean; minimum: number }> {
+    try {
+      const setting = await this.settingModel.findOne({ key: 'buffer_payout' }).lean().exec();
+      const cfg: any = (setting as any)?.value || {};
+      return {
+        enabled: cfg.enabled === true,
+        minimum: Number(cfg.minimumPayout ?? 100),
+      };
+    } catch {
+      return { enabled: false, minimum: 100 };
+    }
+  }
 
   onModuleInit(): void {
     this.logger.log(
-      `Buffer payout scheduled 23:00 Africa/Lagos — ${this.enabled ? 'LIVE' : 'REPORT ONLY'} (minimum ₦${this.minimum})`,
+      'Buffer payout scheduled 23:00 Africa/Lagos — controlled by Settings > buffer payouts',
     );
   }
 
@@ -45,8 +60,11 @@ export class BufferPayoutCron implements OnModuleInit {
     let skipped = 0;
 
     try {
+      const { enabled, minimum } = await this.config();
+      this.logger.log(`Buffer payout run — ${enabled ? 'LIVE' : 'REPORT ONLY'}, minimum ₦${minimum}`);
+
       const wallets = await this.walletModel
-        .find({ bufferBalance: { $gte: this.minimum } })
+        .find({ bufferBalance: { $gte: minimum } })
         .populate('owner', 'firstName lastName email phone')
         .lean()
         .exec();
@@ -77,7 +95,7 @@ export class BufferPayoutCron implements OnModuleInit {
 
         total += amount;
 
-        if (!this.enabled) {
+        if (!enabled) {
           row.reason = 'report only';
           rows.push(row);
           continue;
