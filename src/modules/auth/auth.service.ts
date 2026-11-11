@@ -29,6 +29,49 @@ export class AuthService {
     private readonly referralsService: ReferralsService,
   ) {}
 
+  /**
+   * Delivers the new student's referral code on the channel they are most likely to see.
+   *
+   * WhatsApp first because it is where this audience actually reads things, with the welcome
+   * email as the fallback for anyone without a number. Controlled by
+   * settings.referrals.sendCodeOnSignup, on by default.
+   */
+  private async sendReferralCodeWelcome(user: any): Promise<void> {
+    try {
+      if (!user?.referralCode) return;
+
+      const setting = await this.userModel.db
+        .collection('systemsettings')
+        .findOne({ key: 'referrals' });
+      const cfg: any = setting?.value || {};
+      if (cfg.sendCodeOnSignup === false) return;
+
+      const name = user.firstName || 'there';
+      const message = [
+        `Hi ${name}, Erranders Bot here 👋`,
+        '',
+        `Your referral code is *${user.referralCode}*`,
+        '',
+        'Share it with friends. When they sign up and use it, you get a cash back in your wallet.',
+        '',
+        'Tap Wallet in the app to see your balance.',
+      ].join('\n');
+
+      const target = user.phone;
+      if (target) {
+        await this.notificationsService.sendWhatsApp(target, message).catch(() => {});
+      }
+
+      if (user.email) {
+        await this.emailService
+          .sendWelcomeEmail(user.email, `${name} — your referral code is ${user.referralCode}`)
+          .catch(() => {});
+      }
+    } catch {
+      // Nothing here is worth failing a signup over.
+    }
+  }
+
   async register(registerDto: RegisterDto) {
     const existing = await this.userModel.findOne({ email: registerDto.email, role: registerDto.role });
     if (existing) {
@@ -58,6 +101,12 @@ export class AuthService {
     // Send welcome email directly
     this.emailService.sendWelcomeEmail(user.email, user.firstName).catch(err => {
       this.logger.warn(`Failed to send welcome email to ${user.email}: ${err.message}`);
+    });
+
+    // Tell the new student what their referral code is, so it is not a thing they have to go and
+    // find. Fire and forget: a welcome message must never fail a signup.
+    this.sendReferralCodeWelcome(user).catch((err) => {
+      this.logger.warn(`Failed to send referral code to ${user.email}: ${err?.message || err}`);
     });
 
     const token = this.generateToken(user);
