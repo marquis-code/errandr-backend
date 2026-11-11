@@ -254,6 +254,12 @@ export class ReferralsService implements OnModuleInit {
       `Awarded ${pointsForReferrer} pts to referrer, ${REFERRED_USER_BONUS} pts to new user.`
     );
 
+    // Cash back, on top of points. Idempotent by reference, so a retry cannot pay twice.
+    const cashback = await this.payReferralCashback(
+      (referrerUser as any)._id.toString(),
+      (newUser as any)._id.toString(),
+    );
+
     return {
       success: true,
       referralId: referral._id,
@@ -262,6 +268,7 @@ export class ReferralsService implements OnModuleInit {
       tier: currentTier,
       pointsAwarded: pointsForReferrer,
       referredBonus: REFERRED_USER_BONUS,
+      cashbackAwarded: cashback,
     };
   }
 
