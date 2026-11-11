@@ -1,5 +1,5 @@
 /**
- * Gives every student a referral code in the ERR-FIRSTNAME format.
+ * Gives every student a referral code in the ERR-SURNAME format.
  *
  * Dry run by default — prints what would change without writing. Pass --apply to commit.
  *
@@ -12,8 +12,8 @@ const mongoose = require('mongoose');
 
 const APPLY = process.argv.includes('--apply');
 
-const base = (firstName) => {
-  const cleaned = String(firstName || '')
+const base = (surname) => {
+  const cleaned = String(surname || '')
     .normalize('NFKD')
     .replace(/[^a-zA-Z0-9]/g, '')
     .toUpperCase()
@@ -27,19 +27,19 @@ const base = (firstName) => {
 
   const students = await users
     .find({ role: 'student' })
-    .project({ firstName: true, referralCode: true })
+    .project({ firstName: true, lastName: true, referralCode: true })
     .sort({ createdAt: 1 })
     .toArray();
 
   // Reserve the codes that are already correct so two students never share one.
   const taken = new Set();
   for (const u of students) {
-    if (u.referralCode && u.referralCode === base(u.firstName)) taken.add(u.referralCode);
+    if (u.referralCode && u.referralCode === base(u.lastName || u.firstName)) taken.add(u.referralCode);
   }
 
   const changes = [];
   for (const u of students) {
-    const b = base(u.firstName);
+    const b = base(u.lastName || u.firstName);
     if (u.referralCode === b) continue;
 
     let candidate = b;
@@ -47,20 +47,29 @@ const base = (firstName) => {
     while (taken.has(candidate)) candidate = `${b}${n++}`;
     taken.add(candidate);
 
-    changes.push({ id: u._id, firstName: u.firstName, from: u.referralCode || null, to: candidate });
+    changes.push({ id: u._id, name: `${u.firstName || ''} ${u.lastName || ''}`.trim(), from: u.referralCode || null, to: candidate });
   }
 
   console.log(`  students          : ${students.length}`);
   console.log(`  already correct   : ${students.length - changes.length}`);
   console.log(`  to change         : ${changes.length}`);
   for (const c of changes.slice(0, 12)) {
-    console.log(`    ${String(c.firstName || '?').padEnd(14)} ${String(c.from || '(none)').padEnd(18)} -> ${c.to}`);
+    console.log(`    ${String(c.name || '?').padEnd(24)} ${String(c.from || '(none)').padEnd(18)} -> ${c.to}`);
   }
   if (changes.length > 12) console.log(`    … and ${changes.length - 12} more`);
 
   if (!APPLY) {
     console.log('\n  dry run — nothing written. re-run with --apply');
   } else {
+    // Two passes. referralCode is uniquely indexed, so writing a new value while the previous
+    // holder still has it is a duplicate-key error — exactly what happened on the first attempt.
+    // Park every changing record on a guaranteed-unique placeholder first, then assign.
+    for (const c of changes) {
+      await users.updateOne(
+        { _id: c.id },
+        { $set: { referralCode: `TMP-${String(c.id).slice(-8).toUpperCase()}` } },
+      );
+    }
     for (const c of changes) {
       await users.updateOne({ _id: c.id }, { $set: { referralCode: c.to, updatedAt: new Date() } });
     }

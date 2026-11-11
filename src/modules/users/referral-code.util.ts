@@ -1,8 +1,11 @@
 /**
- * One referral code format, everywhere: ERR-FIRSTNAME.
+ * One referral code format, everywhere: ERR-SURNAME.
  *
- * Names repeat — two students called Abah, three called Test — so the base is the first name and
- * a number only appears when it is needed.
+ * The surname is the more identifying half of a Nigerian name — first names repeat far more often
+ * (three Abigails, two Abahs in a roster of two hundred), so a code built from one identifies
+ * almost nobody and hands out suffixes constantly.
+ *
+ * A number still appears when two people genuinely share a surname.
  *
  * A referral code is money: whoever holds it gets credited for everyone who signs up with it. Two
  * students sharing a code means one of them is paid for the other's referrals, and nobody finds
@@ -11,8 +14,8 @@
  */
 export const REFERRAL_PREFIX = 'ERR';
 
-export function referralCodeBase(firstName?: string): string {
-  const cleaned = String(firstName || '')
+export function referralCodeBase(surname?: string): string {
+  const cleaned = String(surname || '')
     .normalize('NFKD')
     .replace(/[^a-zA-Z0-9]/g, '')
     .toUpperCase()
@@ -23,17 +26,17 @@ export function referralCodeBase(firstName?: string): string {
 }
 
 /**
- * ERR-ABAH, then ERR-ABAH2, ERR-ABAH3 …
+ * ERR-OKONKWO, then ERR-OKONKWO2, ERR-OKONKWO3 …
  *
  * The first claimant keeps the clean code; later arrivals get a suffix. Appending reads better
  * than a random string and stays guessable, which is the point of using a name at all.
  */
 export async function uniqueReferralCode(
-  firstName: string | undefined,
+  surname: string | undefined,
   exists: (code: string) => Promise<boolean>,
   excludeUserId?: string,
 ): Promise<string> {
-  const base = referralCodeBase(firstName);
+  const base = referralCodeBase(surname);
 
   if (!(await exists(base))) return base;
 

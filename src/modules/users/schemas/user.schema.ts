@@ -238,7 +238,7 @@ UserSchema.pre('save', async function assignReferralCode(next) {
     const model = doc.constructor as any;
 
     doc.referralCode = await uniqueReferralCode(
-      doc.firstName,
+      doc.lastName || doc.firstName,
       async (code: string) => Boolean(await model.exists({ referralCode: code })),
       doc._id?.toString(),
     );
