@@ -846,7 +846,18 @@ export class OrdersService {
         (sum: number, item: any) => {
           const pData = productMap[(item.productId || item.product)?.toString()];
           item.image = pData?.image || pData?.images?.[0];
-          const itemTotal = item.subtotal;
+
+          // Recompute from price and quantity instead of trusting the client's subtotal.
+          //
+          // This line used to read `item.subtotal` verbatim, so any client sending a stale or
+          // edited figure wrote it straight into the order. Four orders in production have a
+          // subtotal that does not match their own items — one of them negative — and the
+          // customer was charged ₦400 less than the goods cost.
+          const qty = Number(item.quantity) || 0;
+          const unit = Number(item.price) || 0;
+          const computed = unit * qty;
+          const itemTotal = Math.max(0, Number.isFinite(computed) && computed > 0 ? computed : Number(item.subtotal) || 0);
+
           if (pData?.isPrepaidByPlatform) {
             prepaidSubtotal += itemTotal;
             hasPrepaidItems = true;
