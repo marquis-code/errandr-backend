@@ -4715,11 +4715,14 @@ export class OrdersService {
     // If customer overpaid, refund the difference to their wallet
     if (order.refundAmount && order.refundAmount > 0) {
       try {
-        await this.walletsService.creditWallet(
-          customerId,
-          order.refundAmount,
-          `Refund: Item cost reconciliation for order #${order.orderNumber} (estimated ₦${order.customDetails?.estimatedItemCost?.toLocaleString()}, actual ₦${order.actualItemCost?.toLocaleString()})`,
-          order._id.toString(),
+        // Unused buffer goes to bufferBalance, not balance.
+        //
+        // It belongs to the customer's bank and leaves on the nightly payout. Crediting `balance`
+        // made it spendable in the app *and* payable to their bank — the same naira twice.
+        await this.walletsService.creditBuffer(
+          customerId.toString(),
+          Number(order.refundAmount),
+          `Unused safety buffer for order #${order.orderNumber}`,
         );
         this.logger.log(`Refunded ₦${order.refundAmount} to customer ${customerId} for order ${order.orderNumber}`);
 

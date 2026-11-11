@@ -131,6 +131,22 @@ export class WalletsService {
       .limit(50);
   }
 
+  /**
+   * Adds to the customer's unpaid buffer pot.
+   *
+   * Separate from creditWallet on purpose: this money is not spendable in the app. It is owed to
+   * the customer's bank account and leaves on the nightly buffer payout.
+   */
+  async creditBuffer(userId: string, amount: number, description: string): Promise<void> {
+    if (!amount || amount <= 0) return;
+    await this.walletModel.updateOne(
+      { owner: userId },
+      { $inc: { bufferBalance: amount }, $set: { updatedAt: new Date() } },
+      { upsert: true },
+    );
+    this.logger?.log?.(`Buffer ₦${amount} credited to ${userId}: ${description}`);
+  }
+
   async creditWallet(
     userId: string,
     amount: number,

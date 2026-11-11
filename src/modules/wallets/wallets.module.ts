@@ -1,3 +1,4 @@
+import { BufferPayoutCron } from './buffer-payout.cron';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { WalletsService } from './wallets.service';
@@ -28,7 +29,7 @@ import { SystemSetting, SystemSettingSchema } from '../admin/schemas/system-sett
     EmailModule,
     forwardRef(() => NotificationsModule),
   ],
-  providers: [WalletsService, WalletsCronService],
+  providers: [BufferPayoutCron, WalletsService, WalletsCronService],
   controllers: [WalletsController],
   exports: [WalletsService, WalletsCronService],
 })

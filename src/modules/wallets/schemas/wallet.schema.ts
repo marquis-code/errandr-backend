@@ -20,6 +20,15 @@ export class Wallet {
   @Prop({ default: 0 })
   balance: number;
 
+  /**
+   * Unused safety buffer owed back to the customer's bank.
+   *
+   * Kept apart from `balance` on purpose. Buffer money is not spendable in the app — it belongs
+   * to the customer's bank account and leaves on the nightly payout. Mixing the two meant the
+   * nightly sweep emptied the whole wallet, including money the customer had topped up.
+   */
+  bufferBalance?: number;
+
   @Prop({ default: 0 })
   totalEarned: number;
 
