@@ -5410,8 +5410,25 @@ export class OrdersService {
     
     if (!itemFound) throw new NotFoundException('Item not found in order');
 
-    order.subtotal -= refundedAmount;
-    order.total -= refundedAmount;
+    // Never let a refund push the order below zero.
+    //
+    // `-=` was unbounded: an item refunded twice, or a refund against an already-reduced order,
+    // produced ERR-911866DD with a subtotal of -2,400 and a total to match. Clamping keeps the
+    // ledger readable and makes a second refund show up as a zero instead of a negative price.
+    const refundable = Math.max(0, Math.min(refundedAmount, Number(order.subtotal) || 0));
+    if (refundable < refundedAmount) {
+      this.logger.warn(
+        `Refund capped for ${order.orderNumber}: requested ₦${refundedAmount}, applied ₦${refundable} ` +
+        `(subtotal ₦${order.subtotal})`,
+      );
+    }
+    refundedAmount = refundable;
+    order.subtotal = Math.max(0, (Number(order.subtotal) || 0) - refundedAmount);
+    order.total = Math.max(0, (Number(order.total) || 0) - refundedAmount);
+
+    // Record it on the order so the screen can explain the arithmetic instead of appearing wrong.
+    (order as any).refundedItemsTotal =
+      (Number((order as any).refundedItemsTotal) || 0) + refundedAmount;
     
     if (refundedAmount > 0) {
       // 1. Debit the vendor if they've already been paid

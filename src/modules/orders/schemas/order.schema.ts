@@ -292,6 +292,9 @@ export class Order extends Document {
   @Prop({ default: 0 })
   serviceFee: number;
 
+  /** Total refunded for items that were out of stock after the order was placed. */
+  refundedItemsTotal?: number;
+
   @Prop({ default: 0 })
   platformProcessingFee: number;
 
