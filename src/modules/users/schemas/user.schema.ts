@@ -217,3 +217,35 @@ export class User extends Document {
 export const UserSchema = SchemaFactory.createForClass(User);
 UserSchema.index({ location: '2dsphere' });
 UserSchema.index({ email: 1, role: 1 }, { unique: true });
+
+/**
+ * Every new customer gets a referral code without anyone remembering to create one.
+ *
+ * Five students signed up before this existed and have no code at all, so their referral link
+ * was dead. Doing it in the schema hook means every creation path — email signup, Google, admin
+ * created, seeded — is covered, rather than each service being patched separately and the next
+ * one forgetting.
+ */
+UserSchema.pre('save', async function assignReferralCode(next) {
+  try {
+    const doc: any = this;
+    const role = String(doc.role || '').toLowerCase();
+    const needsCode = !doc.referralCode && (role === 'student' || role === 'customer');
+
+    if (!needsCode) return next();
+
+    const { uniqueReferralCode } = await import('../referral-code.util');
+    const model = doc.constructor as any;
+
+    doc.referralCode = await uniqueReferralCode(
+      doc.firstName,
+      async (code: string) => Boolean(await model.exists({ referralCode: code })),
+      doc._id?.toString(),
+    );
+
+    return next();
+  } catch (e) {
+    // A missing referral code must never block a signup.
+    return next();
+  }
+});
