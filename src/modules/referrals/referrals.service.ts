@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException, Logger, BadRequestException, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, Logger, BadRequestException, OnModuleInit, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Referral, ReferralStatus, ReferrerType, ReferredType } from './schemas/referral.schema';
@@ -8,6 +8,7 @@ import { PromoCode } from '../promo-codes/schemas/promo-code.schema';
 import { PromoRedemption } from '../promo-codes/schemas/promo-redemption.schema';
 import { Vendor } from '../vendors/schemas/vendor.schema';
 import { Errander } from '../erranders/schemas/errander.schema';
+import { WalletsService } from '../wallets/wallets.service';
 import { EmailService } from '../email/email.service';
 
 // Tier configuration
@@ -33,6 +34,9 @@ export class ReferralsService implements OnModuleInit {
     @InjectModel(Vendor.name) private vendorModel: Model<Vendor>,
     @InjectModel(Errander.name) private erranderModel: Model<Errander>,
     private emailService: EmailService,
+    @InjectModel('SystemSetting') private readonly settingModel: Model<any>,
+    @Inject(forwardRef(() => WalletsService))
+    private readonly walletsService: WalletsService,
   ) {}
 
   async onModuleInit() {
@@ -70,6 +74,40 @@ export class ReferralsService implements OnModuleInit {
    * Process a referral when a new user signs up with a referral code.
    * Looks up the code in both User and Facilitator collections.
    */
+  /**
+   * Cash back for a successful referral.
+   *
+   * Controlled from the admin, on by default. The reference makes it idempotent: a retried
+   * signup call cannot pay the same referrer twice for the same person.
+   */
+  async payReferralCashback(referrerId: string, newUserId: string, amountOverride?: number): Promise<number> {
+    try {
+      const setting = await this.settingModel.findOne({ key: 'referrals' }).lean().exec();
+      const cfg: any = (setting as any)?.value || {};
+      if (cfg.enabled === false) return 0;
+
+      const amount = Number(amountOverride ?? cfg.rewardAmount ?? 100);
+      if (!amount || amount <= 0) return 0;
+      if (!referrerId || String(referrerId) === String(newUserId)) return 0;
+
+      await this.walletsService.creditWallet(
+        referrerId,
+        amount,
+        `Referral cashback — ₦${amount.toLocaleString()} for a student you referred`,
+        undefined,
+        `REFERRAL-CASHBACK-${newUserId}`,
+        'automatic',
+      );
+
+      this.logger.log(`Referral cashback ₦${amount} credited to ${referrerId} for ${newUserId}`);
+      return amount;
+    } catch (e: any) {
+      // Never let a reward failure break a signup that already succeeded.
+      this.logger.error(`Referral cashback failed for ${referrerId}: ${e?.message || e}`);
+      return 0;
+    }
+  }
+
   async processReferral(newUserId: string, referralCode: string) {
     if (!referralCode) return null;
 

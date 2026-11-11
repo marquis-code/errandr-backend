@@ -1,5 +1,6 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { Schema } from 'mongoose';
 import { ReferralsService } from './referrals.service';
 import { ReferralsController } from './referrals.controller';
 import { ReferralsPublicController } from './referrals.public.controller';
@@ -11,10 +12,12 @@ import { PromoRedemption, PromoRedemptionSchema } from '../promo-codes/schemas/p
 import { Vendor, VendorSchema } from '../vendors/schemas/vendor.schema';
 import { Errander, ErranderSchema } from '../erranders/schemas/errander.schema';
 import { EmailModule } from '../email/email.module';
+import { WalletsModule } from '../wallets/wallets.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
+      { name: 'SystemSetting', schema: new Schema({}, { strict: false, collection: 'systemsettings' }) },
       { name: Referral.name, schema: ReferralSchema },
       { name: Facilitator.name, schema: FacilitatorSchema },
       { name: User.name, schema: UserSchema },
@@ -24,6 +27,7 @@ import { EmailModule } from '../email/email.module';
       { name: Errander.name, schema: ErranderSchema },
     ]),
     EmailModule,
+    forwardRef(() => WalletsModule),
   ],
   controllers: [ReferralsController, ReferralsPublicController],
   providers: [ReferralsService],

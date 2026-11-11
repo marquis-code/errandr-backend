@@ -229,6 +229,40 @@ export class SettingsController {
     return setting.value;
   }
 
+  @Get('referrals/config')
+  @ApiOperation({ summary: 'Get referral cashback configuration' })
+  async getReferralConfig() {
+    let setting = await this.settingModel.findOne({ key: 'referrals' }).exec();
+    if (!setting) {
+      setting = await this.settingModel.create({
+        key: 'referrals',
+        // On by default: a referral programme nobody switched on is a programme nobody uses.
+        value: { enabled: true, rewardAmount: 100, sendCodeOnSignup: true },
+      });
+    }
+    return setting.value;
+  }
+
+  @Put('referrals/config')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update referral cashback configuration (admin only)' })
+  async updateReferralConfig(@Body() body: any) {
+    let setting = await this.settingModel.findOne({ key: 'referrals' }).exec();
+    if (!setting) setting = await this.settingModel.create({ key: 'referrals', value: {} });
+
+    const prev: any = setting.value || {};
+    setting.value = {
+      enabled: body.enabled !== undefined ? Boolean(body.enabled) : prev.enabled !== false,
+      rewardAmount: body.rewardAmount !== undefined ? Number(body.rewardAmount) : (prev.rewardAmount ?? 100),
+      sendCodeOnSignup:
+        body.sendCodeOnSignup !== undefined ? Boolean(body.sendCodeOnSignup) : prev.sendCodeOnSignup !== false,
+    };
+    await setting.save();
+    return setting.value;
+  }
+
   @Get('group-orders/config')
   @ApiOperation({ summary: 'Get group order payment and fee configuration' })
   async getGroupOrderConfig() {
