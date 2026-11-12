@@ -847,6 +847,12 @@ export class OrdersService {
         );
       }
 
+      // A prescription was supplied, so the order may proceed — but it is held until a pharmacist
+      // clears it. The rider must not be able to collect a medicine nobody has verified.
+      data.pharmacistReview = { status: 'pending' };
+      data.prescriptionImage = (data as any).prescriptionImage || '';
+      data.prescriptionReference = (data as any).prescriptionReference || '';
+
       // Controlled drugs need a named recipient, not just a prescription: someone has to hand
       // over to a person, and the record has to say who.
       const controlled = requiresRx.filter((p: any) => p.prescriptionType === 'controlled');
@@ -1379,6 +1385,9 @@ export class OrdersService {
       paymentReference: data.paymentReference,
       locationType: data.locationType || LocationType.INSIDE_CAMPUS,
       proposedDeliveryFee: (data.locationType === LocationType.OUTSIDE_CAMPUS || data.locationType === LocationType.CAMPUS_ENVIRONS) ? Number(data.proposedDeliveryFee) : undefined,
+      prescriptionImage: data.prescriptionImage || '',
+      prescriptionReference: data.prescriptionReference || '',
+      pharmacistReview: data.pharmacistReview || { status: 'not_required' },
       status: (data.locationType === LocationType.OUTSIDE_CAMPUS || data.locationType === LocationType.CAMPUS_ENVIRONS)
         ? OrderStatus.NEGOTIATING
         : (paymentVerified || trustedUnpaid)

@@ -37,6 +37,22 @@ export class PharmacyChatController {
     return this.service.reviewQueue(req.user._id.toString());
   }
 
+  @Get('vendor/prescriptions')
+  @ApiOperation({ summary: 'Prescription orders waiting for a pharmacist' })
+  pendingPrescriptions(@Req() req: any) {
+    return this.service.pendingPrescriptions(req.user._id.toString());
+  }
+
+  @Post('vendor/prescriptions/:orderId')
+  @ApiOperation({ summary: 'Approve or reject a prescription' })
+  reviewPrescription(
+    @Req() req: any,
+    @Param('orderId') orderId: string,
+    @Body() body: { decision: 'approved' | 'rejected'; note?: string },
+  ) {
+    return this.service.reviewPrescription(req.user._id.toString(), orderId, body.decision, body.note || '');
+  }
+
   @Post(':id/messages')
   @ApiOperation({ summary: 'Reply in a pharmacy conversation' })
   reply(@Req() req: any, @Param('id') id: string, @Body() body: { message: string }) {

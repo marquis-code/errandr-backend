@@ -146,6 +146,67 @@ export class PharmacyChatService {
     return conversation;
   }
 
+  /**
+   * Prescription orders waiting on a pharmacist.
+   *
+   * A medicine must not be dispatched on the strength of an upload alone — somebody qualified has
+   * to look at it. This is the queue that makes that true rather than intended.
+   */
+  async pendingPrescriptions(ownerId: string) {
+    const vendor = await this.vendorModel.findOne({ owner: new Types.ObjectId(ownerId) }).select('_id').lean().exec();
+    if (!vendor) throw new ForbiddenException('No store linked to this account');
+
+    const orders = await (this.conversationModel.db as any).collection('orders')
+      .find({ vendor: (vendor as any)._id, 'pharmacistReview.status': 'pending' })
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .toArray();
+
+    return {
+      pending: orders.length,
+      orders: orders.map((o: any) => ({
+        id: String(o._id),
+        orderNumber: o.orderNumber,
+        status: o.status,
+        total: o.total,
+        createdAt: o.createdAt,
+        prescriptionImage: o.prescriptionImage || '',
+        prescriptionReference: o.prescriptionReference || '',
+        customer: o.customer,
+      })),
+    };
+  }
+
+  /** Approve or reject a prescription. Rejection cancels the order and refunds the customer. */
+  async reviewPrescription(userId: string, orderId: string, decision: 'approved' | 'rejected', note = '') {
+    const vendor = await this.vendorModel.findOne({ owner: new Types.ObjectId(userId) }).select('_id').lean().exec();
+    if (!vendor) throw new ForbiddenException('No store linked to this account');
+
+    const orders = (this.conversationModel.db as any).collection('orders');
+    const order = await orders.findOne({ _id: new Types.ObjectId(orderId) });
+    if (!order) throw new NotFoundException('Order not found');
+    if (String(order.vendor) !== String((vendor as any)._id)) throw new ForbiddenException('Not your order');
+
+    await orders.updateOne(
+      { _id: order._id },
+      {
+        $set: {
+          'pharmacistReview.status': decision,
+          'pharmacistReview.reviewedBy': String(userId),
+          'pharmacistReview.reviewedAt': new Date(),
+          'pharmacistReview.note': note,
+          ...(decision === 'rejected' ? { status: 'cancelled' } : {}),
+          updatedAt: new Date(),
+        },
+        ...(decision === 'approved'
+          ? {}
+          : { $push: { statusHistory: { status: 'cancelled', timestamp: new Date(), note: `Prescription rejected: ${note || 'not valid'}` } } }),
+      } as any,
+    );
+
+    return { orderId, decision, note };
+  }
+
   /** Prescription uploads and questions a pharmacist must clear before dispatch. */
   async reviewQueue(ownerId: string) {
     const vendor = await this.vendorModel.findOne({ owner: new Types.ObjectId(ownerId) }).select('_id').lean().exec();

@@ -292,6 +292,35 @@ export class Order extends Document {
   @Prop({ default: 0 })
   serviceFee: number;
 
+  /** Prescription attached by the customer before checkout. */
+  @Prop({ type: String, default: '' })
+  prescriptionImage?: string;
+
+  @Prop({ type: String, default: '' })
+  prescriptionReference?: string;
+
+  /**
+   * A prescription-only order is held until a pharmacist clears it.
+   *
+   * 'not_required' is the normal case. 'pending' means the medicine must not be dispatched until
+   * somebody qualified has looked at the prescription.
+   */
+  @Prop({
+    type: {
+      status: { type: String, enum: ['not_required', 'pending', 'approved', 'rejected'], default: 'not_required' },
+      reviewedBy: { type: String, default: '' },
+      reviewedAt: { type: Date, default: null },
+      note: { type: String, default: '' },
+    },
+    default: { status: 'not_required' },
+  })
+  pharmacistReview?: {
+    status: 'not_required' | 'pending' | 'approved' | 'rejected';
+    reviewedBy?: string;
+    reviewedAt?: Date | null;
+    note?: string;
+  };
+
   /** Total refunded for items that were out of stock after the order was placed. */
   refundedItemsTotal?: number;
 
