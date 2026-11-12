@@ -828,6 +828,34 @@ export class OrdersService {
       return acc;
     }, {} as Record<string, any>);
 
+    // ─── Pharmacy gate ────────────────────────────────────────────────
+    // A prescription-only medicine cannot be ordered like a sandwich. This refuses the order
+    // before any payment is taken, and names what is missing so the customer can act.
+    const requiresRx = [...allProducts, ...allMenuItems].filter(
+      (p: any) => (p as any).requiresPrescription === true || (p as any).prescriptionType === 'pom' || (p as any).prescriptionType === 'controlled',
+    );
+
+    if (requiresRx.length > 0) {
+      const hasPrescription =
+        Boolean((data as any).prescriptionReference) ||
+        Boolean((data as any).prescriptionImage) ||
+        Boolean(((data as any).prescriptionImages || []).length);
+
+      if (!hasPrescription) {
+        throw new BadRequestException(
+          `${requiresRx[0].name} needs a prescription. Upload a photo of it, or ask the pharmacy to review it in chat, before placing this order.`,
+        );
+      }
+
+      // Expired stock must not leave the counter, whatever the customer uploaded.
+      const expired = allProducts.filter((p: any) => p.expiryDate && new Date(p.expiryDate) < new Date());
+      if (expired.length > 0) {
+        throw new BadRequestException(
+          `${expired[0].name} has passed its expiry date and cannot be dispensed. The pharmacy has been notified.`,
+        );
+      }
+    }
+
     if (data.packs && data.packs.length > 0) {
       subtotal = data.packs.reduce((packSum: number, pack: any) =>
         packSum + pack.items.reduce((itemSum: number, item: any) => {

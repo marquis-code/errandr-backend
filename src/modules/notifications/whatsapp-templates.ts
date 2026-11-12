@@ -45,6 +45,19 @@ export class WhatsAppTemplates {
   }
 
   /**
+   * Item names are fine for food and dangerous for medicine.
+   *
+   * A hostel-gate handover, or a message to a group of riders, announcing the medicine someone
+   * bought is a disclosure they never agreed to. Pharmacy orders name the count, never the drugs.
+   */
+  private static privacySafeItems(
+    items?: Array<{ name?: string; quantity?: number; isPharmacy?: boolean }>,
+  ): string {
+    const count = (items || []).reduce((n, i) => n + (i.quantity || 1), 0) || 0;
+    return `• ${count || 'Several'} item${count === 1 ? '' : 's'} (names hidden for privacy)`;
+  }
+
+  /**
    * 1. Order Placed / Payment Received
    */
   static orderPlaced(data: OrderTemplateData): string {

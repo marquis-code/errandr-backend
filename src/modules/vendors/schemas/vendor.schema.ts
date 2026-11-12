@@ -75,6 +75,10 @@ export enum VendorType {
   MINI_MART = 'mini-mart',
   RESTAURANT = 'restaurant',
   SINGLE_CATEGORY = 'single-category',
+  // A pharmacy is not a mini-mart with different branding: it carries prescription-only stock,
+  // expiry-dated products and premises that must be licensed. Giving it its own type is what lets
+  // checkout, onboarding and messaging treat it differently.
+  PHARMACY = 'pharmacy',
 }
 
 @Schema({
@@ -140,6 +144,29 @@ export class Vendor extends Document {
 
   @Prop()
   address: string;
+
+  /** Pharmacy regulatory details. Required before a pharmacy vendor can be approved. */
+  @Prop({
+    type: {
+      pcnPremisesLicence: String,
+      superintendentPharmacist: String,
+      superintendentRegNumber: String,
+      licenceExpiresAt: Date,
+    },
+    default: null,
+  })
+  pharmacyLicence?: {
+    pcnPremisesLicence?: string;
+    superintendentPharmacist?: string;
+    superintendentRegNumber?: string;
+    licenceExpiresAt?: Date;
+  };
+
+  @Prop({ type: Boolean, default: false })
+  handlesColdChain?: boolean;
+
+  @Prop({ type: Boolean, default: false })
+  dispensesControlledDrugs?: boolean;
 
   @Prop({ type: String, enum: BusinessType, default: BusinessType.PHYSICAL_PRODUCT })
   businessType: BusinessType;

@@ -42,6 +42,33 @@ export class Product extends Document {
   @Prop({ default: true })
   isAvailable: boolean;
 
+  /**
+   * Pharmacy fields.
+   *
+   * A medicine is not a sandwich. These four flags are what stop the app selling a
+   * prescription-only drug to someone with no prescription, an expired batch, or an
+   * age-restricted item to a minor.
+   */
+  @Prop({ type: Boolean, default: false })
+  requiresPrescription?: boolean;
+
+  @Prop({ type: String, enum: ['otc', 'pom', 'controlled'], default: 'otc' })
+  prescriptionType?: 'otc' | 'pom' | 'controlled';
+
+  @Prop({ type: Date, default: null })
+  expiryDate?: Date;
+
+  @Prop({ type: String, default: '' })
+  nafdacNumber?: string;
+
+  /** Needs 2-8C handling. Standard insulated food bags are not cold chain. */
+  @Prop({ type: Boolean, default: false })
+  isColdChain?: boolean;
+
+  /** Alcohol-based syrups, some cough preparations, anything age-gated. */
+  @Prop({ type: Number, default: null })
+  minimumAge?: number | null;
+
   @Prop({ default: false })
   isFeatured: boolean;
 
