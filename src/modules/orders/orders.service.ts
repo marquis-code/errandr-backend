@@ -847,6 +847,34 @@ export class OrdersService {
         );
       }
 
+      // Controlled drugs need a named recipient, not just a prescription: someone has to hand
+      // over to a person, and the record has to say who.
+      const controlled = requiresRx.filter((p: any) => p.prescriptionType === 'controlled');
+      if (controlled.length > 0 && !(data as any).recipientIdNumber) {
+        throw new BadRequestException(
+          `${controlled[0].name} requires ID on handover. Add the recipient's ID number so the rider can verify who receives it.`,
+        );
+      }
+
+      // Age-gated stock. The customer's date of birth is on their profile; without one we cannot
+      // verify, so we refuse rather than guess.
+      const ageGated = [...allProducts, ...allMenuItems].filter((p: any) => Number(p.minimumAge) > 0);
+      if (ageGated.length > 0) {
+        const customer = await this.userModel.findById(customerId).select('dateOfBirth').lean().exec();
+        const dob = (customer as any)?.dateOfBirth;
+        if (!dob) {
+          throw new BadRequestException(
+            `${(ageGated[0] as any).name} is age restricted. Add your date of birth to your profile so we can confirm you are old enough.`,
+          );
+        }
+        const age = Math.floor((Date.now() - new Date(dob).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+        if (age < Number((ageGated[0] as any).minimumAge)) {
+          throw new BadRequestException(
+            `${(ageGated[0] as any).name} can only be sold to customers aged ${(ageGated[0] as any).minimumAge} or over.`,
+          );
+        }
+      }
+
       // Expired stock must not leave the counter, whatever the customer uploaded.
       const expired = allProducts.filter((p: any) => p.expiryDate && new Date(p.expiryDate) < new Date());
       if (expired.length > 0) {
