@@ -42,6 +42,7 @@ import { MapboxModule } from './modules/mapbox/mapbox.module';
 import { GlobalProductsModule } from './modules/global-products/global-products.module';
 import { PushCampaignsModule } from './modules/push-campaigns/push-campaigns.module';
 import { ExamModeModule } from './modules/exam-mode/exam-mode.module';
+import { PharmacyChatModule } from './modules/pharmacy-chat/pharmacy-chat.module';
 import { MarketPoolModule } from './modules/market-pool/market-pool.module';
 import { DepartmentsModule } from './modules/departments/departments.module';
 import { InstitutionsModule } from './modules/institutions/institutions.module';
@@ -126,6 +127,7 @@ import { CallsModule } from './modules/calls/calls.module';
     PromoCodesModule,
     ExamModeModule,
     MarketPoolModule,
+    PharmacyChatModule,
   ],
   providers: [
     // Applied globally so every authenticated rider request records a heartbeat.
