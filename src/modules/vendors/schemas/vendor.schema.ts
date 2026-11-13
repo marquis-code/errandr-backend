@@ -444,6 +444,21 @@ export class Vendor extends Document {
     ],
     default: [],
   })
+  /**
+   * Look and feel, separate from page content.
+   *
+   * A theme changes how the shop looks — accent, corners, card weight — without touching the
+   * products. Templates were content; this is the skin around the content that already exists.
+   */
+  @Prop({ type: Object, default: null })
+  storefrontTheme?: {
+    preset?: string;
+    accent?: string;
+    radius?: string;
+    card?: string;
+    density?: string;
+  };
+
   pageBlocks: {
     id: string;
     type: string;
