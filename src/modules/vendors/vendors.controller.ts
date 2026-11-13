@@ -1,6 +1,6 @@
 import {
   Controller, Get, Post, Put, Patch, Body, Param, Query, Req,
-  UseGuards, Logger, DefaultValuePipe, ParseIntPipe, BadRequestException
+  UseGuards, Logger, DefaultValuePipe, ParseIntPipe, BadRequestException, NotFoundException
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { VendorsService } from './vendors.service';
@@ -187,6 +187,23 @@ export class VendorsController {
   @ApiOperation({ summary: 'Get vendor real-time status' })
   getStatus(@Param('id') id: string, @Req() req?: any) {
     return this.vendorsService.getVendorStatus(id, req);
+  }
+
+  /**
+   * Update the signed-in vendor's own store.
+   *
+   * Declared BEFORE @Put(':id') on purpose: without it, PUT /vendors/profile matched the :id route
+   * with id = "profile", findById threw a CastError, and the client saw a 500 with no explanation.
+   */
+  @Put('profile')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update the current vendor\'s own profile' })
+  async updateMyProfile(@CurrentUser() user: User, @Body() body: any) {
+    const mine = await this.vendorsService.findByOwner((user._id as unknown) as string);
+    const id = (mine as any)?._id?.toString() || (mine as any)?.id;
+    if (!id) throw new NotFoundException('No store is linked to this account');
+    return this.vendorsService.update(id, (user._id as unknown) as string, body);
   }
 
   @Put(':id')
