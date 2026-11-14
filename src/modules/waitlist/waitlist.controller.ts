@@ -1,37 +1,56 @@
-import { Controller, Post, Body, Get, Query, UseGuards, Put, Param } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../../common/decorators';
 import { WaitlistService } from './waitlist.service';
-import { JwtAuthGuard, CurrentUser } from '../../common/decorators';
-import { WaitlistStatus } from './schemas/waitlist.schema';
 
 @ApiTags('Waitlist')
 @Controller('waitlist')
 export class WaitlistController {
-  constructor(private readonly waitlistService: WaitlistService) {}
+  constructor(private readonly service: WaitlistService) {}
 
-  @Post('join')
-  @ApiOperation({ summary: 'Join waitlist for a specific slot' })
-  joinWaitlist(@Body() body: any) {
-    return this.waitlistService.join(body);
+  // ─── Public: a customer filling a vendor's form. No auth by design. ───
+  @Get('public/:subdomain/:slug')
+  @ApiOperation({ summary: 'Published waitlist form for a store' })
+  publicForm(@Param('subdomain') subdomain: string, @Param('slug') slug: string) {
+    return this.service.publicForm(subdomain, slug);
   }
 
-  @Get('vendor')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get waitlist for logged in vendor' })
-  getWaitlist(@CurrentUser() vendor: any, @Query() query: any) {
-    return this.waitlistService.getWaitlistForVendor((vendor._id as unknown) as string, query);
+  @Post('public/:subdomain/:slug')
+  @ApiOperation({ summary: 'Submit a waitlist response' })
+  submit(@Param('subdomain') subdomain: string, @Param('slug') slug: string, @Body() body: { answers: Record<string, any> }) {
+    return this.service.submit(subdomain, slug, body?.answers || {});
   }
 
-  @Put(':id/status')
+  // ─── Vendor: create and manage ───
+  @Post()
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Update waitlist status' })
-  updateStatus(
-    @Param('id') id: string,
-    @CurrentUser() vendor: any,
-    @Body('status') status: WaitlistStatus
-  ) {
-    return this.waitlistService.updateStatus(id, (vendor._id as unknown) as string, status);
+  @ApiOperation({ summary: 'Create a waitlist form' })
+  create(@Req() req: any, @Body() body: any) {
+    return this.service.create(req.user._id.toString(), body);
+  }
+
+  @Get()
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "This store's waitlist forms" })
+  list(@Req() req: any) {
+    return this.service.list(req.user._id.toString());
+  }
+
+  @Patch(':id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update or publish a form' })
+  update(@Req() req: any, @Param('id') id: string, @Body() body: any) {
+    return this.service.update(req.user._id.toString(), id, body);
+  }
+
+  @Get(':id/responses')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Responses to a form' })
+  responses(@Req() req: any, @Param('id') id: string) {
+    return this.service.responses(req.user._id.toString(), id);
   }
 }

@@ -1,14 +1,19 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { WaitlistController } from './waitlist.controller';
+import { Schema } from 'mongoose';
+import { WaitlistForm, WaitlistFormSchema, WaitlistResponse, WaitlistResponseSchema } from './schemas/waitlist.schema';
 import { WaitlistService } from './waitlist.service';
-import { Waitlist, WaitlistSchema } from './schemas/waitlist.schema';
-import { VendorsModule } from '../vendors/vendors.module';
+import { WaitlistController } from './waitlist.controller';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: Waitlist.name, schema: WaitlistSchema }]),
-    VendorsModule
+    MongooseModule.forFeature([
+      { name: WaitlistForm.name, schema: WaitlistFormSchema },
+      { name: WaitlistResponse.name, schema: WaitlistResponseSchema },
+      { name: 'Vendor', schema: new Schema({}, { strict: false, collection: 'vendors' }) },
+    ]),
+    NotificationsModule,
   ],
   controllers: [WaitlistController],
   providers: [WaitlistService],
