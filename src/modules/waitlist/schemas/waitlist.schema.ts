@@ -78,6 +78,14 @@ export class WaitlistForm {
 
   @Prop({ default: 0 })
   responseCount: number;
+
+  /** Page opens, counted once per visit from the public form. */
+  @Prop({ default: 0 })
+  viewCount: number;
+
+  /** Last time someone opened the form, for "is this link still being shared?" */
+  @Prop({ default: null })
+  lastViewedAt: Date;
 }
 
 export const WaitlistFormSchema = SchemaFactory.createForClass(WaitlistForm);

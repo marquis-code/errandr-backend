@@ -15,6 +15,12 @@ export class WaitlistController {
     return this.service.publicForm(subdomain, slug);
   }
 
+  @Post('public/:subdomain/:slug/view')
+  @ApiOperation({ summary: 'Count a view of a published form' })
+  recordView(@Param('subdomain') subdomain: string, @Param('slug') slug: string) {
+    return this.service.recordView(subdomain, slug);
+  }
+
   @Post('public/:subdomain/:slug')
   @ApiOperation({ summary: 'Submit a waitlist response' })
   submit(@Param('subdomain') subdomain: string, @Param('slug') slug: string, @Body() body: { answers: Record<string, any> }) {

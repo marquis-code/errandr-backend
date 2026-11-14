@@ -111,6 +111,23 @@ export class WaitlistService {
     };
   }
 
+  /**
+   * Record a page view.
+   *
+   * Deliberately its own endpoint rather than a side effect of the GET: the form payload is cached
+   * by proxies and prefetched by link scanners, and counting those would inflate the number until
+   * it meant nothing.
+   */
+  async recordView(subdomain: string, slug: string) {
+    const vendor = await this.vendorModel.findOne({ subdomain: String(subdomain).toLowerCase() }).select('_id').lean().exec();
+    if (!vendor) return { success: false };
+    const res = await this.formModel.updateOne(
+      { vendor: (vendor as any)._id, slug, isPublished: true },
+      { $inc: { viewCount: 1 }, $set: { lastViewedAt: new Date() } },
+    );
+    return { success: (res as any).matchedCount > 0 };
+  }
+
   /** A customer submits. This is the one path that must never silently fail. */
   async submit(subdomain: string, slug: string, answers: Record<string, any>) {
     const vendor = await this.vendorModel.findOne({ subdomain: String(subdomain).toLowerCase() }).exec();
