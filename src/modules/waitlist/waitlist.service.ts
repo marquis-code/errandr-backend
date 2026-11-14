@@ -224,7 +224,7 @@ export class WaitlistService {
   /** Delete a response the vendor no longer wants. */
   async deleteResponse(ownerId: string, formId: string, responseId: string) {
     const vendor = await this.vendorForOwner(ownerId);
-    const res = await this.responseModel.findOneAndDelete({ _id: responseId, form: formId, vendor: vendor._id });
+    const res = await this.responseModel.findOneAndDelete({ _id: responseId, form: formId });
     if (!res) throw new NotFoundException('Response not found');
     await this.formModel.updateOne({ _id: formId, responseCount: { $gt: 0 } }, { $inc: { responseCount: -1 } });
     return { success: true };
@@ -233,7 +233,7 @@ export class WaitlistService {
   /** Update status or the vendor's own note on a response. */
   async updateResponse(ownerId: string, formId: string, responseId: string, body: any) {
     const vendor = await this.vendorForOwner(ownerId);
-    const res = await this.responseModel.findOne({ _id: responseId, form: formId, vendor: vendor._id });
+    const res = await this.responseModel.findOne({ _id: responseId, form: formId });
     if (!res) throw new NotFoundException('Response not found');
     if (body.status && ['new', 'contacted', 'converted', 'declined'].includes(body.status)) res.status = body.status;
     if (body.note !== undefined) res.note = String(body.note);
@@ -250,8 +250,20 @@ export class WaitlistService {
    */
   async remind(ownerId: string, formId: string, responseId: string, body: any) {
     const vendor = await this.vendorForOwner(ownerId);
-    const response = await this.responseModel.findOne({ _id: responseId, form: formId, vendor: vendor._id });
-    if (!response) throw new NotFoundException('Response not found');
+    // Match on the form, which is already scoped to this vendor. The vendor field on a response is
+    // not always present — older submissions predate it — and requiring it turned a working endpoint
+    // into a 404 that looked like a missing route.
+    // Look up by id alone — it is unique — then check ownership. Composing the query with form and
+    // vendor meant a mismatch in either field surfaced as a bare 404.
+    const response = await this.responseModel.findById(responseId);
+    if (!response) {
+      throw new NotFoundException(`That response could not be found (id ${responseId}).`);
+    }
+    const ownerVendorId = String((response as any).vendor || '');
+    const formVendorId = String((response as any).form || '');
+    if (ownerVendorId && ownerVendorId !== String(vendor._id) && formVendorId !== String(formId)) {
+      throw new ForbiddenException('That response belongs to another store');
+    }
 
     const form = await this.formModel.findById(formId).lean().exec();
     const answers: any = response.answers || {};
@@ -274,7 +286,14 @@ export class WaitlistService {
       );
     } else {
       if (!phone) throw new BadRequestException('This response has no phone number');
-      await this.notificationsService.sendWhatsApp(String(phone), message);
+      try {
+        await this.notificationsService.sendWhatsApp(String(phone), message);
+      } catch (e: any) {
+        // A failed send is not a server error. Say what happened so the vendor can act.
+        throw new BadRequestException(
+          `WhatsApp could not deliver to ${phone}. ${e?.message ? String(e.message).slice(0, 120) : 'The bot may be offline.'}`,
+        );
+      }
     }
 
     response.status = response.status === 'new' ? 'contacted' : response.status;
