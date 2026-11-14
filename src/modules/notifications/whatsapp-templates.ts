@@ -345,7 +345,10 @@ Order: ${order}
     const idx = (data.variantIndex !== undefined ? data.variantIndex : Math.floor(Math.random() * greetings.length)) % greetings.length;
     const header = greetings[idx];
 
-    return `🤖 *Erranders Bot*
+    // "@all" is written for people, not for WhatsApp: this platform has no all-keyword (that is
+    // Telegram). The notification itself comes from the mentions payload the sender attaches, which
+    // is why the text can say @all while the mentions do the work.
+    return `🤖 *Erranders Bot* · @all
 
 New errand · ₦${feeFormatted}
 ${data.storeName} · #${data.orderNumber}
