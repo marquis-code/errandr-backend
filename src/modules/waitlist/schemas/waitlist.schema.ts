@@ -50,6 +50,11 @@ export class WaitlistForm {
         options: { type: [String], default: [] },
         /** Adds an "Other" choice with a free-text box, the way a real form does. */
         allowOther: { type: Boolean, default: false },
+        /**
+         * Follow-up questions per option: { "Block hostel": "Which block?" }.
+         * Choosing that option reveals the prompt, so "Block hostel" can ask for a room.
+         */
+        followUps: { type: Object, default: {} },
       },
     ],
     default: [],
@@ -61,6 +66,7 @@ export class WaitlistForm {
     required?: boolean;
     options?: string[];
     allowOther?: boolean;
+    followUps?: Record<string, string>;
   }>;
 
   @Prop({ default: false, index: true })

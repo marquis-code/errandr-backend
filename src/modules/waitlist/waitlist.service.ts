@@ -51,6 +51,7 @@ export class WaitlistService {
       required: Boolean(f.required),
       options: Array.isArray(f.options) ? f.options.map(String).filter(Boolean) : [],
       allowOther: Boolean(f.allowOther),
+      followUps: f.followUps && typeof f.followUps === 'object' ? f.followUps : {},
     }));
 
     return this.formModel.create({
