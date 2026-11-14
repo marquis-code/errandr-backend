@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundEx
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { NotificationsService } from '../notifications/notifications.service';
+import { EmailService } from '../email/email.service';
 import { WaitlistForm, WaitlistFormDocument, WaitlistResponse } from './schemas/waitlist.schema';
 
 @Injectable()
@@ -13,7 +14,7 @@ export class WaitlistService {
     @InjectModel(WaitlistResponse.name) private readonly responseModel: Model<WaitlistResponse>,
     @InjectModel('Vendor') private readonly vendorModel: Model<any>,
     private readonly notificationsService: NotificationsService,
-    private readonly moduleRef: any,
+    private readonly emailService: EmailService,
   ) {}
 
   private async vendorForOwner(ownerId: string) {
@@ -263,14 +264,10 @@ export class WaitlistService {
 
     if (channel === 'email') {
       if (!email) throw new BadRequestException('This response has no email address');
-      const { EmailService } = await import('../email/email.service');
-      const mailer = (this as any).moduleRef?.get
-        ? (this as any).moduleRef.get(EmailService, { strict: false })
-        : null;
-      if (!mailer?.sendEmail) {
+      if (!this.emailService?.sendEmail) {
         throw new BadRequestException('Email sending is not configured');
       }
-      await mailer.sendEmail(
+      await this.emailService.sendEmail(
         email,
         body?.subject || `A reminder from ${vendor.storeName}`,
         `<div style="font-family:system-ui;line-height:1.6;white-space:pre-line">${message}</div>`,
