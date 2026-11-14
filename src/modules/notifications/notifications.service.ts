@@ -258,6 +258,7 @@ export class NotificationsService {
     text: string;
     resolve: (sent: boolean) => void;
     isPriority?: boolean;
+    mentionAll?: boolean;
     createdAt: number;
   }> = [];
   private isProcessingWhatsAppQueue = false;
@@ -267,7 +268,7 @@ export class NotificationsService {
    * Enqueue a WhatsApp message to be dispatched with human-like pacing,
    * random jitter delay, deduplication, and presence simulation to prevent account bans.
    */
-  async sendWhatsApp(phone: string, templateDataOrText: any, options?: { isPriority?: boolean }): Promise<boolean> {
+  async sendWhatsApp(phone: string, templateDataOrText: any, options?: { isPriority?: boolean; mentionAll?: boolean }): Promise<boolean> {
     const text = typeof templateDataOrText === 'string'
       ? templateDataOrText
       : (templateDataOrText?.body || JSON.stringify(templateDataOrText));
@@ -297,6 +298,7 @@ export class NotificationsService {
         phone: formattedPhone,
         text,
         isPriority: options?.isPriority ?? false,
+        mentionAll: options?.mentionAll ?? false,
         resolve,
         createdAt: Date.now(),
       };
@@ -351,7 +353,7 @@ export class NotificationsService {
         }
 
         // Dispatch raw message to Evolution API
-        const success = await this.dispatchEvolutionMessage(item.phone, item.text);
+        const success = await this.dispatchEvolutionMessage(item.phone, item.text, item.mentionAll);
         this.lastMessageTimestamps.set(item.phone, Date.now());
         item.resolve(success);
 
@@ -396,7 +398,29 @@ export class NotificationsService {
     }
   }
 
-  private async dispatchEvolutionMessage(phone: string, text: string): Promise<boolean> {
+  /**
+   * Group members as JIDs, for the mention list. Best effort: if the instance does not expose the
+   * group, mentionsEveryOne alone still notifies everyone on WhatsApp's side.
+   */
+  private async fetchGroupParticipants(groupJid: string): Promise<string[]> {
+    const evoUrl = this.configService.get<string>('WHATSAPP_EVOLUTION_API_URL')?.replace(/\/$/, '');
+    const evoKey = this.configService.get<string>('WHATSAPP_EVOLUTION_API_KEY');
+    const evoInstance = this.configService.get<string>('WHATSAPP_EVOLUTION_INSTANCE') || 'Erranders';
+    if (!evoUrl || !evoKey) return [];
+
+    const res = await fetch(`${evoUrl}/group/findGroupInfos/${evoInstance}?groupJid=${encodeURIComponent(groupJid)}`, {
+      headers: { apikey: evoKey },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return [];
+    const data: any = await res.json().catch(() => ({}));
+    const list = data?.participants || data?.group?.participants || [];
+    return (Array.isArray(list) ? list : [])
+      .map((p: any) => p?.id || p?.jid || p?.number || '')
+      .filter((id: string) => id && id.includes('@'));
+  }
+
+  private async dispatchEvolutionMessage(phone: string, text: string, mentionAll = false): Promise<boolean> {
     const evoUrl = this.configService.get<string>('WHATSAPP_EVOLUTION_API_URL')?.replace(/\/$/, '');
     const evoKey = this.configService.get<string>('WHATSAPP_EVOLUTION_API_KEY');
     const evoInstance = this.configService.get<string>('WHATSAPP_EVOLUTION_INSTANCE') || 'Erranders';
@@ -410,16 +434,23 @@ export class NotificationsService {
       const isGroup = phone.includes('@g.us');
       const targetNumber = isGroup ? phone : phone.replace(/\D/g, '');
 
+      // A group post only notifies someone who is @mentioned; without it the message sits in the
+      // chat until they happen to open it. For a new errand that is the difference between an
+      // alert and a note on a wall.
+      const payload: any = { number: targetNumber, text };
+      if (isGroup && mentionAll) {
+        payload.mentionsEveryOne = true;
+        const participants = await this.fetchGroupParticipants(targetNumber).catch(() => []);
+        if (participants.length) payload.mentioned = participants;
+      }
+
       const response = await fetch(`${evoUrl}/message/sendText/${evoInstance}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           apikey: evoKey,
         },
-        body: JSON.stringify({
-          number: targetNumber,
-          text,
-        }),
+        body: JSON.stringify(payload),
         signal: AbortSignal.timeout(15000),
       });
 
@@ -860,7 +891,8 @@ export class NotificationsService {
         return true;
       }
       const message = WhatsAppTemplates.errandAvailableForNinja(data);
-      return await this.sendWhatsApp(phone, message);
+      // Mention every member when this is a group: a new errand is time-critical.
+      return await this.sendWhatsApp(phone, message, { mentionAll: phone.includes('@g.us'), isPriority: true });
     } catch (e: any) {
       this.logger.warn(`Failed to send new errand WhatsApp to Ninja ${phone}: ${e.message}`);
       return false;
