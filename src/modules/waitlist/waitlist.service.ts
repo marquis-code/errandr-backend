@@ -319,6 +319,52 @@ export class WaitlistService {
     return { success: true, channel, to: channel === 'email' ? email : phone };
   }
 
+  /**
+   * Every form across the platform, for the admin analytics screen.
+   *
+   * Views and responses side by side: the ratio is the signal. A form with many views and few
+   * responses is converting badly; a form with few views and many responses needs distribution.
+   */
+  async adminOverview() {
+    const forms = await this.formModel.find().sort({ createdAt: -1 }).limit(500).lean().exec();
+    const vendorIds = [...new Set(forms.map((f: any) => String(f.vendor)))];
+
+    const vendors = await (this.vendorModel.db as any)
+      .collection('vendors')
+      .find({ _id: { $in: vendorIds.map((id) => new Types.ObjectId(id)) } }, { projection: { storeName: 1, subdomain: 1, logo: 1 } })
+      .toArray();
+
+    const byId = new Map(vendors.map((v: any) => [String(v._id), v]));
+
+    const rows = forms.map((f: any) => {
+      const vendor: any = byId.get(String(f.vendor)) || {};
+      const views = Number(f.viewCount || 0);
+      const responses = Number(f.responseCount || 0);
+      return {
+        formId: String(f._id),
+        title: f.title,
+        slug: f.slug,
+        isPublished: Boolean(f.isPublished),
+        storeName: vendor.storeName || 'Unknown store',
+        subdomain: vendor.subdomain || '',
+        logo: vendor.logo || '',
+        views,
+        responses,
+        conversion: views > 0 ? Math.round((responses / views) * 100) : 0,
+        lastViewedAt: f.lastViewedAt || null,
+        createdAt: f.createdAt || null,
+        maxResponses: Number(f.maxResponses || 0),
+      };
+    });
+
+    const totals = rows.reduce(
+      (acc, r) => ({ views: acc.views + r.views, responses: acc.responses + r.responses, forms: acc.forms + 1 }),
+      { views: 0, responses: 0, forms: 0 },
+    );
+
+    return { rows, totals: { ...totals, conversion: totals.views > 0 ? Math.round((totals.responses / totals.views) * 100) : 0 } };
+  }
+
   async responses(ownerId: string, formId: string) {
     const vendor = await this.vendorForOwner(ownerId);
     const form = await this.formModel.findOne({ _id: formId, vendor: vendor._id }).lean().exec();

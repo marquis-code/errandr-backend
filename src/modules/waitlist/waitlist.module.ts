@@ -3,7 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { Schema } from 'mongoose';
 import { WaitlistForm, WaitlistFormSchema, WaitlistResponse, WaitlistResponseSchema } from './schemas/waitlist.schema';
 import { WaitlistService } from './waitlist.service';
-import { WaitlistController } from './waitlist.controller';
+import { WaitlistController, WaitlistAdminController } from './waitlist.controller';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { EmailModule } from '../email/email.module';
 
@@ -17,7 +17,7 @@ import { EmailModule } from '../email/email.module';
     NotificationsModule,
     EmailModule,
   ],
-  controllers: [WaitlistController],
+  controllers: [WaitlistController, WaitlistAdminController],
   providers: [WaitlistService],
   exports: [WaitlistService],
 })

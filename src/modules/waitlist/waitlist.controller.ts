@@ -2,6 +2,24 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } fro
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/decorators';
 import { WaitlistService } from './waitlist.service';
+import { JwtAuthGuard as AdminJwt, Roles, RolesGuard } from '../../common/decorators';
+import { UserRole } from '../users/schemas/user.schema';
+
+/** Admin-only view of every form. Separate controller so the public routes cannot pick up the guard. */
+@ApiTags('Admin - Waitlist')
+@Controller('admin/waitlist')
+@UseGuards(AdminJwt, RolesGuard)
+@Roles(UserRole.ADMIN)
+@ApiBearerAuth()
+export class WaitlistAdminController {
+  constructor(private readonly service: WaitlistService) {}
+
+  @Get('overview')
+  @ApiOperation({ summary: 'Views and responses for every waitlist form' })
+  overview() {
+    return this.service.adminOverview();
+  }
+}
 
 @ApiTags('Waitlist')
 @Controller('waitlist')
