@@ -5,6 +5,7 @@ import { WaitlistForm, WaitlistFormSchema, WaitlistResponse, WaitlistResponseSch
 import { WaitlistService } from './waitlist.service';
 import { WaitlistController } from './waitlist.controller';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { EmailModule } from '../email/email.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
       { name: 'Vendor', schema: new Schema({}, { strict: false, collection: 'vendors' }) },
     ]),
     NotificationsModule,
+    EmailModule,
   ],
   controllers: [WaitlistController],
   providers: [WaitlistService],

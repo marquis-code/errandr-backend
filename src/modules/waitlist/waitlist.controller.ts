@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/decorators';
 import { WaitlistService } from './waitlist.service';
@@ -44,6 +44,30 @@ export class WaitlistController {
   @ApiOperation({ summary: 'Update or publish a form' })
   update(@Req() req: any, @Param('id') id: string, @Body() body: any) {
     return this.service.update(req.user._id.toString(), id, body);
+  }
+
+  @Patch(':id/responses/:responseId')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update a response (status, note, answers)' })
+  updateResponse(@Req() req: any, @Param('id') id: string, @Param('responseId') responseId: string, @Body() body: any) {
+    return this.service.updateResponse(req.user._id.toString(), id, responseId, body);
+  }
+
+  @Delete(':id/responses/:responseId')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Delete a response' })
+  deleteResponse(@Req() req: any, @Param('id') id: string, @Param('responseId') responseId: string) {
+    return this.service.deleteResponse(req.user._id.toString(), id, responseId);
+  }
+
+  @Post(':id/responses/:responseId/remind')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Send a reminder by email or WhatsApp' })
+  remind(@Req() req: any, @Param('id') id: string, @Param('responseId') responseId: string, @Body() body: any) {
+    return this.service.remind(req.user._id.toString(), id, responseId, body);
   }
 
   @Get(':id/responses')

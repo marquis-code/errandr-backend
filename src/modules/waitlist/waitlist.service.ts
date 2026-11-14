@@ -13,6 +13,7 @@ export class WaitlistService {
     @InjectModel(WaitlistResponse.name) private readonly responseModel: Model<WaitlistResponse>,
     @InjectModel('Vendor') private readonly vendorModel: Model<any>,
     private readonly notificationsService: NotificationsService,
+    private readonly moduleRef: any,
   ) {}
 
   private async vendorForOwner(ownerId: string) {
@@ -217,6 +218,72 @@ export class WaitlistService {
         'https://vendor.erranders.org/dashboard/waitlist',
       ].join(String.fromCharCode(10)),
     );
+  }
+
+  /** Delete a response the vendor no longer wants. */
+  async deleteResponse(ownerId: string, formId: string, responseId: string) {
+    const vendor = await this.vendorForOwner(ownerId);
+    const res = await this.responseModel.findOneAndDelete({ _id: responseId, form: formId, vendor: vendor._id });
+    if (!res) throw new NotFoundException('Response not found');
+    await this.formModel.updateOne({ _id: formId, responseCount: { $gt: 0 } }, { $inc: { responseCount: -1 } });
+    return { success: true };
+  }
+
+  /** Update status or the vendor's own note on a response. */
+  async updateResponse(ownerId: string, formId: string, responseId: string, body: any) {
+    const vendor = await this.vendorForOwner(ownerId);
+    const res = await this.responseModel.findOne({ _id: responseId, form: formId, vendor: vendor._id });
+    if (!res) throw new NotFoundException('Response not found');
+    if (body.status && ['new', 'contacted', 'converted', 'declined'].includes(body.status)) res.status = body.status;
+    if (body.note !== undefined) res.note = String(body.note);
+    if (body.answers !== undefined && typeof body.answers === 'object') res.answers = body.answers;
+    await res.save();
+    return res;
+  }
+
+  /**
+   * Send a reminder on the channel the vendor picked.
+   *
+   * The message is theirs to edit; we only fill in what we know. Email goes through the existing
+   * mailer, WhatsApp through the bot, and both carry the booking link so the person can act.
+   */
+  async remind(ownerId: string, formId: string, responseId: string, body: any) {
+    const vendor = await this.vendorForOwner(ownerId);
+    const response = await this.responseModel.findOne({ _id: responseId, form: formId, vendor: vendor._id });
+    if (!response) throw new NotFoundException('Response not found');
+
+    const form = await this.formModel.findById(formId).lean().exec();
+    const answers: any = response.answers || {};
+    const channel = body?.channel === 'email' ? 'email' : 'whatsapp';
+    const message = String(body?.message || '').trim();
+    if (!message) throw new BadRequestException('Write a message first');
+
+    const email = answers.email || answers.field_email || '';
+    const phone = answers.phone || answers.phoneNumber || answers.whatsapp || '';
+
+    if (channel === 'email') {
+      if (!email) throw new BadRequestException('This response has no email address');
+      const { EmailService } = await import('../email/email.service');
+      const mailer = (this as any).moduleRef?.get
+        ? (this as any).moduleRef.get(EmailService, { strict: false })
+        : null;
+      if (!mailer?.sendEmail) {
+        throw new BadRequestException('Email sending is not configured');
+      }
+      await mailer.sendEmail(
+        email,
+        body?.subject || `A reminder from ${vendor.storeName}`,
+        `<div style="font-family:system-ui;line-height:1.6;white-space:pre-line">${message}</div>`,
+      );
+    } else {
+      if (!phone) throw new BadRequestException('This response has no phone number');
+      await this.notificationsService.sendWhatsApp(String(phone), message);
+    }
+
+    response.status = response.status === 'new' ? 'contacted' : response.status;
+    await response.save();
+
+    return { success: true, channel, to: channel === 'email' ? email : phone };
   }
 
   async responses(ownerId: string, formId: string) {
