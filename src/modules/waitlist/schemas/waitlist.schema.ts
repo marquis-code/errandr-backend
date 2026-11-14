@@ -22,6 +22,10 @@ export class WaitlistForm {
   @Prop({ default: '' })
   description: string;
 
+  /** Wide image at the top of the public form — a shop photo or a service shot. */
+  @Prop({ default: '' })
+  bannerImage: string;
+
   /** URL-safe, unique per vendor: {subdomain}.erranders.org/waitlist/{slug} */
   @Prop({ required: true, index: true })
   slug: string;
@@ -37,9 +41,15 @@ export class WaitlistForm {
       {
         key: { type: String, required: true },
         label: { type: String, required: true },
-        type: { type: String, enum: ['text', 'email', 'phone', 'textarea', 'select', 'date'], default: 'text' },
+        type: {
+          type: String,
+          enum: ['text', 'email', 'phone', 'textarea', 'select', 'multiselect', 'date', 'number', 'image'],
+          default: 'text',
+        },
         required: { type: Boolean, default: false },
         options: { type: [String], default: [] },
+        /** Adds an "Other" choice with a free-text box, the way a real form does. */
+        allowOther: { type: Boolean, default: false },
       },
     ],
     default: [],
@@ -50,6 +60,7 @@ export class WaitlistForm {
     type: string;
     required?: boolean;
     options?: string[];
+    allowOther?: boolean;
   }>;
 
   @Prop({ default: false, index: true })

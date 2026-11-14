@@ -47,9 +47,10 @@ export class WaitlistService {
     ]).map((f: any, i: number) => ({
       key: f.key || `field_${i + 1}`,
       label: String(f.label || `Question ${i + 1}`),
-      type: ['text', 'email', 'phone', 'textarea', 'select', 'date'].includes(f.type) ? f.type : 'text',
+      type: ['text', 'email', 'phone', 'textarea', 'select', 'multiselect', 'date', 'number', 'image'].includes(f.type) ? f.type : 'text',
       required: Boolean(f.required),
-      options: Array.isArray(f.options) ? f.options.map(String) : [],
+      options: Array.isArray(f.options) ? f.options.map(String).filter(Boolean) : [],
+      allowOther: Boolean(f.allowOther),
     }));
 
     return this.formModel.create({
@@ -73,6 +74,7 @@ export class WaitlistService {
     if (!form) throw new NotFoundException('Form not found');
 
     if (body.title !== undefined) form.title = String(body.title);
+    if (body.bannerImage !== undefined) form.bannerImage = String(body.bannerImage);
     if (body.description !== undefined) form.description = String(body.description);
     if (body.fields !== undefined && Array.isArray(body.fields)) form.fields = body.fields as any;
     if (body.isPublished !== undefined) form.isPublished = Boolean(body.isPublished);
@@ -106,8 +108,13 @@ export class WaitlistService {
     const form = await this.formModel.findOne({ vendor: (vendor as any)._id, slug, isPublished: true });
     if (!form) throw new NotFoundException('This waitlist is not open');
 
+    const filled = (f: any) => {
+      const v = answers?.[f.key];
+      if (Array.isArray(v)) return v.length > 0;
+      return String(v ?? '').trim().length > 0;
+    };
     const missing = (form.fields || [])
-      .filter((f: any) => f.required && !String(answers?.[f.key] ?? '').trim())
+      .filter((f: any) => f.required && !filled(f))
       .map((f: any) => f.label);
     if (missing.length > 0) {
       throw new BadRequestException(`Please fill in: ${missing.join(', ')}`);
