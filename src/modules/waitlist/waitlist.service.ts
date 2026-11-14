@@ -79,6 +79,7 @@ export class WaitlistService {
     if (body.description !== undefined) form.description = String(body.description);
     if (body.fields !== undefined && Array.isArray(body.fields)) form.fields = body.fields as any;
     if (body.isPublished !== undefined) form.isPublished = Boolean(body.isPublished);
+    if (body.maxResponses !== undefined) form.maxResponses = Math.max(0, Number(body.maxResponses) || 0);
 
     await form.save();
     return form;
@@ -98,7 +99,14 @@ export class WaitlistService {
       .exec();
     if (!form) throw new NotFoundException('This waitlist is not open');
 
-    return { form, vendor };
+    const max = Number((form as any).maxResponses || 0);
+    const used = Number((form as any).responseCount || 0);
+    return {
+      form,
+      vendor,
+      remaining: max > 0 ? Math.max(0, max - used) : null,
+      capped: max > 0,
+    };
   }
 
   /** A customer submits. This is the one path that must never silently fail. */
@@ -127,9 +135,34 @@ export class WaitlistService {
       answers: answers || {},
     });
 
-    await this.formModel.updateOne({ _id: form._id }, { $inc: { responseCount: 1 } });
+    const after = await this.formModel.findOneAndUpdate(
+      { _id: form._id },
+      { $inc: { responseCount: 1 } },
+      { new: true },
+    );
+
+    // Close on the last slot, and say so, rather than letting the list overrun by however many
+    // people submit in the same minute.
+    const max = Number(form.maxResponses || 0);
+    let closedNow = false;
+    if (max > 0 && after && after.responseCount >= max && after.isPublished) {
+      after.isPublished = false;
+      await after.save();
+      closedNow = true;
+    }
+
     await this.notifyVendor(vendor, form, answers);
-    return { success: true, id: response._id };
+
+    if (closedNow) {
+      await this.notifyFull(vendor, form, max).catch(() => {});
+    }
+
+    return {
+      success: true,
+      id: response._id,
+      closed: closedNow,
+      remaining: max > 0 ? Math.max(0, max - (after?.responseCount || 0)) : null,
+    };
   }
 
   private async notifyVendor(vendor: any, form: any, answers: Record<string, any>) {
@@ -163,6 +196,27 @@ export class WaitlistService {
     } catch (e: any) {
       this.logger.warn(`Waitlist notification failed: ${e?.message || e}`);
     }
+  }
+
+  private async notifyFull(vendor: any, form: any, max: number) {
+    const owner = await (this.vendorModel.db as any)
+      .collection('users')
+      .findOne({ _id: vendor.owner });
+    const phone = owner?.phone || vendor.phone;
+    if (!phone) return;
+
+    await this.notificationsService.sendWhatsApp(
+      phone,
+      [
+        `Hi ${owner?.firstName || 'there'}, Erranders Bot here 👋`,
+        '',
+        `Your waitlist "${form.title}" just filled up.`,
+        `${max} of ${max} slots taken — the form has closed itself, so no one can overbook.`,
+        '',
+        'Open your dashboard to see who joined:',
+        'https://vendor.erranders.org/dashboard/waitlist',
+      ].join(String.fromCharCode(10)),
+    );
   }
 
   async responses(ownerId: string, formId: string) {

@@ -72,6 +72,10 @@ export class WaitlistForm {
   @Prop({ default: false, index: true })
   isPublished: boolean;
 
+  /** 0 means unlimited. When reached, the form closes itself and the vendor is told. */
+  @Prop({ default: 0 })
+  maxResponses: number;
+
   @Prop({ default: 0 })
   responseCount: number;
 }
