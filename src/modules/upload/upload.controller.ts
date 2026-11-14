@@ -9,7 +9,7 @@ import { JwtAuthGuard } from '../../common/decorators';
 import { memoryStorage } from 'multer';
 
 @ApiTags('Upload')
-@Controller('upload')
+@Controller(['upload', 'uploads'])
 export class UploadController {
   constructor(private readonly uploadService: UploadService) {}
 
