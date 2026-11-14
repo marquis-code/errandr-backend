@@ -297,6 +297,41 @@ export class AppointmentsService {
               type: 'BOOKING_CONFIRMED',
               data: { appointmentId: appointment._id }
             });
+
+            // The customer also gets a WhatsApp.
+            //
+            // Push only reaches someone with the app open and notifications allowed. A booking is
+            // an appointment they need to turn up to, so it gets a channel they will actually read.
+            try {
+              const customer = await (this.appointmentModel.db as any)
+                .collection('users')
+                .findOne({ _id: new Types.ObjectId(userId) }, { projection: { firstName: true, phone: true } });
+
+              if (customer?.phone) {
+                const when = appointment.scheduledDate
+                  ? new Date(appointment.scheduledDate).toDateString()
+                  : 'see your dashboard';
+                await this.notificationsService
+                  .sendWhatsApp(
+                    customer.phone,
+                    [
+                      `Hi ${customer.firstName || 'there'}, Erranders Bot here 👋`,
+                      '',
+                      `Your booking with ${(appointment.vendor as any)?.storeName || 'the vendor'} is confirmed.`,
+                      `When: ${when}${appointment.startTime ? ' at ' + appointment.startTime : ''}`,
+                      `Paid: ₦${Number(appointment.price || 0).toLocaleString()}`,
+                      '',
+                      'View or message them here:',
+                      'https://www.erranders.org/dashboard/appointments',
+                      '',
+                      '— Erranders Bot',
+                    ].join(String.fromCharCode(10)),
+                  )
+                  .catch(() => {});
+              }
+            } catch {
+              // A WhatsApp failure must never block a confirmed booking.
+            }
           }
 
           // Trigger vendor notifications (Push + Email + WhatsApp)
