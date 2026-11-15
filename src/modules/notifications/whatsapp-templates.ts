@@ -353,7 +353,7 @@ Order: ${order}
 New errand · ₦${feeFormatted}
 ${data.storeName} · #${data.orderNumber}
 
-Claim it: https://dispatch.erranders.org/orders`;
+Claim it: https://dispatch.erranders.org/deliveries/pool`;
   }
 
   /**
@@ -385,7 +385,7 @@ Claim it: https://dispatch.erranders.org/orders`;
 3. Collect the customer's *4-digit Delivery PIN* to confirm delivery.
 
 👉 *Manage order on your web app:*
-https://dispatch.erranders.org/orders
+https://dispatch.erranders.org/deliveries/pool
 
 ━━━━━━━━━━━━━━━━━━━━━━
 🤖 *Erranders Automated Bot System* · Campus Dispatch
