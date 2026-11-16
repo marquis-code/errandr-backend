@@ -202,7 +202,10 @@ export class TeamService {
     // Whether each person has somewhere for the money to land.
     const userIds = members.map((m: any) => m.user).filter(Boolean);
     const wallets = userIds.length
-      ? await this.walletModel.find({ user: { $in: userIds } }).select('user bankDetails balance').lean()
+      ? await this.walletModel
+          .find({ user: { $in: userIds } })
+          .select('user bankDetails bankAccounts balance')
+          .lean()
       : [];
     const byUser = new Map(wallets.map((w: any) => [String(w.user), w]));
 
@@ -211,7 +214,12 @@ export class TeamService {
       return {
         ...m,
         jobsCompleted: byStaff.get(String(m.user?._id || m.user || '')) || 0,
-        payoutReady: Boolean(wallet?.bankDetails?.accountNumber),
+        // Either home counts: the payout endpoint writes bankDetails, the wallet screen writes bankAccounts.
+        payoutReady: Boolean(
+          (wallet?.bankDetails?.accountNumber && wallet?.bankDetails?.bankCode) ||
+            (Array.isArray(wallet?.bankAccounts) &&
+              wallet.bankAccounts.some((a: any) => a?.accountNumber && a?.bankCode)),
+        ),
         walletBalance: wallet?.balance || 0,
       };
     });

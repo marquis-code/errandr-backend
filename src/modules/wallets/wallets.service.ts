@@ -337,12 +337,30 @@ export class WalletsService {
     return { ...wallet.bankDetails, verified: true };
   }
 
+  /**
+   * The payout account, wherever it was saved.
+   *
+   * There are two homes for this: `bankDetails` (written by the payout-account endpoint) and `bankAccounts[]`
+   * (written by the wallet preferences screen). Reading only one of them is why a member with a saved account
+   * looked like they had none, and why a withdrawal could fail with "payout preferences not set".
+   */
+  private resolvePayoutAccount(wallet: any) {
+    const details = wallet?.bankDetails || null;
+    if (details?.accountNumber && details?.bankCode) return details;
+
+    const accounts: any[] = Array.isArray(wallet?.bankAccounts) ? wallet.bankAccounts : [];
+    const chosen = accounts.find((a) => a?.isActive) || accounts[0];
+    if (chosen?.accountNumber && chosen?.bankCode) return chosen;
+
+    return null;
+  }
+
   async getPayoutAccount(userId: string) {
     const wallet = await this.getOrCreateWallet(userId);
-    const details: any = wallet.bankDetails || null;
+    const details = this.resolvePayoutAccount(wallet);
     return {
       ...(details || {}),
-      verified: Boolean(details?.accountNumber && details?.bankCode),
+      verified: Boolean(details),
       balance: wallet.balance || 0,
     };
   }
@@ -418,8 +436,9 @@ export class WalletsService {
       throw new Error('Withdrawal amount is too low to cover the processing fee');
     }
 
-    const targetBankCode = selectedBankAccount?.bankCode || wallet.bankDetails?.bankCode;
-    const targetAccountNumber = selectedBankAccount?.accountNumber || wallet.bankDetails?.accountNumber;
+    const savedAccount: any = this.resolvePayoutAccount(wallet);
+    const targetBankCode = selectedBankAccount?.bankCode || savedAccount?.bankCode;
+    const targetAccountNumber = selectedBankAccount?.accountNumber || savedAccount?.accountNumber;
 
     if (!targetBankCode || !targetAccountNumber) {
       throw new Error('Payout preferences not set correctly');
