@@ -314,7 +314,7 @@ Order: ${order}
   /**
    * 12. Broadcast to Errand Ninja: New Errand Available (with dynamic Spintax to avoid ban filters)
    */
-  static errandAvailableForNinja(data: { storeName: string; orderNumber: string; deliveryFee: number; variantIndex?: number }): string {
+  static errandAvailableForNinja(data: { storeName: string; orderNumber: string; deliveryFee: number; variantIndex?: number; isBarter?: boolean }): string {
     const feeFormatted = (data.deliveryFee || 300).toLocaleString();
     const currentHourWAT = (new Date().getUTCHours() + 1) % 24;
 
@@ -348,8 +348,11 @@ Order: ${order}
     // "@all" is written for people, not for WhatsApp: this platform has no all-keyword (that is
     // Telegram). The notification itself comes from the mentions payload the sender attaches, which
     // is why the text can say @all while the mentions do the work.
-    return `🤖 *Erranders Bot* · @all
+    // A Declutter errand is not a food order: the rider is collecting an item from a seller, so say so.
+    const tag = data.isBarter ? '🛒 *DECLUTTER ERRAND*\n' : '';
 
+    return `🤖 *Erranders Bot* · @all
+${tag}
 New errand · ₦${feeFormatted}
 ${data.storeName} · #${data.orderNumber}
 

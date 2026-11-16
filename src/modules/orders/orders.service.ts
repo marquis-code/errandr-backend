@@ -352,6 +352,7 @@ export class OrdersService {
           storeName: vendorName,
           orderNumber: orderNumberStr,
           deliveryFee: feeDisplay,
+          isBarter: Boolean((order as any)?.isBarter || (order as any)?.type === 'custom_errand'),
         }).catch(e => this.logger.warn(`Failed to send WhatsApp to manager ${dutyStatus.managerName || 'Kim'}: ${e.message}`));
       }
 
@@ -365,6 +366,7 @@ export class OrdersService {
                 storeName: vendorName,
                 orderNumber: orderNumberStr,
                 deliveryFee: feeDisplay,
+          isBarter: Boolean((order as any)?.isBarter || (order as any)?.type === 'custom_errand'),
               }).catch(e => this.logger.warn(`Failed to send WhatsApp to on-duty CSR ${rep.name}: ${e.message}`));
             }
           }
@@ -382,6 +384,7 @@ export class OrdersService {
           storeName: vendorName,
           orderNumber: orderNumberStr,
           deliveryFee: feeDisplay,
+          isBarter: Boolean((order as any)?.isBarter || (order as any)?.type === 'custom_errand'),
         }).catch(e => this.logger.warn(`Ninja WhatsApp Group broadcast failed: ${e.message}`));
       }
 
@@ -425,6 +428,7 @@ export class OrdersService {
                   storeName: vendorName,
                   orderNumber: orderNumberStr,
                   deliveryFee: feeDisplay,
+                  isBarter: Boolean((order as any)?.isBarter || (order as any)?.type === 'custom_errand'),
                   variantIndex: directWaDispatched,
                 }).catch(e => this.logger.warn(`Ninja WhatsApp DM failed: ${e.message}`));
                 directWaDispatched++;
@@ -4260,7 +4264,14 @@ export class OrdersService {
     const order = await this.orderModel.findById(orderId);
     if (!order) throw new NotFoundException('Order not found');
     if (order.isPooledErrand) throw new BadRequestException('Cannot accept bids for pooled errands');
-    if (order.paymentStatus === PaymentStatus.PAID) throw new BadRequestException('Order is already paid. Accepting higher bids requires top-up, which is not supported yet.');
+    /*
+     * A Barter errand is paid on the Declutter side: escrow takes the money once the negotiation closes, so the
+     * marketplace order is never "paid" itself. Refusing the accept here was blocking every declutter delivery,
+     * because the order had already been marked paid by the earlier flow.
+     */
+    if (order.paymentStatus === PaymentStatus.PAID && !(order as any).isBarter) {
+      throw new BadRequestException('Order is already paid. Accepting higher bids requires top-up, which is not supported yet.');
+    }
     if (![OrderStatus.PENDING, OrderStatus.NEGOTIATING].includes(order.status as any)) throw new BadRequestException('Order is no longer accepting bids');
 
     // Try DeliveryBid collection first (used by NegotiationService/NegotiationGateway)

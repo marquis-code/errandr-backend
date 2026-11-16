@@ -883,7 +883,7 @@ export class NotificationsService {
   }
 
   // ─── Errand Ninja WhatsApp Notifications ────────────────
-  async notifyNinjaNewErrand(phone: string, data: { storeName: string; orderNumber: string; deliveryFee: number; variantIndex?: number }): Promise<boolean> {
+  async notifyNinjaNewErrand(phone: string, data: { storeName: string; orderNumber: string; deliveryFee: number; variantIndex?: number; isBarter?: boolean }): Promise<boolean> {
     try {
       const comms = await this.getCommunicationsSettingsCached();
       if (comms?.whatsappEnabled === false || comms?.whatsappNinjaBroadcastEnabled !== true) {
