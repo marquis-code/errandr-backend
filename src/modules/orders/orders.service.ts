@@ -520,7 +520,9 @@ export class OrdersService {
       runnerFee,
       proposedDeliveryFee: runnerFee,
       estimatedItemCost: 0,
-      paymentMethod: 'cash',
+      // The order schema accepts card, wallet or transfer. 'cash' was rejected by validation, which is why
+      // every Barter dispatch answered 500 and no rider ever saw the errand.
+      paymentMethod: 'transfer',
       deliveryOption: 'use_an_errander',
       institution: targetInstitution || undefined,
       skipInstitutionFallback: true,
