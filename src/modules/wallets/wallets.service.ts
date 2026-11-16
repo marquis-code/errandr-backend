@@ -312,7 +312,8 @@ export class WalletsService {
 
     const wallet = await this.getOrCreateWallet(userId);
 
-    let accountName = body.accountName || '';
+    // Never trust the name the client sends: the whole point is that the bank says who owns the number.
+    let accountName = '';
     if (!accountName) {
       try {
         const resolved: any = await this.paystackService.resolveAccount(accountNumber, bankCode);
