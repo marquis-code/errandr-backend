@@ -41,6 +41,12 @@ export class TeamController {
     return this.teamService.update(this.uid(req), id, body);
   }
 
+  @Post(':id/remind-bank')
+  @ApiOperation({ summary: 'Ask a team member to add their payout account' })
+  remindBank(@Req() req: any, @Param('id') id: string) {
+    return this.teamService.remindToAddBank(this.uid(req), id);
+  }
+
   @Delete(':id')
   @ApiOperation({ summary: 'Take someone off your team' })
   remove(@Req() req: any, @Param('id') id: string) {

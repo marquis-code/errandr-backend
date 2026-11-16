@@ -245,6 +245,57 @@ export class TeamService {
     return member;
   }
 
+  /**
+   * Nudge someone who has not added a bank account yet.
+   *
+   * Their pay lands in their wallet either way, but a wallet nobody can withdraw from is not pay. This sends
+   * the link rather than leaving the shop to chase it in person.
+   */
+  async remindToAddBank(userId: string, id: string) {
+    const vendor = await this.ownedVendor(userId);
+    const member = await this.teamModel.findOne({ _id: new Types.ObjectId(id), vendor: vendor._id });
+    if (!member) throw new NotFoundException('Team member not found');
+    if (member.status !== TeamStatus.ACTIVE) throw new BadRequestException('They have not accepted the invite yet');
+
+    const storeName = vendor['storeName'] || 'your shop';
+    const html = `
+      <div style="font-family:system-ui,-apple-system,'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#14110d">
+        <h2 style="margin:0 0 8px;font-size:22px">Add your bank account</h2>
+        <p style="margin:0 0 16px;color:#6d675f;line-height:1.55">
+          ${member.name}, ${storeName} pays your share into your Erranders wallet when a job is completed. Add
+          a bank account once and you can withdraw it to your bank whenever you like.
+        </p>
+        <a href="https://erranders.org/dashboard/my-jobs"
+           style="display:inline-block;background:#f26a2e;color:#fff;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:10px">
+          Add bank account
+        </a>
+      </div>
+    `;
+
+    let emailed = false;
+    try {
+      await this.emailService.sendEmail(member.email, 'Add your bank account to get paid', html);
+      emailed = true;
+    } catch (e: any) {
+      this.logger.error(`Reminder email to ${member.email} failed: ${e?.message || e}`);
+    }
+
+    let whatsapped = false;
+    if (member.phone) {
+      try {
+        whatsapped = await this.notificationsService.sendWhatsApp(
+          member.phone,
+          `*${storeName}*: add your bank account so your pay can reach you.\n\nhttps://erranders.org/dashboard/my-jobs`,
+          { isPriority: false },
+        );
+      } catch {
+        whatsapped = false;
+      }
+    }
+
+    return { emailed, whatsapped };
+  }
+
   async remove(userId: string, id: string) {
     const vendor = await this.ownedVendor(userId);
     // Soft delete: appointments already assigned to them must keep their name.
