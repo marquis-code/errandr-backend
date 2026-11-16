@@ -545,8 +545,19 @@ export class AppointmentsService {
     if (!member) return null;
 
     const base = Math.max(0, (appointment?.commitmentFee || 0) - (appointment?.vendorCommission || 0));
-    const amount = Math.round((base * (member.payoutSharePercent || 0)) / 100);
-    return { amount, jobTitle: appointment?.serviceName || 'a job', percent: member.payoutSharePercent };
+
+    // A flat fee is capped at the payout: a ₦5,000 job cannot pay a ₦6,000 fee out of nothing.
+    const amount =
+      member.payoutType === 'fixed'
+        ? Math.min(Math.round(member.payoutFixedAmount || 0), base)
+        : Math.round((base * (member.payoutSharePercent || 0)) / 100);
+
+    return {
+      amount,
+      jobTitle: appointment?.serviceName || 'a job',
+      percent: member.payoutSharePercent,
+      type: member.payoutType || 'percent',
+    };
   }
 
   async updateStatus(id: string, vendorId: string, status: AppointmentStatus) {

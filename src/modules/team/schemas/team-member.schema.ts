@@ -6,6 +6,11 @@ export enum TeamRole {
   MEMBER = 'member',
 }
 
+export enum PayoutType {
+  PERCENT = 'percent',
+  FIXED = 'fixed',
+}
+
 export enum TeamStatus {
   INVITED = 'invited',
   ACTIVE = 'active',
@@ -46,6 +51,18 @@ export class TeamMember extends Document {
   /** 0 means the shop keeps the money; 100 means the whole payout is theirs. */
   @Prop({ default: 60, min: 0, max: 100 })
   payoutSharePercent: number;
+
+  /**
+   * A share of the job, or a flat fee per job.
+   *
+   * A cleaner paid ₦3,000 a job does not want a percentage of a ₦40,000 deep clean, so shops can set
+   * either. A fixed fee larger than the payout is capped at the payout rather than going negative.
+   */
+  @Prop({ type: String, enum: PayoutType, default: PayoutType.PERCENT })
+  payoutType: PayoutType;
+
+  @Prop({ default: 0, min: 0 })
+  payoutFixedAmount: number;
 
   @Prop({ type: String, enum: TeamStatus, default: TeamStatus.INVITED })
   status: TeamStatus;

@@ -8,7 +8,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { randomBytes } from 'crypto';
-import { TeamMember, TeamRole, TeamStatus } from './schemas/team-member.schema';
+import { PayoutType, TeamMember, TeamRole, TeamStatus } from './schemas/team-member.schema';
 import { Vendor, BusinessType } from '../vendors/schemas/vendor.schema';
 import { User } from '../users/schemas/user.schema';
 import { Appointment } from '../appointments/schemas/appointment.schema';
@@ -19,6 +19,8 @@ export interface InviteTeamMember {
   phone?: string;
   role?: TeamRole;
   payoutSharePercent?: number;
+  payoutType?: PayoutType;
+  payoutFixedAmount?: number;
 }
 
 @Injectable()
@@ -55,6 +57,12 @@ export class TeamService {
     const share = dto.payoutSharePercent ?? 60;
     if (share < 0 || share > 100) throw new BadRequestException('Payout share must be between 0 and 100');
 
+    const payoutType = dto.payoutType || PayoutType.PERCENT;
+    const fixed = dto.payoutFixedAmount ?? 0;
+    if (payoutType === PayoutType.FIXED && fixed <= 0) {
+      throw new BadRequestException('A fixed fee has to be more than zero');
+    }
+
     const existing = await this.teamModel.findOne({ vendor: vendor._id, email });
     if (existing && existing.status !== TeamStatus.REMOVED) {
       throw new BadRequestException('That email is already on your team');
@@ -72,6 +80,8 @@ export class TeamService {
       phone: dto.phone,
       role: dto.role || TeamRole.MEMBER,
       payoutSharePercent: share,
+      payoutType,
+      payoutFixedAmount: fixed,
       status: TeamStatus.INVITED,
       inviteCode,
       inviteExpiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 14),
@@ -120,6 +130,11 @@ export class TeamService {
         throw new BadRequestException('Payout share must be between 0 and 100');
       }
       member.payoutSharePercent = patch.payoutSharePercent;
+    }
+    if (patch.payoutType !== undefined) member.payoutType = patch.payoutType;
+    if (patch.payoutFixedAmount !== undefined) {
+      if (patch.payoutFixedAmount < 0) throw new BadRequestException('A fixed fee cannot be negative');
+      member.payoutFixedAmount = patch.payoutFixedAmount;
     }
     if (patch.status !== undefined) {
       if (!Object.values(TeamStatus).includes(patch.status)) throw new BadRequestException('Unknown status');
