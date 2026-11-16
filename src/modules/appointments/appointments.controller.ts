@@ -160,6 +160,20 @@ export class AppointmentsController {
     return this.appointmentsService.findAllForUser((user._id as unknown) as string);
   }
 
+  @Patch(':id/assign')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Assign a job to a team member (Service provider)' })
+  async assign(
+    @Param('id') id: string,
+    @CurrentUser() user: any,
+    @Body('teamMemberId') teamMemberId: string,
+  ) {
+    const vendor = await this.vendorsService.findByOwner(user._id);
+    if (!vendor) throw new NotFoundException('Vendor profile not found for this user');
+    return this.appointmentsService.assignToTeamMember(id, String(vendor._id), teamMemberId);
+  }
+
   @Put(':id/status')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

@@ -5,6 +5,7 @@ import { AppointmentsCronService } from './appointments.cron';
 
 import { MongooseModule } from '@nestjs/mongoose';
 import { Appointment, AppointmentSchema } from './schemas/appointment.schema';
+import { TeamMember, TeamMemberSchema } from '../team/schemas/team-member.schema';
 import { EmailModule } from '../email/email.module';
 import { VendorsModule } from '../vendors/vendors.module';
 import { WalletsModule } from '../wallets/wallets.module';
@@ -13,7 +14,10 @@ import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: Appointment.name, schema: AppointmentSchema }]),
+    MongooseModule.forFeature([
+      { name: Appointment.name, schema: AppointmentSchema },
+      { name: TeamMember.name, schema: TeamMemberSchema },
+    ]),
     EmailModule,
     VendorsModule,
     forwardRef(() => WalletsModule),

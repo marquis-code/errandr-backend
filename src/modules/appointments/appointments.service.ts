@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Appointment, AppointmentStatus } from './schemas/appointment.schema';
+import { TeamMember } from '../team/schemas/team-member.schema';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { EmailService } from '../email/email.service';
@@ -22,6 +23,9 @@ export class AppointmentsService {
     private readonly adminService: AdminService,
     private readonly notificationsService: NotificationsService,
     private readonly vendorsService: VendorsService,
+    // Team payouts read the membership; injected directly rather than through TeamModule to avoid a
+    // circular import between appointments and team.
+    @InjectModel(TeamMember.name) private readonly teamModel: Model<TeamMember>,
   ) {}
 
   async create(userId: string | null, data: any) {
@@ -489,6 +493,62 @@ export class AppointmentsService {
       .sort({ scheduledDate: -1 });
   }
 
+  /**
+   * Give a job to someone on the team.
+   *
+   * Only an active member of this vendor can take it, and only a member with an account: the payout goes
+   * to a wallet, so there has to be a wallet to send it to.
+   */
+  async assignToTeamMember(appointmentId: string, vendorId: string, teamMemberId: string) {
+    const appointment = await this.appointmentModel.findOne({
+      _id: new Types.ObjectId(appointmentId),
+      vendor: new Types.ObjectId(vendorId),
+    });
+    if (!appointment) throw new NotFoundException('Appointment not found');
+
+    if (appointment.status === AppointmentStatus.CANCELLED || appointment.status === AppointmentStatus.COMPLETED) {
+      throw new BadRequestException('That job is already finished or cancelled');
+    }
+
+    // Passing nothing clears the assignment.
+    if (!teamMemberId) {
+      (appointment as any).staffMember = undefined;
+      await appointment.save();
+      return { ok: true, assignedTo: null };
+    }
+
+    const member = await this.teamModel.findOne({
+      _id: new Types.ObjectId(teamMemberId),
+      vendor: new Types.ObjectId(vendorId),
+      status: 'active',
+    });
+    if (!member) throw new NotFoundException('That person is not an active member of your team');
+    if (!member.user) throw new BadRequestException('They need an account before a job can be assigned');
+
+    (appointment as any).staffMember = member.user;
+    await appointment.save();
+
+    return { ok: true, assignedTo: { id: String(member._id), name: member.name, share: member.payoutSharePercent } };
+  }
+
+  /**
+   * What a team member earns from this job.
+   *
+   * The percentage lives on the membership, so raising someone's share applies from their next job rather
+   * than rewriting past payouts. A missing membership means the job is the shop's alone.
+   */
+  private async teamSplit(vendorId: string, staffUserId?: string, appointment?: any) {
+    if (!vendorId || !staffUserId) return null;
+    const member: any = await this.teamModel
+      .findOne({ vendor: new Types.ObjectId(vendorId), user: new Types.ObjectId(staffUserId), status: 'active' })
+      .lean();
+    if (!member) return null;
+
+    const base = Math.max(0, (appointment?.commitmentFee || 0) - (appointment?.vendorCommission || 0));
+    const amount = Math.round((base * (member.payoutSharePercent || 0)) / 100);
+    return { amount, jobTitle: appointment?.serviceName || 'a job', percent: member.payoutSharePercent };
+  }
+
   async updateStatus(id: string, vendorId: string, status: AppointmentStatus) {
     const appointment = await this.appointmentModel.findOne({ _id: new Types.ObjectId(id), vendor: new Types.ObjectId(vendorId) }).populate('vendor', 'storeName owner').populate('user', 'email firstName lastName');
     if (!appointment) throw new NotFoundException('Appointment not found');
@@ -507,7 +567,28 @@ export class AppointmentsService {
           if (vendorOwnerId) {
             try {
               const vendorPayout = Math.max(0, appointment.commitmentFee - (appointment.vendorCommission || 0));
-              await this.walletsService.creditWallet(vendorOwnerId, vendorPayout, `Commitment fee for appointment ${appointment._id}`, undefined, appointment.paymentReference);
+              const staffId = (appointment as any).staffMember?.toString?.() || (appointment as any).staffMember;
+              const share = await this.teamSplit(vendorObj?._id?.toString() || vendorObj?._id, staffId, appointment);
+
+              // A job assigned to a team member pays them their share; the shop keeps the rest.
+              if (share && share.amount > 0) {
+                await this.walletsService.creditWallet(
+                  staffId,
+                  share.amount,
+                  `Your share for ${share.jobTitle} at ${vendorObj?.storeName || 'the shop'}`,
+                  undefined,
+                  `team:${appointment._id}`,
+                );
+                await this.walletsService.creditWallet(
+                  vendorOwnerId,
+                  Math.max(0, vendorPayout - share.amount),
+                  `Commitment fee for appointment ${appointment._id}`,
+                  undefined,
+                  appointment.paymentReference,
+                );
+              } else {
+                await this.walletsService.creditWallet(vendorOwnerId, vendorPayout, `Commitment fee for appointment ${appointment._id}`, undefined, appointment.paymentReference);
+              }
             } catch (e) {
               this.logger.error(`Failed to credit vendor wallet for appointment ${appointment._id}: ${e.message}`);
             }

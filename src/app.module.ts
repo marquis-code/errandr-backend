@@ -35,6 +35,7 @@ import { MarketingModule } from './modules/marketing/marketing.module';
 import { ReferralsModule } from './modules/referrals/referrals.module';
 import { ServicesModule } from './modules/services/services.module';
 import { AppointmentsModule } from './modules/appointments/appointments.module';
+import { TeamModule } from './modules/team/team.module';
 import { FirebaseModule } from './modules/firebase/firebase.module';
 import { SearchModule } from './modules/search/search.module';
 import { ReviewsModule } from './modules/reviews/reviews.module';
@@ -119,6 +120,7 @@ import { CallsModule } from './modules/calls/calls.module';
     ReferralsModule,
     ServicesModule,
     AppointmentsModule,
+    TeamModule,
     FirebaseModule,
     SearchModule,
     ReviewsModule,
