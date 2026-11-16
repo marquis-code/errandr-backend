@@ -201,6 +201,36 @@ export class PaymentsController {
    * Erranders wallet updates above). Barter also reconciles on demand via
    * `POST /users/me/withdrawals/:id/verify`, so a dropped forward is recoverable.
    */
+  /**
+   * Forward a Declutter escrow charge to the barter backend.
+   *
+   * The Paystack account has one webhook and it lives here, so a barter escrow payment arrives at this service. The
+   * reference decides whose it is: escrow references are issued by barter and start with ESC-. The buyer's browser
+   * also returns to /payment/callback, but that only happens if they do not close the tab.
+   */
+  private async forwardChargeToBarter(event: string, data: any): Promise<void> {
+    const reference = String(data?.reference || '');
+    if (!reference.startsWith('ESC-')) return;
+
+    const barterApiUrl = this.configService.get<string>('BARTER_API_URL');
+    const barterApiKey = this.configService.get<string>('BARTER_API_KEY');
+    if (!barterApiUrl || !barterApiKey) {
+      this.logger.warn(`Barter charge ${reference} not forwarded: BARTER_API_URL/KEY unset`);
+      return;
+    }
+
+    try {
+      await axios.post(
+        `${barterApiUrl.replace(/\/$/, '')}/webhooks/erranders`,
+        { event, data: { reference, status: data?.status, amount: data?.amount } },
+        { headers: { 'x-api-key': barterApiKey, 'Content-Type': 'application/json' }, timeout: 10000 },
+      );
+      this.logger.log(`Forwarded ${event} ${reference} to Barter`);
+    } catch (err: any) {
+      this.logger.error(`Could not forward ${event} ${reference} to Barter: ${err?.message || err}`);
+    }
+  }
+
   private async forwardTransferToBarter(event: string, data: any): Promise<void> {
     const barterApiUrl = this.configService.get<string>('BARTER_API_URL');
     const barterApiKey = this.configService.get<string>('BARTER_API_KEY');
@@ -507,6 +537,8 @@ export class PaymentsController {
               }
             }
           }
+          // A Declutter escrow payment, which this account's single webhook has to relay.
+          await this.forwardChargeToBarter('charge.success', data);
           break;
         }
 
