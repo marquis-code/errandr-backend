@@ -7,6 +7,8 @@ import { Vendor, VendorSchema } from '../vendors/schemas/vendor.schema';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { Appointment, AppointmentSchema } from '../appointments/schemas/appointment.schema';
 import { Wallet, WalletSchema } from '../wallets/schemas/wallet.schema';
+import { EmailModule } from '../email/email.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -17,6 +19,8 @@ import { Wallet, WalletSchema } from '../wallets/schemas/wallet.schema';
       { name: Appointment.name, schema: AppointmentSchema },
       { name: Wallet.name, schema: WalletSchema },
     ]),
+    EmailModule,
+    NotificationsModule,
   ],
   controllers: [TeamController],
   providers: [TeamService],

@@ -8,6 +8,8 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { randomBytes } from 'crypto';
+import { EmailService } from '../email/email.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PayoutType, TeamMember, TeamRole, TeamStatus } from './schemas/team-member.schema';
 import { Vendor, BusinessType } from '../vendors/schemas/vendor.schema';
 import { User } from '../users/schemas/user.schema';
@@ -34,6 +36,8 @@ export class TeamService {
     @InjectModel(User.name) private readonly userModel: Model<User>,
     @InjectModel(Appointment.name) private readonly appointmentModel: Model<Appointment>,
     @InjectModel(Wallet.name) private readonly walletModel: Model<Wallet>,
+    private readonly emailService: EmailService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -95,8 +99,90 @@ export class TeamService {
       : await this.teamModel.create(payload);
 
     if (!member) throw new BadRequestException('Could not create the invite');
-    this.logger.log(`Invited ${email} to ${vendor['storeName']} as ${payload.role}`);
-    return { ...member.toObject(), storeName: vendor['storeName'], inviteCode };
+
+    const storeName = vendor['storeName'] || 'a shop on Erranders';
+    const sent = await this.deliverInvite({
+      email,
+      phone: dto.phone,
+      name: dto.name.trim(),
+      storeName,
+      code: inviteCode,
+      role: payload.role,
+    });
+
+    this.logger.log(`Invited ${email} to ${storeName} as ${payload.role} (email ${sent.email}, whatsapp ${sent.whatsapp})`);
+    return { ...member.toObject(), storeName, inviteCode, inviteDelivery: sent };
+  }
+
+  /**
+   * The invite, by email and by WhatsApp.
+   *
+   * Both are attempted and neither failure is swallowed: the response says which channels went out, so a
+   * shop that sees "email failed" knows to read the code out rather than assume the person was told.
+   */
+  private async deliverInvite(invite: {
+    email: string;
+    phone?: string;
+    name: string;
+    storeName: string;
+    code: string;
+    role: string;
+  }) {
+    const result = { email: false, whatsapp: false, whatsappReason: '' };
+    const roleLabel = invite.role === 'manager' ? 'manager' : 'team member';
+
+    const html = `
+      <div style="font-family:system-ui,-apple-system,'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#14110d">
+        <h2 style="margin:0 0 8px;font-size:22px">You have been added to ${invite.storeName}</h2>
+        <p style="margin:0 0 18px;color:#6d675f;line-height:1.55">
+          ${invite.name}, ${invite.storeName} added you as a ${roleLabel} on Erranders. When a job is
+          completed your share is paid into your wallet, and you can withdraw it to your bank.
+        </p>
+        <p style="margin:0 0 6px;color:#6d675f;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.08em">Your invite code</p>
+        <p style="margin:0 0 18px;font-size:30px;font-weight:800;letter-spacing:.14em;color:#f26a2e">${invite.code}</p>
+        <p style="margin:0 0 18px;color:#6d675f;line-height:1.55">
+          Open My jobs in your Erranders account and enter the code to accept. It expires in 14 days.
+        </p>
+        <a href="https://erranders.org/dashboard/my-jobs"
+           style="display:inline-block;background:#f26a2e;color:#fff;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:10px">
+          Open My jobs
+        </a>
+      </div>
+    `;
+
+    try {
+      await this.emailService.sendEmail(
+        invite.email,
+        `${invite.storeName} added you to their team`,
+        html,
+      );
+      result.email = true;
+    } catch (e: any) {
+      this.logger.error(`Team invite email to ${invite.email} failed: ${e?.message || e}`);
+    }
+
+    if (invite.phone) {
+      const text = [
+        `*${invite.storeName}* added you as a ${roleLabel} on Erranders.`,
+        ``,
+        `Your invite code: *${invite.code}*`,
+        ``,
+        `Open My jobs in your account and enter it to accept. It expires in 14 days.`,
+        `https://erranders.org/dashboard/my-jobs`,
+      ].join('\n');
+
+      try {
+        result.whatsapp = await this.notificationsService.sendWhatsApp(invite.phone, text, { isPriority: true });
+        if (!result.whatsapp) result.whatsappReason = 'WhatsApp is unavailable right now';
+      } catch (e: any) {
+        result.whatsappReason = e?.message || 'WhatsApp could not be reached';
+        this.logger.error(`Team invite WhatsApp to ${invite.phone} failed: ${result.whatsappReason}`);
+      }
+    } else {
+      result.whatsappReason = 'No phone number was given';
+    }
+
+    return result;
   }
 
   async list(userId: string) {
