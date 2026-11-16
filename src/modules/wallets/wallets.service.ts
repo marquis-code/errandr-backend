@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException, Inject, forwardRef, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Inject, forwardRef, Logger, BadGatewayException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Wallet, WalletDocument, PayoutPreference } from './schemas/wallet.schema';
@@ -533,11 +533,11 @@ export class WalletsService {
     });
 
     if (!transaction || transaction.type !== TransactionType.DEBIT || transaction.status !== TransactionStatus.PENDING) {
-      throw new Error('Invalid or already processed payout request');
+      throw new BadRequestException('That payout request is no longer pending. Refresh and check your wallet.');
     }
 
     if (!transaction.metadata?.bankCode || !transaction.metadata?.accountNumber) {
-      throw new Error('Missing bank details in transaction metadata');
+      throw new BadRequestException('This payout has no bank account attached. Add one, then request the withdrawal again.');
     }
 
     const isTestKey = process.env.PAYSTACK_SECRET_KEY?.startsWith('sk_test');
@@ -572,7 +572,10 @@ export class WalletsService {
       });
 
       if ((transfer as any).status !== true && (transfer as any).status !== 'success') {
-        throw new Error((transfer as any).message || 'Transfer initiation failed via Paystack');
+        // Paystack's own words: it knows why the transfer was refused, and the sender needs to hear it.
+        throw new BadGatewayException(
+          (transfer as any).message || 'Paystack could not start the transfer. Try again in a moment.',
+        );
       }
 
       const transferData = (transfer as any)?.data;
@@ -632,7 +635,7 @@ export class WalletsService {
     });
     
     if (!transaction || transaction.type !== TransactionType.DEBIT || transaction.status !== TransactionStatus.PENDING) {
-      throw new Error('Invalid or already processed payout request');
+      throw new BadRequestException('That payout request is no longer pending. Refresh and check your wallet.');
     }
 
     transaction.status = TransactionStatus.COMPLETED;
@@ -660,7 +663,7 @@ export class WalletsService {
     });
     
     if (!transaction || transaction.type !== TransactionType.DEBIT || transaction.status !== TransactionStatus.PENDING) {
-      throw new Error('Invalid or already processed payout request');
+      throw new BadRequestException('That payout request is no longer pending. Refresh and check your wallet.');
     }
 
     // Mark transaction as failed/rejected
@@ -692,7 +695,7 @@ export class WalletsService {
     });
 
     if (!transaction) {
-      throw new Error('Transaction not found');
+      throw new NotFoundException('Transaction not found');
     }
 
     const PDFDocument = require('pdfkit');
