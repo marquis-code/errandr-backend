@@ -201,13 +201,15 @@ export class TeamService {
 
     // Whether each person has somewhere for the money to land.
     const userIds = members.map((m: any) => m.user).filter(Boolean);
+    // The wallet is keyed by `owner`; querying `user` returned nothing, so every member looked like they had
+    // no payout account and no balance.
     const wallets = userIds.length
       ? await this.walletModel
-          .find({ user: { $in: userIds } })
-          .select('user bankDetails bankAccounts balance')
+          .find({ owner: { $in: userIds } })
+          .select('owner bankDetails bankAccounts balance')
           .lean()
       : [];
-    const byUser = new Map(wallets.map((w: any) => [String(w.user), w]));
+    const byUser = new Map(wallets.map((w: any) => [String(w.owner), w]));
 
     return members.map((m: any) => {
       const wallet: any = byUser.get(String(m.user?._id || m.user || ''));
