@@ -747,6 +747,26 @@ export class OrdersService {
         if (resolved) institution = resolved;
       }
 
+      /*
+       * A double tap, or a request that retried, used to place the same errand twice: two unpaid orders a minute
+       * apart for the same trip. One live errand per customer and description inside a short window.
+       */
+      const duplicate = await this.orderModel
+        .findOne({
+          customer: new Types.ObjectId(customerId),
+          type: OrderType.CUSTOM_ERRAND,
+          status: { $in: [OrderStatus.PENDING, OrderStatus.AWAITING_PAYMENT, OrderStatus.NEGOTIATING] },
+          'customDetails.description': data.description,
+          'customDetails.dropoffLocation': data.dropoffLocation,
+          createdAt: { $gte: new Date(Date.now() - 90 * 1000) },
+        })
+        .sort({ createdAt: -1 });
+
+      if (duplicate) {
+        this.logger.log(`Duplicate custom errand within 90s; returning ${duplicate.orderNumber} instead`);
+        return duplicate;
+      }
+
       const order = await this.orderModel.create({
         orderNumber: `EXT-${uuidv4().slice(0, 8).toUpperCase()}`,
         uniqueCode: Math.floor(100000 + Math.random() * 900000).toString(),
