@@ -12,6 +12,7 @@ import { PayoutType, TeamMember, TeamRole, TeamStatus } from './schemas/team-mem
 import { Vendor, BusinessType } from '../vendors/schemas/vendor.schema';
 import { User } from '../users/schemas/user.schema';
 import { Appointment } from '../appointments/schemas/appointment.schema';
+import { Wallet } from '../wallets/schemas/wallet.schema';
 
 export interface InviteTeamMember {
   name: string;
@@ -32,6 +33,7 @@ export class TeamService {
     @InjectModel(Vendor.name) private readonly vendorModel: Model<Vendor>,
     @InjectModel(User.name) private readonly userModel: Model<User>,
     @InjectModel(Appointment.name) private readonly appointmentModel: Model<Appointment>,
+    @InjectModel(Wallet.name) private readonly walletModel: Model<Wallet>,
   ) {}
 
   /**
@@ -111,10 +113,22 @@ export class TeamService {
     ]);
     const byStaff = new Map(counts.map((c: any) => [String(c._id), c.jobs]));
 
-    return members.map((m: any) => ({
-      ...m,
-      jobsCompleted: byStaff.get(String(m.user?._id || m.user || '')) || 0,
-    }));
+    // Whether each person has somewhere for the money to land.
+    const userIds = members.map((m: any) => m.user).filter(Boolean);
+    const wallets = userIds.length
+      ? await this.walletModel.find({ user: { $in: userIds } }).select('user bankDetails balance').lean()
+      : [];
+    const byUser = new Map(wallets.map((w: any) => [String(w.user), w]));
+
+    return members.map((m: any) => {
+      const wallet: any = byUser.get(String(m.user?._id || m.user || ''));
+      return {
+        ...m,
+        jobsCompleted: byStaff.get(String(m.user?._id || m.user || '')) || 0,
+        payoutReady: Boolean(wallet?.bankDetails?.accountNumber),
+        walletBalance: wallet?.balance || 0,
+      };
+    });
   }
 
   async update(userId: string, id: string, patch: Partial<InviteTeamMember> & { status?: TeamStatus }) {

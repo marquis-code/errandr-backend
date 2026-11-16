@@ -292,6 +292,61 @@ export class WalletsService {
     return wallet.save();
   }
 
+  /**
+   * The account a payout goes to.
+   *
+   * The name is resolved by Paystack rather than typed by the user: a name typed by hand is how money
+   * ends up sent to an account that is not the person's. If the bank cannot be resolved the details are
+   * not saved, so a member never believes they are set up when they are not.
+   */
+  async savePayoutAccount(
+    userId: string,
+    body: { accountNumber: string; bankCode: string; bankName?: string; accountName?: string },
+  ) {
+    const accountNumber = String(body.accountNumber || '').replace(/\s/g, '');
+    const bankCode = String(body.bankCode || '').trim();
+    if (!/^\d{10}$/.test(accountNumber)) {
+      throw new BadRequestException('A Nigerian account number is 10 digits');
+    }
+    if (!bankCode) throw new BadRequestException('Choose your bank');
+
+    const wallet = await this.getOrCreateWallet(userId);
+
+    let accountName = body.accountName || '';
+    if (!accountName) {
+      try {
+        const resolved: any = await this.paystackService.resolveAccount(accountNumber, bankCode);
+        accountName = resolved?.data?.account_name || resolved?.account_name || '';
+      } catch {
+        throw new BadRequestException(
+          'We could not confirm that account. Check the number and bank, then try again.',
+        );
+      }
+    }
+    if (!accountName) throw new BadRequestException('That account could not be confirmed');
+
+    wallet.bankDetails = {
+      bankName: body.bankName || '',
+      bankCode,
+      accountNumber,
+      accountName,
+    };
+    (wallet as any).payoutAccountVerifiedAt = new Date();
+    await wallet.save();
+
+    return { ...wallet.bankDetails, verified: true };
+  }
+
+  async getPayoutAccount(userId: string) {
+    const wallet = await this.getOrCreateWallet(userId);
+    const details: any = wallet.bankDetails || null;
+    return {
+      ...(details || {}),
+      verified: Boolean(details?.accountNumber && details?.bankCode),
+      balance: wallet.balance || 0,
+    };
+  }
+
   async withdrawFunds(userId: string, amount: number, userEmail: string, userName: string, selectedBankAccount?: { accountNumber: string, bankCode: string }, isInstant?: boolean): Promise<void> {
     const wallet = await this.getWallet(userId);
 

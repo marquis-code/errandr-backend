@@ -42,6 +42,21 @@ export class WalletsController {
     return this.walletsService.updatePreferences((user._id as unknown) as string, body.preference, body.bankDetails, body.metadata, body.bankAccounts);
   }
 
+  @Put('payout-account')
+  @ApiOperation({ summary: 'Save the bank account payouts are sent to' })
+  async savePayoutAccount(
+    @CurrentUser() user: User,
+    @Body() body: { accountNumber: string; bankCode: string; bankName?: string; accountName?: string },
+  ) {
+    return this.walletsService.savePayoutAccount((user._id as unknown) as string, body);
+  }
+
+  @Get('payout-account')
+  @ApiOperation({ summary: 'The saved payout account, and whether it is usable' })
+  async getPayoutAccount(@CurrentUser() user: User) {
+    return this.walletsService.getPayoutAccount((user._id as unknown) as string);
+  }
+
   @Post('withdraw')
   @ApiOperation({ summary: 'Request a withdrawal via Paystack' })
   async requestWithdrawal(
