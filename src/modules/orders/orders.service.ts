@@ -352,7 +352,7 @@ export class OrdersService {
           storeName: vendorName,
           orderNumber: orderNumberStr,
           deliveryFee: feeDisplay,
-          isBarter: Boolean((order as any)?.isBarter || (order as any)?.type === 'custom_errand'),
+          isBarter: Boolean((order as any)?.isBarter),
         }).catch(e => this.logger.warn(`Failed to send WhatsApp to manager ${dutyStatus.managerName || 'Kim'}: ${e.message}`));
       }
 
@@ -366,7 +366,7 @@ export class OrdersService {
                 storeName: vendorName,
                 orderNumber: orderNumberStr,
                 deliveryFee: feeDisplay,
-          isBarter: Boolean((order as any)?.isBarter || (order as any)?.type === 'custom_errand'),
+          isBarter: Boolean((order as any)?.isBarter),
               }).catch(e => this.logger.warn(`Failed to send WhatsApp to on-duty CSR ${rep.name}: ${e.message}`));
             }
           }
@@ -384,7 +384,7 @@ export class OrdersService {
           storeName: vendorName,
           orderNumber: orderNumberStr,
           deliveryFee: feeDisplay,
-          isBarter: Boolean((order as any)?.isBarter || (order as any)?.type === 'custom_errand'),
+          isBarter: Boolean((order as any)?.isBarter),
         }).catch(e => this.logger.warn(`Ninja WhatsApp Group broadcast failed: ${e.message}`));
       }
 
@@ -428,7 +428,7 @@ export class OrdersService {
                   storeName: vendorName,
                   orderNumber: orderNumberStr,
                   deliveryFee: feeDisplay,
-                  isBarter: Boolean((order as any)?.isBarter || (order as any)?.type === 'custom_errand'),
+                  isBarter: Boolean((order as any)?.isBarter),
                   variantIndex: directWaDispatched,
                 }).catch(e => this.logger.warn(`Ninja WhatsApp DM failed: ${e.message}`));
                 directWaDispatched++;

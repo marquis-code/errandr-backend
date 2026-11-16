@@ -348,7 +348,7 @@ Order: ${order}
     // "@all" is written for people, not for WhatsApp: this platform has no all-keyword (that is
     // Telegram). The notification itself comes from the mentions payload the sender attaches, which
     // is why the text can say @all while the mentions do the work.
-    // A Declutter errand is not a food order: the rider is collecting an item from a seller, so say so.
+    // Only a real Barter order is tagged: a custom errand from the student app is a different thing entirely.
     const tag = data.isBarter ? '🛒 *DECLUTTER ERRAND*\n' : '';
 
     return `🤖 *Erranders Bot* · @all
