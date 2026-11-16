@@ -479,6 +479,24 @@ export class OrdersService {
       throw new InternalServerErrorException('No admin user found to act as customer for Barter errand');
     }
 
+    /*
+     * One order per barter transaction.
+     *
+     * A dispatch that times out, a retry, or a manual re-fire used to create another order for the same trade, which is
+     * why three identical errands sat in the table for one purchase. If a live order already exists for this
+     * transaction, that is the order.
+     */
+    const incomingTxId = String(data.barterTransactionId || data.transactionId || '').trim();
+    if (incomingTxId) {
+      const existing = await this.orderModel
+        .findOne({ barterTransactionId: incomingTxId, status: { $ne: OrderStatus.CANCELLED } })
+        .sort({ createdAt: -1 });
+      if (existing) {
+        this.logger.log(`Barter dispatch for ${incomingTxId} already has order ${existing.orderNumber}; reusing it`);
+        return existing;
+      }
+    }
+
     const runnerFee = Math.max(300, Number(data.fee || data.runnerFee) || 500);
     let desc = data.description || 'Barter Delivery';
     if (!desc.startsWith('Barter Delivery')) {
@@ -3142,6 +3160,16 @@ export class OrdersService {
     }
 
     if (!isAdmin) {
+      /*
+       * A rider has already taken it on. Cancelling under them leaves an errand in someone's day that no longer exists,
+       * so that call belongs to an admin (support), who can also tell the rider.
+       */
+      if (order.errander) {
+        throw new BadRequestException(
+          'A rider has already accepted this errand. Contact support to cancel it.',
+        );
+      }
+
       // For customers: allow cancellation before delivery has started
       const customerAllowedStatuses = [
         OrderStatus.PENDING,
