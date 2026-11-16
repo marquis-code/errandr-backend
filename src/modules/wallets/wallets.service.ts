@@ -222,7 +222,7 @@ export class WalletsService {
     const wallet = await this.getOrCreateWallet(userId);
     
     if (wallet.balance < amount) {
-      throw new Error('Insufficient balance');
+      throw new BadRequestException('Insufficient balance');
     }
 
     wallet.balance -= amount;
@@ -381,7 +381,7 @@ export class WalletsService {
     }
 
     if (amount < minPayout) {
-      throw new Error(`Minimum payout amount for this settlement frequency is ₦${minPayout}`);
+      throw new BadRequestException(`Minimum payout amount for this settlement frequency is ₦${minPayout.toLocaleString()}`);
     }
 
     // Claim a short lock first. Two requests arriving together both pass any check before
@@ -434,7 +434,7 @@ export class WalletsService {
 
     const transferAmount = amount - processingFee;
     if (transferAmount <= 0) {
-      throw new Error('Withdrawal amount is too low to cover the processing fee');
+      throw new BadRequestException('That amount does not cover the processing fee. Try a larger withdrawal.');
     }
 
     const savedAccount: any = this.resolvePayoutAccount(wallet);
@@ -442,7 +442,7 @@ export class WalletsService {
     const targetAccountNumber = selectedBankAccount?.accountNumber || savedAccount?.accountNumber;
 
     if (!targetBankCode || !targetAccountNumber) {
-      throw new Error('Payout preferences not set correctly');
+      throw new BadRequestException('Add a bank account before withdrawing');
     }
 
     // Generate a reference
