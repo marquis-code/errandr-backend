@@ -929,6 +929,14 @@ export class NotificationsService {
       const data = payload?.data;
       const items = Array.isArray(data) ? data : data ? [data] : [];
 
+      // Forward group posts to Barter / Declutter backend for campus feed listing
+      const hasGroupMessage = items.some((it: any) => String(it?.key?.remoteJid || '').endsWith('@g.us'));
+      if (hasGroupMessage) {
+        this.forwardGroupMessageToBarter(payload).catch((err) => {
+          this.logger.warn(`Failed forwarding group message to Barter: ${err?.message || err}`);
+        });
+      }
+
       for (const item of items) {
         const key = item?.key;
         if (!key || key.fromMe === true) continue; // Skip messages sent by our bot
@@ -1009,6 +1017,25 @@ export class NotificationsService {
     }
 
     return { success: true, event };
+  }
+
+  private async forwardGroupMessageToBarter(payload: any): Promise<void> {
+    const barterUrl = (process.env.BARTER_API_URL || 'https://barter-backend-api.erranders.org/api/v1').replace(/\/$/, '');
+    try {
+      const response = await fetch(`${barterUrl}/webhooks/evolution`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (response.ok) {
+        this.logger.log(`✅ Forwarded group message webhook to Barter (${response.status})`);
+      } else {
+        this.logger.warn(`Barter returned status ${response.status} for forwarded group message`);
+      }
+    } catch (err: any) {
+      this.logger.warn(`Failed forwarding group message to Barter: ${err?.message || err}`);
+    }
   }
 
 
