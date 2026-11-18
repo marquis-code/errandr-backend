@@ -1685,6 +1685,10 @@ export class OrdersService {
     const order = await this.orderModel.findById(orderId);
     if (!order) throw new NotFoundException('Order not found');
 
+    if (status === OrderStatus.CANCELLED) {
+      return this.cancelOrder(orderId, userId, note || 'Cancelled via status update');
+    }
+
     const previousStatus = order.status;
 
     order.status = status;
@@ -1780,15 +1784,7 @@ export class OrdersService {
       }
     }
 
-    // Notify Vendor if cancelled
-    if (status === OrderStatus.CANCELLED && populated.vendor && (populated.vendor as any).email) {
-      this.emailService.sendOrderStatusUpdate(
-        (populated.vendor as any).email,
-        order.orderNumber,
-        'CANCELLED',
-        note,
-      );
-    }
+
 
     // Payout vendor once the errander picks up the order
     if (status === OrderStatus.PICKED_UP && populated.vendor) {
@@ -3223,6 +3219,7 @@ export class OrdersService {
       order.paymentStatus = PaymentStatus.REFUNDED;
     }
 
+    const assignedErranderUser = order.errander;
     if (order.errander) {
       const errander = await this.erranderModel.findOne({ user: order.errander });
       if (errander) {
@@ -3236,9 +3233,27 @@ export class OrdersService {
         }
         await errander.save();
       }
+
+      // Explicitly detach rider so cancelled orders never linger as active for the ninja
+      (order as any).previousErrander = order.errander;
+      order.errander = null as any;
     }
 
     await order.save();
+
+    // Direct real-time alert to the assigned rider that errand was cancelled
+    if (assignedErranderUser) {
+      try {
+        this.notificationsGateway.sendToUser(assignedErranderUser.toString(), {
+          type: 'ORDER_CANCELLED',
+          title: 'Errand Cancelled',
+          body: `Order #${order.orderNumber} was cancelled. ${reason ? 'Reason: ' + reason : ''}`,
+          data: { orderId: order._id.toString(), orderNumber: order.orderNumber, status: OrderStatus.CANCELLED }
+        });
+      } catch (err) {
+        this.logger.warn(`Failed to notify assigned errander ${assignedErranderUser} of cancellation: ${err.message}`);
+      }
+    }
 
     // Notify all
     await this.notifyOrderStatusUpdate(order, OrderStatus.CANCELLED, `Cancelled by customer: ${reason}`);
@@ -3651,35 +3666,9 @@ export class OrdersService {
       throw new BadRequestException(`Cannot cancel order that is already ${order.status}`);
     }
 
-    order.status = OrderStatus.CANCELLED;
-    order.cancelReason = 'Cancelled by customer via tracking portal';
-    order.statusHistory.push({
-      status: OrderStatus.CANCELLED,
-      timestamp: new Date(),
-      note: 'Cancelled by customer via tracking portal'
-    });
-
-    // Refund if paid
-    if (order.paymentStatus === PaymentStatus.PAID) {
-      await this.walletsService.creditWallet(
-        order.customer._id ? order.customer._id.toString() : order.customer.toString(),
-        order.total,
-        `Refund for cancelled order #${order.orderNumber}`,
-        order._id.toString()
-      );
-      order.paymentStatus = PaymentStatus.REFUNDED;
-    }
-
-    await order.save();
-
-    if (order.vendor) {
-      this.notifyOrderStatusUpdate(order, OrderStatus.CANCELLED, 'Order was cancelled by the customer.');
-
-      // Notify Support Team aggressively
-      this.notificationsService.notifySupportTeam(`User just cancelled tracked order #${order.orderNumber}. Reason: Cancelled by customer via tracking portal`);
-    }
-
-    return { success: true, message: 'Order cancelled successfully', order };
+    const customerId = (order.customer?._id || order.customer).toString();
+    const cancelled = await this.cancelOrder(order._id.toString(), customerId, 'Cancelled by customer via tracking portal');
+    return { success: true, message: 'Order cancelled successfully', order: cancelled };
   }
 
   
