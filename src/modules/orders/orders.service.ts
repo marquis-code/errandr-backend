@@ -165,6 +165,9 @@ export class OrdersService {
   private async notifyOrderStatusUpdate(order: any, status: OrderStatus, note?: string) {
     const title = 'Order Update';
     let body = `Your order #${order.orderNumber} is now ${status.replace(/_/g, ' ').toLowerCase()}`;
+    if (status === OrderStatus.AWAITING_PAYMENT) {
+      body = `🎉 Great news! An Errand Ninja accepted your custom errand #${order.orderNumber}. Tap here to complete your escrow payment so they can begin.`;
+    }
     if (order.deliveryPin && (status === OrderStatus.PICKED_UP || status === OrderStatus.IN_TRANSIT)) {
       body = `Your order #${order.orderNumber} is on the way! 🔑 Delivery PIN: ${order.deliveryPin}. Give this code to your rider.`;
     }
@@ -186,7 +189,7 @@ export class OrdersService {
     const skipSms = !majorStatuses.includes(status);
 
     // Notify Customer (stored + real-time)
-    if (customerId && note !== 'Order accepted by errander') {
+    if (customerId && (status === OrderStatus.AWAITING_PAYMENT || note !== 'Order accepted by errander')) {
       await this.notificationsService.sendNotification(customerId.toString(), {
         title, body, type: 'ORDER_STATUS_UPDATE', data: statusData, skipSms
       });
@@ -1994,22 +1997,34 @@ export class OrdersService {
       const bankDetails = erranderWallet.bankDetails;
 
       if (!bankDetails?.accountNumber || !bankDetails?.bankCode) {
-        // Rollback: unassign errander, set status back to PENDING, re-broadcast
-        await this.orderModel.findByIdAndUpdate(orderId, {
-          $unset: { errander: '' },
-          $set: { status: OrderStatus.PENDING },
-          $push: {
-            statusHistory: {
-              status: OrderStatus.PENDING,
-              timestamp: new Date(),
-              note: 'Acceptance rolled back — errander has no bank details',
-            } as any
-          }
-        });
+        // Rollback: unassign errander, preserve original status (negotiating or pending), and re-broadcast
+        const restoredStatus = targetOrder.status || OrderStatus.NEGOTIATING;
+        const rolledBackOrder = await this.orderModel.findByIdAndUpdate(
+          orderId,
+          {
+            $unset: { errander: '' },
+            $set: { status: restoredStatus },
+            $push: {
+              statusHistory: {
+                status: restoredStatus,
+                timestamp: new Date(),
+                note: 'Acceptance rolled back — errander has no bank details',
+              } as any
+            }
+          },
+          { new: true }
+        );
         errander.status = ErranderStatus.AVAILABLE;
         errander.currentOrder = null as any;
         errander.batchOrders = errander.batchOrders?.filter(id => id.toString() !== orderId) || [];
         await errander.save();
+
+        if (rolledBackOrder) {
+          this.broadcastNewOrderToErranders(rolledBackOrder).catch((e) =>
+            this.logger.error(`Re-broadcast failed after bank details rollback for ${rolledBackOrder.orderNumber}: ${e?.message || e}`)
+          );
+        }
+
         throw new BadRequestException('You need to add your bank details in Wallet settings before accepting market-run errands. The item cost needs to be transferred to your bank.');
       }
 
